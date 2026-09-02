@@ -10,6 +10,7 @@
 #     (`git commit -a`, `--all` and `--allow-empty` are left to git).
 # Commands that are not a git commit pass untouched.
 export RW_HOOK="guard-commit"
+export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
 rw_read_event
 

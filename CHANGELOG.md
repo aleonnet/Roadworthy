@@ -17,6 +17,17 @@ All notable changes to this project are documented here. The format follows
 - Principle 13: speak in outcomes, never bare identifiers. Risk-band field in the plan template.
   Configurable review-file suffix.
 
+## [0.1.1] - 2026-09-02
+
+### Changed
+- Guards (`scope-lock`, `protect-paths`, `guard-commit`, `plan-review-gate`) now **fail closed**:
+  an internal error or malformed event denies the action. `principles` keeps failing open with a
+  notice. The policy is declared per hook (`RW_ON_CRASH`) and a hook without one is itself an
+  error; all three paths are covered by `tests/run.sh`.
+- `refute.sh` also proves the check is **green on the clean file** after the restore; red on
+  both sides is reported as "does not measure the defect".
+- README states the measured context cost.
+
 ## [0.1.0] - 2026-09-02
 
 ### Added

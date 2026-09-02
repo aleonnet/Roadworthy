@@ -12,6 +12,7 @@
 # Never exits 2 (that would erase the prompt). Missing principles file or bad
 # stdin → exit 1 with a notice.
 export RW_HOOK="principles"
+export RW_ON_CRASH=allow
 source "$(dirname "$0")/lib.sh"
 rw_read_event
 

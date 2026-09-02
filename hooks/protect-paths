@@ -5,6 +5,7 @@
 # globs. This is the mechanical form of "this area is off limits": the model
 # cannot talk itself past it. Empty option → the guard is inactive.
 export RW_HOOK="protect-paths"
+export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
 rw_read_event
 

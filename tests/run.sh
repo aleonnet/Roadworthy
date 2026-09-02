@@ -67,6 +67,17 @@ CLAUDE_PLUGIN_OPTION_PRINCIPLES_FILE="$TMP/missing.md" run_hook principles '{"tr
 run_hook principles 'not json'
 [ "$RC" -eq 1 ] && [ -n "$ERR" ] && ok "malformed stdin → exit 1 + notice" || fail "malformed stdin rc=$RC"
 
+# ── crash policy: guards fail closed, context injection fails open ──────────
+section "crash policy"
+CLAUDE_PLUGIN_OPTION_PROTECTED_PATHS='lib/**' run_hook protect-paths 'not json'
+denied && [ "$RC" -eq 0 ] && ok "guard with invalid stdin → DENY (fails closed)" || fail "guard crash not denied (rc=$RC out=$OUT)"
+run_hook guard-commit ''
+denied && ok "guard with empty stdin → DENY" || fail "guard empty stdin not denied"
+run_hook principles 'not json'
+[ "$RC" -eq 1 ] && [ -z "$OUT" ] && ok "context hook with invalid stdin → exit 1 notice (fails open, never 2)" || fail "principles crash rc=$RC"
+RW_ON_CRASH_TEST="$(RW_HOOK=x bash -c 'source hooks/lib.sh; rw_crash test' 2>&1 || true)"
+printf '%s' "$RW_ON_CRASH_TEST" | grep -q 'no crash policy' && ok "hook without declared policy is itself an error" || fail "missing policy not detected"
+
 # ── protect-paths ────────────────────────────────────────────────────────────
 section "protect-paths"
 E='{"tool_name":"Edit","cwd":"/repo","tool_input":{"file_path":"/repo/lib/ble/manager.dart"}}'
@@ -153,6 +164,9 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$T/green.sh"; chmod +x "$T/green.sh"
   && ok "red for the wrong reason is rejected" || fail "wrong reason accepted"
 ! bash skills/refute/scripts/refute.sh --file "$T/config.txt" --sed 's/nomatch/x/' --expect 'x' -- "$T/check.sh" >/dev/null 2>&1 \
   && ok "injection that changes nothing is rejected" || fail "no-op injection accepted"
+printf '#!/usr/bin/env bash\necho "always red"; exit 1\n' > "$T/red.sh"; chmod +x "$T/red.sh"
+! bash skills/refute/scripts/refute.sh --file "$T/config.txt" --sed 's/42/43/' --expect 'always red' -- "$T/red.sh" >/dev/null 2>&1 \
+  && ok "red on the clean file too is rejected (no green-on-clean)" || fail "always-red check accepted"
 
 # ── tree-fingerprint ─────────────────────────────────────────────────────────
 section "tree-fingerprint.sh"

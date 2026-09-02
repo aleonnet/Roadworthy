@@ -63,4 +63,15 @@ if ! printf '%s' "$output" | grep -q -F -- "$expect"; then
   printf '%s\n' "$output" | tail -15 >&2
   exit 1
 fi
-echo "refute: OK — check failed with '$expect' (exit $rc); restoring $file"
+# Restore now (the EXIT trap would do it too) and prove the check is green on
+# the clean file: red-on-defect without green-on-clean proves nothing.
+restore; trap - EXIT
+set +e
+"$@" >/dev/null 2>&1
+rc_clean=$?
+set -e
+if [ "$rc_clean" -ne 0 ]; then
+  echo "refute: FAILED — the check is also red on the clean file (exit $rc_clean); it does not measure the defect" >&2
+  exit 1
+fi
+echo "refute: OK — red with the defect ('$expect', exit $rc), green on the clean file, $file restored (hash verified)"

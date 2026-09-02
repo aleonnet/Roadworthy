@@ -1,19 +1,46 @@
 #!/usr/bin/env bash
 # Shared helpers for Roadworthy hooks.
 #
-# Crash policy (declared, not implied): a hook that hits an internal error
-# exits 1 with one line on stderr. Claude Code shows the notice and proceeds.
-# Exit 2 is reserved for deliberate denials and is only ever produced by the
-# deny() helper. UserPromptSubmit must never exit 2: it would erase the
-# user's prompt.
+# Crash policy is declared per hook (RW_ON_CRASH, below), never implied.
+# Guards fail closed: an internal error denies the action. Context injection
+# fails open: a notice is shown and the prompt proceeds. Exit 2 is never used;
+# denials are structured JSON with exit 0, the form every working plugin hook
+# uses. UserPromptSubmit must never exit 2: it would erase the user's prompt.
 
 set -u
-trap 'echo "roadworthy/${RW_HOOK:-hook}: internal error at line $LINENO; guardrail skipped for this call" >&2; exit 1' ERR
+
+# Every hook declares RW_ON_CRASH before sourcing this file:
+#   deny  — a guard: on internal error the action is DENIED (a boundary that
+#           fails open is not a boundary);
+#   allow — context injection (UserPromptSubmit): on internal error a notice
+#           is shown and the prompt proceeds (exit 2 there would erase it).
+# No default: a hook without a policy is itself an internal error.
+rw_crash() {
+  local where="$1"
+  case "${RW_ON_CRASH:-}" in
+    deny)
+      python3 - "${RW_HOOK:-hook}" "$where" <<'PY'
+import json, sys
+print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+  "permissionDecision": "deny",
+  "permissionDecisionReason": f"Roadworthy/{sys.argv[1]}: internal error at {sys.argv[2]}; failing closed. Fix the hook or disable it in /plugin."}}))
+PY
+      exit 0 ;;
+    allow)
+      echo "roadworthy/${RW_HOOK:-hook}: internal error at $where; guardrail skipped for this call" >&2
+      exit 1 ;;
+    *)
+      echo "roadworthy/${RW_HOOK:-hook}: no crash policy declared (RW_ON_CRASH)" >&2
+      exit 1 ;;
+  esac
+}
+trap 'rw_crash "line $LINENO"' ERR
 
 # Read the whole hook event from stdin once; expose a field reader.
 rw_read_event() {
   RW_EVENT="$(cat)"
-  [ -n "$RW_EVENT" ] || { echo "roadworthy/${RW_HOOK:-hook}: empty stdin" >&2; exit 1; }
+  [ -n "$RW_EVENT" ] || rw_crash "empty stdin"
+  printf '%s' "$RW_EVENT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null || rw_crash "invalid JSON on stdin"
 }
 
 # rw_field <jq-like dotted path> — prints the value or empty. Pure python

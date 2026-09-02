@@ -14,6 +14,7 @@
 # Deliberately a mechanical lock, not a conversation: the review is produced
 # by the agent itself (see /roadworthy:plan), never by the human.
 export RW_HOOK="plan-review-gate"
+export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
 rw_read_event
 

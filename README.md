@@ -31,8 +31,13 @@ idempotent; `claude plugin update roadworthy@roadworthy` picks up new versions.
 | `guard-commit` | Bash | `git commit` with a forbidden flag (default `--trailer`) or with nothing staged is denied. |
 | `plan-review-gate` | ExitPlanMode | A plan can only be submitted with a review file bound to its SHA-256 that says `VERDICT: APPROVED`. |
 
-Every hook declares its crash policy: internal error → exit 1 with a visible notice and the
-action proceeds. Exit 2 is used only for deliberate denials, and never on prompt submission.
+Every hook declares its crash policy. The four guards **fail closed**: an internal error denies
+the action, because a boundary that fails open is not a boundary. The `principles` hook fails
+open with a visible notice, because an error on prompt submission must never erase the prompt.
+Denials are structured JSON decisions, never a bare exit 2.
+
+Measured with `claude plugin details`: about 386 tokens always on, 270 to 530 per skill or agent
+invocation.
 
 ## What it teaches (skills)
 
