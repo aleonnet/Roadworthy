@@ -1,0 +1,4 @@
+# lychee configuration for documentation link checking.
+# Run: lychee --offline --root-dir . docs/
+offline = true
+exclude_path = ["docs/archive"]

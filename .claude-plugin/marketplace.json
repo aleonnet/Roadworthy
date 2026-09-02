@@ -1,0 +1,18 @@
+{
+  "name": "roadworthy",
+  "description": "Roadworthy: guardrails for agentic coding, enforced by hooks. One change, zero collateral damage.",
+  "owner": {
+    "name": "Alessandro Barbosa",
+    "url": "https://github.com/aleonnet"
+  },
+  "plugins": [
+    {
+      "name": "roadworthy",
+      "source": "./",
+      "description": "Guardrails for agentic coding: one change, zero collateral damage.",
+      "version": "0.1.0",
+      "category": "development",
+      "tags": ["hooks", "guardrails", "verification", "evidence"]
+    }
+  ]
+}

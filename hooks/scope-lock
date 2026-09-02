@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# scope-lock — PreToolUse hook for Edit|Write|MultiEdit|NotebookEdit.
+#
+# One change, zero collateral damage. When the project contains
+# `.roadworthy/scope` (written by the /roadworthy:plan skill when a plan is
+# approved), every edit outside the listed paths is denied until the scope
+# file is removed by /roadworthy:close. Lines in the scope file are globs
+# relative to the project root; `#` starts a comment.
+export RW_HOOK="scope-lock"
+source "$(dirname "$0")/lib.sh"
+rw_read_event
+
+rw_bool "$(rw_option SCOPE_LOCK true)" || exit 0
+
+cwd="$(rw_field cwd)"
+scope_file="$cwd/.roadworthy/scope"
+[ -f "$scope_file" ] || exit 0
+
+target="$(rw_field tool_input.file_path)"
+[ -n "$target" ] || target="$(rw_field tool_input.notebook_path)"
+[ -n "$target" ] || exit 0
+
+relative="$target"
+case "$target" in
+  "$cwd"/*) relative="${target#"$cwd"/}" ;;
+esac
+
+# The scope file itself and the plan's own artefacts are always editable.
+case "$relative" in
+  .roadworthy/*) exit 0 ;;
+esac
+
+globs="$(grep -v -E '^[[:space:]]*(#|$)' "$scope_file" | tr '\n' ',' | sed 's/,$//')"
+[ -n "$globs" ] || exit 0
+
+if ! rw_glob_match "$relative" "$globs"; then
+  deny PreToolUse "'$relative' is outside the approved scope ($scope_file). Widen the scope deliberately, with a reason, or leave the file alone."
+fi
+exit 0

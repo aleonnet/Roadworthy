@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# guard-commit — PreToolUse hook for Bash.
+#
+# Two guarantees about `git commit`, enforced before the command runs:
+#   * forbidden flags (default: --trailer) never reach the history, whatever
+#     the wording of the command — the whole command line is inspected,
+#     including heredocs, so a false positive costs a rewritten command and
+#     a false negative would cost a polluted history;
+#   * with `block_empty_commits`, a commit with nothing staged is denied
+#     (`git commit -a`, `--all` and `--allow-empty` are left to git).
+# Commands that are not a git commit pass untouched.
+export RW_HOOK="guard-commit"
+source "$(dirname "$0")/lib.sh"
+rw_read_event
+
+command="$(rw_field tool_input.command)"
+[ -n "$command" ] || exit 0
+
+forbidden="$(rw_option FORBIDDEN_COMMIT_FLAGS "--trailer")"
+IFS=',' read -r -a flags <<< "$forbidden"
+for flag in "${flags[@]}"; do
+  flag="$(printf '%s' "$flag" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  [ -n "$flag" ] || continue
+  if printf '%s' "$command" | grep -q -F -- "$flag"; then
+    deny PreToolUse "'$flag' is forbidden in commits (forbidden_commit_flags). Rewrite the command without it."
+  fi
+done
+
+# Only plain `git commit` (not commit-tree, not -a/--all/--allow-empty) is
+# subject to the empty-staging check.
+if rw_bool "$(rw_option BLOCK_EMPTY_COMMITS true)" \
+   && printf '%s' "$command" | grep -q -E '(^|[;&|[:space:]])git[[:space:]]+commit([[:space:]]|$)' \
+   && ! printf '%s' "$command" | grep -q -E -- '(^|[[:space:]])(-a|--all|--allow-empty|--amend)([[:space:]]|$)'; then
+  cwd="$(rw_field cwd)"
+  if git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+     && git -C "$cwd" diff --cached --quiet 2>/dev/null; then
+    deny PreToolUse "nothing is staged in $cwd; a commit here would be empty. Stage the intended files first (block_empty_commits)."
+  fi
+fi
+exit 0

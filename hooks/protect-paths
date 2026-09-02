@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# protect-paths — PreToolUse hook for Edit|Write|MultiEdit|NotebookEdit.
+#
+# Denies any edit whose target path matches one of the `protected_paths`
+# globs. This is the mechanical form of "this area is off limits": the model
+# cannot talk itself past it. Empty option → the guard is inactive.
+export RW_HOOK="protect-paths"
+source "$(dirname "$0")/lib.sh"
+rw_read_event
+
+globs="$(rw_option PROTECTED_PATHS "")"
+[ -n "$globs" ] || exit 0
+
+target="$(rw_field tool_input.file_path)"
+[ -n "$target" ] || target="$(rw_field tool_input.notebook_path)"
+[ -n "$target" ] || exit 0
+
+cwd="$(rw_field cwd)"
+relative="$target"
+case "$target" in
+  "$cwd"/*) relative="${target#"$cwd"/}" ;;
+esac
+
+if rw_glob_match "$relative" "$globs"; then
+  deny PreToolUse "'$relative' is a protected path (protected_paths: $globs). Report the needed change instead of editing it."
+fi
+exit 0

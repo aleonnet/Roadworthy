@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# plan-review-gate — PreToolUse hook for ExitPlanMode.
+#
+# A plan may only be submitted for approval after an adversarial review that
+# is bound to the exact bytes of the plan. The review lives next to the plan
+# as `<plan>.review.md` and must carry:
+#   plan: <plan file name>
+#   plan-sha256: <sha256 of the plan file>
+#   VERDICT: APPROVED
+# Any review for the same plan and SHA that says VERDICT: REJECTED wins.
+# The newest non-review .md in the plans directory is "the current plan".
+# Symlinks and names containing '/' are refused (path traversal).
+#
+# Deliberately a mechanical lock, not a conversation: the review is produced
+# by the agent itself (see /roadworthy:plan), never by the human.
+export RW_HOOK="plan-review-gate"
+source "$(dirname "$0")/lib.sh"
+rw_read_event
+
+rw_bool "$(rw_option PLAN_REVIEW_REQUIRED true)" || exit 0
+
+plans="$(rw_option PLANS_DIR "")"
+[ -n "$plans" ] || plans="$HOME/.claude/plans"
+[ -d "$plans" ] || deny PreToolUse "plans directory $plans does not exist (plan_review_required)."
+
+# The current plan is the most recently modified non-review .md file.
+plan="$(python3 - "$plans" <<'PY'
+import os, sys
+d = sys.argv[1]
+c = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".md") and not f.endswith(".review.md")]
+c = [p for p in c if os.path.isfile(p)]
+print(max(c, key=os.path.getmtime) if c else "")
+PY
+)"
+[ -n "$plan" ] || deny PreToolUse "no plan found in $plans."
+[ -L "$plan" ] && deny PreToolUse "the current plan is a symlink; refused."
+
+name="$(basename "$plan")"
+sha="$(shasum -a 256 "$plan" | cut -d' ' -f1)"
+approved=0
+for review in "$plans"/*.review.md; do
+  [ -e "$review" ] || continue
+  [ -L "$review" ] && deny PreToolUse "$(basename "$review") is a symlink; refused."
+  declared="$(grep -m1 -E '^plan:' "$review" | sed -E 's/^plan:[[:space:]]*//')"
+  [ -n "$declared" ] || continue
+  case "$declared" in */*) deny PreToolUse "$(basename "$review") declares a plan path with '/'; refused." ;; esac
+  [ "$declared" = "$name" ] || continue
+  [ "$(grep -m1 -E '^plan-sha256:' "$review" | sed -E 's/^plan-sha256:[[:space:]]*//')" = "$sha" ] || continue
+  case "$(grep -m1 -E '^VERDICT:' "$review" | tr -d '\r')" in
+    VERDICT:*REJECT*) deny PreToolUse "$(basename "$review") rejected this exact version of the plan. Fix the plan and review again." ;;
+    VERDICT:*APPROV*) approved=$((approved + 1)) ;;
+  esac
+done
+[ "$approved" -ge 1 ] || deny PreToolUse "no approved review bound to the current plan ($name, sha ${sha:0:12}). Run /roadworthy:plan review, then submit."
+exit 0

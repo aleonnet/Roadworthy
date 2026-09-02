@@ -1,0 +1,72 @@
+{
+  "name": "roadworthy",
+  "displayName": "Roadworthy",
+  "version": "0.1.0",
+  "description": "Guardrails for agentic coding: one change, zero collateral damage. Scope-locked edits, refutation-tested guarantees, evidence-gated commits and plan reviews, enforced by hooks rather than by prose.",
+  "author": {
+    "name": "Alessandro Barbosa",
+    "url": "https://github.com/aleonnet"
+  },
+  "homepage": "https://github.com/aleonnet/Roadworthy",
+  "repository": "https://github.com/aleonnet/Roadworthy",
+  "license": "MIT",
+  "keywords": [
+    "hooks",
+    "guardrails",
+    "verification",
+    "evidence",
+    "mutation-testing",
+    "adr",
+    "code-quality"
+  ],
+  "userConfig": {
+    "principles_file": {
+      "type": "file",
+      "title": "Principles file",
+      "description": "Markdown file whose numbered lines (`1. ...`) are injected at every prompt. Leave empty to use the principles bundled with the plugin.",
+      "required": false
+    },
+    "project_rules": {
+      "type": "boolean",
+      "title": "Inject project rules",
+      "description": "Also inject the numbered lines of the current project's auto-memory MEMORY.md as a second layer.",
+      "default": true
+    },
+    "protected_paths": {
+      "type": "string",
+      "title": "Protected paths",
+      "description": "Comma-separated glob patterns that Edit/Write may never touch (e.g. `lib/ble/**,**/permissions.dart`). Empty disables the guard.",
+      "required": false
+    },
+    "scope_lock": {
+      "type": "boolean",
+      "title": "Scope lock",
+      "description": "While a plan scope file exists in the project (`.roadworthy/scope`), deny edits to files outside the declared scope.",
+      "default": true
+    },
+    "forbidden_commit_flags": {
+      "type": "string",
+      "title": "Forbidden commit flags",
+      "description": "Comma-separated flags that must never appear in a git commit command.",
+      "default": "--trailer"
+    },
+    "block_empty_commits": {
+      "type": "boolean",
+      "title": "Block empty commits",
+      "description": "Deny `git commit` when nothing is staged.",
+      "default": true
+    },
+    "plan_review_required": {
+      "type": "boolean",
+      "title": "Require plan review",
+      "description": "Deny ExitPlanMode unless a review file bound to the plan's SHA-256 records VERDICT: APPROVED.",
+      "default": true
+    },
+    "plans_dir": {
+      "type": "directory",
+      "title": "Plans directory",
+      "description": "Where Claude Code writes plan-mode plans. Leave empty for ~/.claude/plans.",
+      "required": false
+    }
+  }
+}
