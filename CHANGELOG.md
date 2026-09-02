@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-02
+
+Adopting 0.2.0 on a real multi-language monorepo showed four places where the scripts
+assumed English or one indexing style. Each is now a project setting or an option, with a
+fence for the accepted and the rejected case.
+
+### Added
+- `docs-check.sh`: a project may declare its own words for the five MADR states under
+  `"status"` in `.roadworthy/docs.json` (for example `{"accepted": "aceito", "superseded by":
+  "superado por"}`). The mapping replaces the English words for that project; states left
+  out keep English. `superseded by` targets are resolved with the declared phrase.
+- `refute-ledger.sh --exclude <regex>`: a test whose first 6 lines match declares itself a
+  diagnostic (dump, probe, spike), not a guarantee, and is skipped.
+
+### Changed
+- `docs-check.sh`: the concluded-plans index accepts links with a `./` prefix
+  (`[x](./file.plan.md)`), and `--since` now also exempts handoffs dated before the cut from
+  the live-handoff rule, in the same way it exempts them from the name rule.
+- `tree-fingerprint.sh` excludes transient Roadworthy state (scope, state, ledgers) so that
+  releasing the scope after a pass does not mark the evidence STALE.
+
 ## [0.2.0] - 2026-09-02
 
 ### Added

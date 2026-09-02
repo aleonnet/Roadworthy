@@ -233,6 +233,36 @@ printf 'status: accepted\n' > "$DI/docs/plans/2026-01-01-0900-handoff-a.md"; pri
 ! bash skills/document/scripts/docs-check.sh "$DI/docs" >/dev/null 2>&1 && ok "two live handoffs fail" || fail "two live handoffs passed"
 printf 'status: superseded by 2026-01-02-0900-handoff-b.md\n' > "$DI/docs/plans/2026-01-01-0900-handoff-a.md"
 bash skills/document/scripts/docs-check.sh "$DI/docs" >/dev/null && ok "superseded older handoff passes" || fail "superseded handoff rejected"
+# project status words: only accepted when declared in docs.json
+printf 'status: aceito\n# adr\n' > "$DI/docs/decisions/2026-01-03-0900-adr.md"
+! bash skills/document/scripts/docs-check.sh "$DI/docs" >/dev/null 2>&1 && ok "undeclared project word rejected" || fail "undeclared status word passed"
+python3 - "$DI/.roadworthy/docs.json" <<'PY'
+import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["status"]={"accepted":"aceito","superseded by":"superado por"}; json.dump(d,open(p,"w"))
+PY
+# the mapping REPLACES the English words (one vocabulary per project): convert the fixture
+python3 - "$DI/docs" <<'PY'
+import os,sys
+for d,_,fs in os.walk(sys.argv[1]):
+    for f in fs:
+        p=os.path.join(d,f); t=open(p).read()
+        open(p,"w").write(t.replace("status: accepted","status: aceito").replace("status: superseded by","status: superado por"))
+PY
+bash skills/document/scripts/docs-check.sh "$DI/docs" >/dev/null && ok "declared project word accepted" || fail "declared status word rejected"
+printf 'status: accepted\n# adr\n' > "$DI/docs/decisions/2026-01-05-0900-english.md"
+! bash skills/document/scripts/docs-check.sh "$DI/docs" >/dev/null 2>&1 && ok "English word rejected once the project declared its own" || fail "English word still accepted under a project vocabulary"
+rm -f "$DI/docs/decisions/2026-01-05-0900-english.md"
+printf 'status: superado por 2026-01-02-0900-handoff-b.md\n' > "$DI/docs/plans/2026-01-01-0900-handoff-a.md"
+bash skills/document/scripts/docs-check.sh "$DI/docs" >/dev/null && ok "superseded-by in the project words recognised" || fail "project superseded-by not recognised"
+printf 'status: superado por 2026-01-09-0900-nao-existe.md\n' > "$DI/docs/plans/2026-01-01-0900-handoff-a.md"
+! bash skills/document/scripts/docs-check.sh "$DI/docs" >/dev/null 2>&1 && ok "dangling project superseded-by fails" || fail "dangling project superseded-by passed"
+printf 'status: superado por 2026-01-02-0900-handoff-b.md\n' > "$DI/docs/plans/2026-01-01-0900-handoff-a.md"
+# index line with ./ prefix
+printf 'status: aceito\n# done plan\n' > "$DI/docs/plans/done/2026-01-04-0900-y.plan.md"; printf -- '- [y](./2026-01-04-0900-y.plan.md)\n' >> "$DI/docs/plans/done/README.md"
+bash skills/document/scripts/docs-check.sh "$DI/docs" >/dev/null && ok "index link with ./ prefix accepted" || fail "./ index link rejected"
+# handoff before the --since cut is legacy, not live
+printf 'status: aceito\n' > "$DI/docs/plans/2025-12-01-0900-handoff-old.md"
+! bash skills/document/scripts/docs-check.sh "$DI/docs" >/dev/null 2>&1 && ok "pre-cut handoff counts as live without --since" || fail "pre-cut handoff ignored without --since"
+bash skills/document/scripts/docs-check.sh "$DI/docs" --since 2026-01-01 >/dev/null && ok "pre-cut handoff exempt with --since" || fail "pre-cut handoff still live with --since"
 
 # ── resume-pick: newest by NAME, never by mtime ─────────────────────────────
 section "resume-pick.sh"
@@ -304,6 +334,9 @@ printf '// plain test\n' > "$RL/c_test.dart"
 ! bash skills/refute/scripts/refute-ledger.sh "$RL" >/dev/null 2>&1 && ok "fence without a refutation record fails" || fail "unrecorded fence passed"
 printf '%s\n' "$RL/b_test.dart" > "$RL/legacy.txt"
 bash skills/refute/scripts/refute-ledger.sh "$RL" --legacy "$RL/legacy.txt" | grep -q '2 fence(s), 1 legacy, 0 without' && ok "legacy list tolerates declared debt and counts it" || fail "legacy handling"
+printf '// FENCE: spike\n// DUMP — not a guarantee\n' > "$RL/d_test.dart"
+! bash skills/refute/scripts/refute-ledger.sh "$RL" --legacy "$RL/legacy.txt" >/dev/null 2>&1 && ok "diagnostic file counted as fence without --exclude" || fail "diagnostic ignored without --exclude"
+bash skills/refute/scripts/refute-ledger.sh "$RL" --legacy "$RL/legacy.txt" --exclude 'DUMP|SPIKE' | grep -q '2 fence(s), 1 legacy, 0 without' && ok "--exclude skips self-declared diagnostics" || fail "--exclude handling"
 
 # ── plan template: risk band ────────────────────────────────────────────────
 section "plan template"

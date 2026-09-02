@@ -4,6 +4,8 @@
 # Fails (exit 1) on:
 #   * a dated file (YYYY-MM-DD…) without a `status:` line in its first 5 lines;
 #   * a status outside: proposed | rejected | accepted | deprecated | superseded by <file>.md
+#     (a project may declare its own words for these five states under "status" in docs.json,
+#      e.g. {"accepted": "aceito", "superseded by": "superado por"}; unlisted states keep English)
 #   * a dated file name outside YYYY-MM-DD-HHMM-<kebab>.md (optionally .plan.md);
 #   * `superseded by <file>` whose target does not exist in the tree;
 #   * a relative markdown link to a .md file that does not exist;
@@ -12,7 +14,8 @@
 #       - in the `plans` role directory, more than one handoff (`*-handoff-*.md`) that is not
 #         marked `superseded by` — only the newest by NAME may be live.
 # Usage: docs-check.sh <docs dir> [--since YYYY-MM-DD] [--config <docs.json>]
-#   (files older than --since skip the name rule; config defaults to <docs dir>/../.roadworthy/docs.json)
+#   (files older than --since skip the name rule and the live-handoff rule;
+#    config defaults to <docs dir>/../.roadworthy/docs.json)
 set -euo pipefail
 dir="${1:?usage: docs-check.sh <docs dir> [--since YYYY-MM-DD] [--config docs.json]}"; shift || true
 since="0000-00-00"; cfg=""
@@ -29,7 +32,19 @@ dir="$(cd "$dir" && pwd)"
 
 fail=0
 problem() { echo "  [FAIL] $1"; fail=$((fail + 1)); }
-vocab='^status: (proposed|rejected|accepted|deprecated|superseded by [^ ]+\.md)$'
+# Status words: English by default; a project maps them in docs.json under "status".
+read -r w_proposed w_rejected w_accepted w_deprecated w_superseded < <(python3 - "$cfg" <<'PY'
+import json, os, sys
+m = {}
+if os.path.exists(sys.argv[1]):
+    m = json.load(open(sys.argv[1])).get("status", {}) or {}
+words = [m.get(k, k) for k in ("proposed", "rejected", "accepted", "deprecated", "superseded by")]
+print(" ".join(w.replace(" ", "_") for w in words))
+PY
+)
+w_superseded="${w_superseded//_/ }"
+vocab="^status: ($w_proposed|$w_rejected|$w_accepted|$w_deprecated|$w_superseded [^ ]+\.md)$"
+superseded="^status: $w_superseded (.+)$"
 dated='^[0-9]{4}-[0-9]{2}-[0-9]{2}'
 pattern='^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}-[a-z0-9-]+(\.plan)?\.md$'
 
@@ -44,7 +59,7 @@ while IFS= read -r -d '' f; do
   fi
   if [ -n "$status" ]; then
     [[ "$status" =~ $vocab ]] || problem "$f: '$status' outside the status vocabulary"
-    if [[ "$status" =~ ^status:\ superseded\ by\ (.+)$ ]]; then
+    if [[ "$status" =~ $superseded ]]; then
       target="${BASH_REMATCH[1]}"
       find "$dir" -name "$(basename "$target")" -print -quit | grep -q . || problem "$f: superseded by '$target', which does not exist"
     fi
@@ -66,14 +81,16 @@ if [ -f "$cfg" ]; then
     for f in "$done_dir"/*.md; do
       [ -e "$f" ] || continue
       n="$(basename "$f")"; [ "$n" = "README.md" ] && continue
-      [ -f "$idx" ] && grep -q -F "($n)" "$idx" || problem "$f: no line in $(role "done")/README.md"
+      [ -f "$idx" ] && grep -q -E "\((\./)?$(printf '%s' "$n" | sed 's/[.]/\\./g')\)" "$idx" || problem "$f: no line in $(role "done")/README.md"
     done
   fi
   plans_dir="$root/$(role plans)"
   if [ -n "$(role plans)" ] && [ -d "$plans_dir" ]; then
     live=()
     while IFS= read -r h; do
-      head -5 "$h" | grep -q -E '^status: superseded by' || live+=("$(basename "$h")")
+      hn="$(basename "$h")"
+      [[ "${hn:0:10}" < "$since" ]] && continue   # before the cut: declared legacy, not live
+      head -5 "$h" | grep -q -E "^status: $w_superseded " || live+=("$hn")
     done < <(find "$plans_dir" -maxdepth 1 -name '*-handoff-*.md' | sort)
     if [ "${#live[@]}" -gt 1 ]; then
       problem "$(role plans): ${#live[@]} live handoffs (${live[*]}); only the newest by name may stay unsuperseded"

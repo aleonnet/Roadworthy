@@ -10,7 +10,7 @@
       "name": "roadworthy",
       "source": "./",
       "description": "Guardrails for agentic coding: one change, zero collateral damage.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "category": "development",
       "tags": ["hooks", "guardrails", "verification", "evidence"]
     }
