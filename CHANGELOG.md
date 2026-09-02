@@ -5,17 +5,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Planned for 0.2
-- Documentation tree by role (`.roadworthy/docs.json`): `docs-init.sh` (idempotent), role-aware
-  `docs-check.sh` (done index, superseded handoffs), `close-front.sh` (move to history with
-  citation sweep).
-- `close.sh`: declared gates in `.roadworthy/gates`, run after the last commit, evidence with tree
-  fingerprint; verification states `passed | gaps_found | needs_human`.
-- `pointers-check.sh` (instruction files and memory index point at files that exist, both ways)
-  and `refute-ledger.sh` (tests marked as fences carry a refutation record).
-- `/roadworthy:resume`: read the map, find the newest handoff by name, state what was read.
-- Principle 13: speak in outcomes, never bare identifiers. Risk-band field in the plan template.
-  Configurable review-file suffix.
+## [0.2.0] - 2026-09-02
+
+### Added
+- Documentation tree by role (`.roadworthy/docs.json`): `docs-init.sh` (idempotent, never
+  overwrites), role-aware `docs-check.sh` (concluded plans must be indexed; only the newest
+  handoff by name may be live), `close-front.sh` (dry-run by default; `--apply` moves a closed
+  front into history and rewrites every link).
+- `close.sh`: gates declared in `.roadworthy/gates`, run only on a clean tree, each recorded in
+  `evidence.jsonl` with the content fingerprint; `--check` reports FRESH / STALE / MISSING;
+  states `passed | gaps_found | needs_human`; success releases the scope lock.
+- `tree-fingerprint.sh` now follows content (`git write-tree` on a temporary index).
+- `pointers-check.sh` (instruction files cite files that exist; memory index and files agree both
+  ways) and `refute-ledger.sh` (a test that calls itself a fence carries its refutation record).
+- `/roadworthy:resume` with `resume-pick.sh`: newest handoff by name, never by mtime; follows
+  `superseded by` and fails on cycles.
+- `protect-paths` also honours the project file `.roadworthy/protected`.
+- `review_suffix` option; the review file also accepts Portuguese field names and verdicts.
+- Principle 13 (speak in outcomes, never bare identifiers); risk band in the plan template.
+- The plugin uses its own documentation tree (`docs/`, created by `docs-init.sh`).
 
 ## [0.1.1] - 2026-09-02
 

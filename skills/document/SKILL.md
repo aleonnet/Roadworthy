@@ -19,7 +19,13 @@ context boundary.
 - **Confirmation section** in every decision: which check proves the decision is in force.
 - **Links resolve.** Run `scripts/docs-check.sh <docs dir>`; it fails on status outside the
   vocabulary, dated names outside the pattern, a `superseded by` target that does not exist,
-  and a broken relative link. Add `lychee` for deeper link checking (`templates/lychee.toml`).
+  a broken relative link, a concluded plan missing from its index, and more than one live
+  handoff. Add `lychee` for deeper link checking (`templates/lychee.toml`).
+- **Tree by role.** `scripts/docs-init.sh` creates the tree declared in `.roadworthy/docs.json`
+  (map, decisions, plans, done, history, reference, guides, archive) without touching what exists;
+  the project chooses the directory names, the plugin only knows the roles.
+- **Pointers.** `scripts/pointers-check.sh CLAUDE.md --memory <dir>`: every path an instruction
+  file cites exists, and the memory index and its files point at each other both ways.
 
 ## Templates
 

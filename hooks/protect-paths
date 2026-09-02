@@ -9,14 +9,20 @@ export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
 rw_read_event
 
+cwd="$(rw_field cwd)"
 globs="$(rw_option PROTECTED_PATHS "")"
+# The project may declare its own protected globs in .roadworthy/protected
+# (one per line, `#` comments); they are joined with the user option.
+if [ -n "$cwd" ] && [ -f "$cwd/.roadworthy/protected" ]; then
+  project="$(grep -v -E '^[[:space:]]*(#|$)' "$cwd/.roadworthy/protected" | tr '\n' ',' | sed 's/,$//')"
+  if [ -n "$project" ]; then globs="${globs:+$globs,}$project"; fi
+fi
 [ -n "$globs" ] || exit 0
 
 target="$(rw_field tool_input.file_path)"
 [ -n "$target" ] || target="$(rw_field tool_input.notebook_path)"
 [ -n "$target" ] || exit 0
 
-cwd="$(rw_field cwd)"
 relative="$target"
 case "$target" in
   "$cwd"/*) relative="${target#"$cwd"/}" ;;

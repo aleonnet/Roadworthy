@@ -36,7 +36,7 @@ the action, because a boundary that fails open is not a boundary. The `principle
 open with a visible notice, because an error on prompt submission must never erase the prompt.
 Denials are structured JSON decisions, never a bare exit 2.
 
-Measured with `claude plugin details`: about 386 tokens always on, 270 to 530 per skill or agent
+Measured with `claude plugin details`: about 468 tokens always on, 220 to 530 per skill or agent
 invocation.
 
 ## What it teaches (skills)
@@ -45,8 +45,9 @@ invocation.
 |---|---|
 | `/roadworthy:plan` | A plan born ready: whole-file reading, impact sweep with commands, EARS acceptance criteria, `[NEEDS CLARIFICATION]` instead of assumptions, scope declaration, hash-bound review. |
 | `/roadworthy:refute` | Prove a check can fail: inject the defect, expect the intended failure text, restore byte for byte, verify the hash. `scripts/refute.sh` does it mechanically. |
-| `/roadworthy:close` | Gates after the last commit, each with command, output and tree fingerprint; releases the scope lock; "needs human verification" when a person must judge. |
-| `/roadworthy:document` | Dated decision records with MADR status vocabulary, revision by new file, a Confirmation section, and `docs-check.sh` to keep the tree honest. |
+| `/roadworthy:close` | `close.sh` runs the gates declared in `.roadworthy/gates` after the last commit, records each with the content fingerprint of the tree, and says FRESH/STALE/MISSING later; `close-front.sh` moves a closed front into history with links rewritten. |
+| `/roadworthy:document` | Dated decision records with MADR status vocabulary, revision by new file, a Confirmation section; `docs-init.sh` builds the tree by role, `docs-check.sh` and `pointers-check.sh` keep it honest. |
+| `/roadworthy:resume` | Resume from disk: read the map, pick the newest handoff by name (`resume-pick.sh`), confirm the state, declare what was read. |
 
 And one agent, `cold-reviewer`: read-only, sees only the diff or plan and the criteria,
 reports only what affects correctness, fails closed.
@@ -60,16 +61,17 @@ Set on enable, or later with `/plugin` → Roadworthy → Configure. Values reac
 |---|---|---|
 | `principles_file` | bundled `principles/PRINCIPLES.md` | Markdown file whose numbered lines are injected at every prompt. |
 | `project_rules` | `true` | Also inject numbered lines from the project's auto-memory `MEMORY.md`. |
-| `protected_paths` | empty | Comma-separated globs Edit/Write may never touch. |
+| `protected_paths` | empty | Comma-separated globs Edit/Write may never touch; the project may add its own in `.roadworthy/protected`. |
 | `scope_lock` | `true` | Honour `.roadworthy/scope`. |
 | `forbidden_commit_flags` | `--trailer` | Comma-separated flags denied in commit commands. |
 | `block_empty_commits` | `true` | Deny `git commit` with nothing staged. |
 | `plan_review_required` | `true` | Require the hash-bound review before ExitPlanMode. |
+| `review_suffix` | `.review.md` | Suffix of the review file next to the plan. |
 | `plans_dir` | `~/.claude/plans` | Where Claude Code writes plan-mode plans. |
 
 ## Principles
 
-The bundled principles are twelve numbered lines, each naming the failure it prevents and
+The bundled principles are thirteen numbered lines, each naming the failure it prevents and
 the mechanism behind it. Read them in [`principles/PRINCIPLES.md`](principles/PRINCIPLES.md).
 Keep them, or point `principles_file` at your own.
 

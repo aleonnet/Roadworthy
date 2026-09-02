@@ -22,13 +22,14 @@ rw_bool "$(rw_option PLAN_REVIEW_REQUIRED true)" || exit 0
 
 plans="$(rw_option PLANS_DIR "")"
 [ -n "$plans" ] || plans="$HOME/.claude/plans"
+suffix="$(rw_option REVIEW_SUFFIX ".review.md")"
 [ -d "$plans" ] || deny PreToolUse "plans directory $plans does not exist (plan_review_required)."
 
 # The current plan is the most recently modified non-review .md file.
-plan="$(python3 - "$plans" <<'PY'
+plan="$(python3 - "$plans" "$suffix" <<'PY'
 import os, sys
-d = sys.argv[1]
-c = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".md") and not f.endswith(".review.md")]
+d, suffix = sys.argv[1], sys.argv[2]
+c = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".md") and not f.endswith(suffix)]
 c = [p for p in c if os.path.isfile(p)]
 print(max(c, key=os.path.getmtime) if c else "")
 PY
@@ -39,17 +40,18 @@ PY
 name="$(basename "$plan")"
 sha="$(shasum -a 256 "$plan" | cut -d' ' -f1)"
 approved=0
-for review in "$plans"/*.review.md; do
+for review in "$plans"/*"$suffix"; do
   [ -e "$review" ] || continue
   [ -L "$review" ] && deny PreToolUse "$(basename "$review") is a symlink; refused."
-  declared="$(grep -m1 -E '^plan:' "$review" | sed -E 's/^plan:[[:space:]]*//')"
+  declared="$(grep -m1 -E '^(plan|plano):' "$review" | sed -E 's/^(plan|plano):[[:space:]]*//')"
   [ -n "$declared" ] || continue
   case "$declared" in */*) deny PreToolUse "$(basename "$review") declares a plan path with '/'; refused." ;; esac
   [ "$declared" = "$name" ] || continue
-  [ "$(grep -m1 -E '^plan-sha256:' "$review" | sed -E 's/^plan-sha256:[[:space:]]*//')" = "$sha" ] || continue
-  case "$(grep -m1 -E '^VERDICT:' "$review" | tr -d '\r')" in
-    VERDICT:*REJECT*) deny PreToolUse "$(basename "$review") rejected this exact version of the plan. Fix the plan and review again." ;;
-    VERDICT:*APPROV*) approved=$((approved + 1)) ;;
+  [ "$(grep -m1 -E '^(plan|plano)-sha256:' "$review" | sed -E 's/^(plan|plano)-sha256:[[:space:]]*//')" = "$sha" ] || continue
+  # VERDICT: is the canonical line; VEREDITO: is accepted for reviews written in Portuguese.
+  case "$(grep -m1 -E '^(VERDICT|VEREDITO):' "$review" | tr -d '\r')" in
+    *REJECT*|*REPROV*) deny PreToolUse "$(basename "$review") rejected this exact version of the plan. Fix the plan and review again." ;;
+    *APPROV*|*APROV*) approved=$((approved + 1)) ;;
   esac
 done
 [ "$approved" -ge 1 ] || deny PreToolUse "no approved review bound to the current plan ($name, sha ${sha:0:12}). Run /roadworthy:plan review, then submit."

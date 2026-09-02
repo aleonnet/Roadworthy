@@ -26,6 +26,12 @@ tree that will be shipped, and the evidence is on disk.
    fingerprint, gates with outputs, what was left out and why. Then remove
    `.roadworthy/scope`.
 
+`scripts/close.sh` does steps 1 to 3 and the ledger mechanically: gates come from
+`.roadworthy/gates`, every run is recorded with the content fingerprint of the tree, and
+`close.sh --check` says FRESH, STALE or MISSING for the tree you are looking at now. When a front
+closes, `scripts/close-front.sh <topic> <files...> --apply` moves its documents into history and
+rewrites every link that pointed at them.
+
 Only after step 5 may the words "done", "delivered" or "verified" appear in the report.
 
 ## Human-only items

@@ -5,6 +5,12 @@ status: proposed
 ## Context
 Why this change, what prompted it, the intended outcome.
 
+## Risk band
+One of: **protected** (report only, never edit — `protect-paths`), **critical** (end-to-end
+diagnosis, refuted check, human bench), **standard** (refuted check, green suite, result
+compared with the target), **minimal** (green suite). The band comes from the AREA touched, not
+from the mood of the day.
+
 ## Impact sweep (commands run now)
 ```
 <command>            # <what it measured>

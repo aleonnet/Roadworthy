@@ -42,3 +42,9 @@ with an identical hash. Any other outcome exits 1 and prints why.
   targets one claim. Use both: refutation for every new check, a mutation score for the
   class of "green forever" tests.
 - It is not a review. The cold reviewer reads; refutation executes.
+
+## The ledger
+
+`scripts/refute-ledger.sh <test dir>` fails when a test that calls itself a fence (marker in its
+first three lines) carries no refutation record. Declared debt goes in a legacy list that may only
+shrink.
