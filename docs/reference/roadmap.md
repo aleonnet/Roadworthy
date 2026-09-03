@@ -23,5 +23,9 @@ Living document (undated name by design). One line per item, with the measured r
   tool and print the measured score as the suggested threshold.
 - Denials log: `deny()` appends `{ts, hook, reason, cwd}` to `denials.jsonl` so the
   guardrail count is readable without the eval trace.
+- **Scope widening made visible.** The scope lock lets the agent edit `.roadworthy/scope`
+  by design; in the with-and-without experiment (2026-09-02) one run crossed the scope that way
+  after three denials. Record widenings (`{ts, before, after, cwd}` in `denials.jsonl` or a
+  sibling ledger) so `close.sh --check` and `rw-metrics` print "scope widened during the task".
 - Prune graders that pass in both arms once three runs with the target model are in hand
   (agentskills.io guidance: such assertions inflate the with-plugin pass rate).
