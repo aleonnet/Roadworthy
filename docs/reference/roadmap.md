@@ -10,6 +10,13 @@ Living document (undated name by design). One line per item, with the measured r
   run trace and the kept workspace).
 
 ## Pending
+- **"Modo madrugada" (owner's overnight routine).** Activated ONLY when the owner orders it. Task
+  registered 2026-09-03 for after the web-installer front: research exactly what the owner's
+  routine is (his memories across projects, the approved-plan-then-execute rule, the mandatory
+  decision diary with measured timestamps/phase/decision/reason/primary sources, "an open owner
+  decision is never decided at night — skip it and it becomes a morning blocker", night gates
+  adapted to the project, delivery with a test script and expected result) and propose the best
+  way to carry it in Roadworthy so any LLM knows the routine. Do not guess it; read the sources.
 - **Bash-granting evals on macOS with Docker Desktop.** `claude plugin eval --allow-tools Bash`
   refuses to run when the Docker credential store contains symbolic links (Docker Desktop
   keeps its CLI plugins as links under `~/.docker/cli-plugins`); `DOCKER_CONFIG` does not
