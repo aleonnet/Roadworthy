@@ -32,10 +32,21 @@ done
 if rw_bool "$(rw_option BLOCK_EMPTY_COMMITS true)" \
    && printf '%s' "$command" | grep -q -E '(^|[;&|[:space:]])git[[:space:]]+commit([[:space:]]|$)' \
    && ! printf '%s' "$command" | grep -q -E -- '(^|[[:space:]])(-a|--all|--allow-empty|--amend)([[:space:]]|$)'; then
-  cwd="$(rw_field cwd)"
-  if git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-     && git -C "$cwd" diff --cached --quiet 2>/dev/null; then
-    deny PreToolUse "nothing is staged in $cwd; a commit here would be empty. Stage the intended files first (block_empty_commits)."
+  # A command that stages on the same line (`git add … && git commit`) is judged by git
+  # itself: at hook time the index is still empty and the check would lie.
+  if ! printf '%s' "$command" | grep -q -E '(^|[;&|[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+(add|rm|mv)([[:space:]]|$)'; then
+    # The repository is the one the commit runs in: `git -C <dir> commit`, a leading
+    # `cd <dir> &&`, else the session cwd.
+    cwd="$(rw_field cwd)"
+    dir="$(printf '%s' "$command" | sed -n -E 's/.*git[[:space:]]+-C[[:space:]]+([^[:space:]]+)[[:space:]]+commit.*/\1/p' | head -1)"
+    [ -n "$dir" ] || dir="$(printf '%s' "$command" | sed -n -E 's/^[[:space:]]*cd[[:space:]]+([^[:space:];&|]+)[[:space:]]*(&&|;).*/\1/p' | head -1)"
+    [ -n "$dir" ] || dir="$cwd"
+    dir="${dir/#\~/$HOME}"; dir="${dir%\"}"; dir="${dir#\"}"
+    case "$dir" in /*) ;; *) dir="$cwd/$dir" ;; esac
+    if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+       && git -C "$dir" diff --cached --quiet 2>/dev/null; then
+      deny PreToolUse "nothing is staged in $dir; a commit here would be empty. Stage the intended files first (block_empty_commits)."
+    fi
   fi
 fi
 exit 0

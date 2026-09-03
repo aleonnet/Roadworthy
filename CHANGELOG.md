@@ -14,6 +14,12 @@ All notable changes to this project are documented here. The format follows
   (`pytest` after the run, `git status` against `SCOPE.txt`).
 - `docs/reference/roadmap.md`: what is pending and why, measured.
 
+### Fixed
+- `guard-commit` judged the empty-staging rule by the session directory: a commit run as
+  `cd <repo> && git commit` or `git -C <repo> commit` from another directory was denied even
+  with changes staged, and `git add … && git commit` on one line was denied before the add
+  ran. It now follows `git -C`, a leading `cd`, and leaves same-line staging to git.
+
 ## [0.2.1] - 2026-09-02
 
 Adopting 0.2.0 on a real multi-language monorepo showed four places where the scripts

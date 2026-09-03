@@ -117,6 +117,17 @@ run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$G\",\"tool_input\":{\"
 ! denied && ok "staged change allowed" || fail "staged change denied"
 CLAUDE_PLUGIN_OPTION_BLOCK_EMPTY_COMMITS=false run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$TMP\",\"tool_input\":{\"command\":\"git commit -m m\"}}"
 ! denied && ok "block_empty_commits=false honoured" || fail "block_empty_commits=false"
+G2="$TMP/git2"; mkdir -p "$G2"; git -C "$G2" init -q; git -C "$G2" config user.email t@t; git -C "$G2" config user.name t
+run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$TMP\",\"tool_input\":{\"command\":\"cd $G2 && git commit -m m\"}}"
+denied && ok "leading cd: empty staging in the target repo denied" || fail "cd-prefixed commit judged by the wrong directory"
+echo y > "$G2/g"; git -C "$G2" add g
+run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$TMP\",\"tool_input\":{\"command\":\"cd $G2 && git commit -m m\"}}"
+! denied && ok "leading cd: staged change in the target repo allowed" || fail "cd-prefixed commit with staging denied"
+run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$TMP\",\"tool_input\":{\"command\":\"git -C $G2 commit -m m\"}}"
+! denied && ok "git -C: judged by the named repo" || fail "git -C judged by cwd"
+git -C "$G2" commit -q -m g
+run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$G2\",\"tool_input\":{\"command\":\"git add -A && git commit -m m\"}}"
+! denied && ok "staging on the same line is left to git" || fail "add && commit denied before the add ran"
 run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$G\",\"tool_input\":{\"command\":\"echo hello\"}}"
 ! denied && [ "$RC" -eq 0 ] && ok "non-commit command untouched" || fail "non-commit denied"
 
