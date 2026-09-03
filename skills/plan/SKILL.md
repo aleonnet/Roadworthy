@@ -29,6 +29,11 @@ scope**.
 Wherever a premise is missing, write `[NEEDS CLARIFICATION: <question>]` instead of assuming.
 A plan with open clarifications is not submitted; it is asked.
 
+The template ends with an **Overnight policy** section: what is decided at night with a source
+and what is reserved for the user. It is read only when the user orders unattended execution
+(`/roadworthy:overnight`), and that skill refuses a plan without it — so write it for every plan
+that may run without you.
+
 Mass moves or renames get a **dry-run section**: every `mv` and every rewrite listed before
 execution. Divergence between the dry-run and reality at execution time stops the work and
 returns the delta to the user.

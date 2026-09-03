@@ -46,7 +46,9 @@ w_superseded="${w_superseded//_/ }"
 vocab="^status: ($w_proposed|$w_rejected|$w_accepted|$w_deprecated|$w_superseded [^ ]+\.md)$"
 superseded="^status: $w_superseded (.+)$"
 dated='^[0-9]{4}-[0-9]{2}-[0-9]{2}'
-pattern='^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}-[a-z0-9-]+(\.plan)?\.md$'
+# `.plan.md` and `.review.md` are companions of a dated document (the plan's review file that
+# plan-review-gate binds to the plan's hash lives next to it, with the same stem).
+pattern='^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}-[a-z0-9-]+(\.plan|\.review)?\.md$'
 
 while IFS= read -r -d '' f; do
   name="$(basename "$f")"

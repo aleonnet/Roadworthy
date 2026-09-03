@@ -17,7 +17,17 @@ if [ -n "$cwd" ] && [ -f "$cwd/.roadworthy/protected" ]; then
   project="$(grep -v -E '^[[:space:]]*(#|$)' "$cwd/.roadworthy/protected" | tr '\n' ',' | sed 's/,$//')"
   if [ -n "$project" ]; then globs="${globs:+$globs,}$project"; fi
 fi
-[ -n "$globs" ] || exit 0
+# Overnight mode: while `.roadworthy/overnight` exists, the `freeze:` globs of
+# `.roadworthy/overnight-rules` (version files, release notes) join the list —
+# a bump or a changelog entry waits for the morning.
+frozen=""
+if [ -n "$cwd" ]; then
+  root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cwd")"
+  if [ -f "$root/.roadworthy/overnight" ] && [ -f "$root/.roadworthy/overnight-rules" ]; then
+    frozen="$(grep -E '^[[:space:]]*freeze:' "$root/.roadworthy/overnight-rules" | sed 's/^[[:space:]]*freeze:[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | tr '\n' ',' | sed 's/,$//')"
+  fi
+fi
+[ -n "$globs" ] || [ -n "$frozen" ] || exit 0
 
 target="$(rw_field tool_input.file_path)"
 [ -n "$target" ] || target="$(rw_field tool_input.notebook_path)"
@@ -28,7 +38,14 @@ case "$target" in
   "$cwd"/*) relative="${target#"$cwd"/}" ;;
 esac
 
-if rw_glob_match "$relative" "$globs"; then
+if [ -n "$globs" ] && rw_glob_match "$relative" "$globs"; then
   deny PreToolUse "'$relative' is a protected path (protected_paths: $globs). Report the needed change instead of editing it."
+fi
+if [ -n "$frozen" ]; then
+  relroot="$target"
+  case "$target" in "$root"/*) relroot="${target#"$root"/}" ;; esac
+  if rw_glob_match "$relroot" "$frozen"; then
+    deny PreToolUse "'$relroot' is frozen for the night (overnight mode, freeze: $frozen). Version bumps and release notes wait for the morning; note it in the diary."
+  fi
 fi
 exit 0

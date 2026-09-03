@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# overnight-guard — PreToolUse hook for Bash.
+#
+# Overnight mode is unattended execution of an approved plan, started only by
+# the user's explicit order (/roadworthy:overnight). While the marker
+# `.roadworthy/overnight` exists in the project root, publishing and
+# integration wait for the morning: `git push`, `git merge`, `git tag` and
+# `gh pr merge` are denied, whatever the wording of the command line. The
+# project adds its own frozen commands in `.roadworthy/overnight-rules`, one
+# extended regular expression per `deny:` line (firmware upload, device
+# install, sudo, ssh to a named host). Without the marker the hook is inert.
+export RW_HOOK="overnight-guard"
+export RW_ON_CRASH=deny
+source "$(dirname "$0")/lib.sh"
+rw_read_event
+
+command="$(rw_field tool_input.command)"
+[ -n "$command" ] || exit 0
+
+cwd="$(rw_field cwd)"
+[ -n "$cwd" ] || exit 0
+root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cwd")"
+marker="$root/.roadworthy/overnight"
+[ -f "$marker" ] || exit 0
+
+# Built-in freezes: nothing leaves the machine and nothing lands on the main line at night.
+if printf '%s' "$command" | grep -q -E '(^|[;&|[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+(push|merge|tag)([[:space:]]|$)|(^|[;&|[:space:]])gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)'; then
+  deny PreToolUse "overnight mode is on ($marker): git push, git merge, git tag and gh pr merge wait for the morning. Record the step in the diary (overnight-entry.sh --blocker) and go on with the next phase."
+fi
+
+# Project rules: `deny: <extended regex>` lines. A malformed rule fails closed.
+rules="$root/.roadworthy/overnight-rules"
+[ -f "$rules" ] || exit 0
+while IFS= read -r line; do
+  case "$line" in ''|\#*) continue ;; esac
+  case "$line" in
+    deny:*)
+      re="$(printf '%s' "${line#deny:}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+      [ -n "$re" ] || continue
+      # Inside `if`, a non-zero grep is a result, not an error for the ERR trap of lib.sh.
+      if printf '%s' "$command" | grep -q -E -- "$re"; then rc=0; else rc=$?; fi
+      case "$rc" in
+        0) deny PreToolUse "overnight mode is on: the command matches '$re', frozen for the night by $rules. It waits for the morning; note it in the diary." ;;
+        1) ;;
+        *) rw_crash "invalid regex in $rules: $re" ;;
+      esac ;;
+  esac
+done < "$rules"
+exit 0

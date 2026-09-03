@@ -40,5 +40,13 @@ dir/**
 ## Out of scope
 - ...
 
+## Overnight policy
+Only read when the user orders unattended execution (`/roadworthy:overnight`); the skill refuses
+a plan without this section.
+- Decided at night, with a source: anything with an established answer — a primary document, a
+  benchmark, the project's own canon — recorded in the diary and marked "ratify in the morning".
+- Reserved for the user: anything irreversible, destructive or external (push, release, hardware
+  writes, deletions), and these domains of this plan: `<list them, or "none">`.
+
 ## Open questions
 - [NEEDS CLARIFICATION: ...]

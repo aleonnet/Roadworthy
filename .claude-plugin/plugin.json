@@ -1,7 +1,7 @@
 {
   "name": "roadworthy",
   "displayName": "Roadworthy",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Guardrails for agentic coding: one change, zero collateral damage. Scope-locked edits, refutation-tested guarantees, evidence-gated commits and plan reviews, enforced by hooks rather than by prose.",
   "author": {
     "name": "Alessandro Barbosa",

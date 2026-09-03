@@ -8,15 +8,10 @@ Living document (undated name by design). One line per item, with the measured r
   Portuguese-language monorepo).
 - Evals suite (`evals/`, six cases) and `bin/rw-metrics` (seven KPIs from the eval JSON, the
   run trace and the kept workspace).
+- 0.3.0 overnight mode: `/roadworthy:overnight`, `overnight-guard`, `freeze:` in `protect-paths`,
+  the Overnight policy section, the `overnight` eval (record `docs/decisions/2026-09-03-1322-overnight-mode.md`).
 
 ## Pending
-- **Overnight mode** (unattended execution of an approved plan, by explicit order only).
-  Researched 2026-09-03 across the owner's diaries, run scripts, hand-offs and memories; the
-  routine and the proposal are in `docs/decisions/2026-09-03-1322-overnight-mode.md` (proposed):
-  a `/roadworthy:overnight` skill with a diary whose timestamps are taken by script, a guard that
-  denies push/merge/bump/hardware while `.roadworthy/overnight` exists (rules per project in
-  `.roadworthy/overnight-rules`), and an "Overnight policy" section in the plan template. Not
-  implemented yet; awaits the owner's approval of the record.
 - **Bash-granting evals on macOS with Docker Desktop.** `claude plugin eval --allow-tools Bash`
   refuses to run when the Docker credential store contains symbolic links (Docker Desktop
   keeps its CLI plugins as links under `~/.docker/cli-plugins`); `DOCKER_CONFIG` does not

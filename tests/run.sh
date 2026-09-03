@@ -31,11 +31,11 @@ HOME_SANDBOX="$TMP/home"; mkdir -p "$HOME_SANDBOX/.claude/plans"
 
 # ── shell hygiene ────────────────────────────────────────────────────────────
 section "shell syntax"
-for f in hooks/lib.sh hooks/principles hooks/protect-paths hooks/scope-lock hooks/guard-commit hooks/plan-review-gate skills/*/scripts/*.sh tests/run.sh; do
+for f in hooks/lib.sh hooks/principles hooks/protect-paths hooks/scope-lock hooks/guard-commit hooks/plan-review-gate hooks/overnight-guard skills/*/scripts/*.sh tests/run.sh; do
   bash -n "$f" && ok "bash -n $f" || fail "bash -n $f"
 done
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck -S warning -x hooks/lib.sh hooks/principles hooks/protect-paths hooks/scope-lock hooks/guard-commit hooks/plan-review-gate skills/*/scripts/*.sh tests/run.sh \
+  shellcheck -S warning -x hooks/lib.sh hooks/principles hooks/protect-paths hooks/scope-lock hooks/guard-commit hooks/plan-review-gate hooks/overnight-guard skills/*/scripts/*.sh tests/run.sh \
     && ok "shellcheck (warning)" || fail "shellcheck"
 else
   echo "  [SKIP] shellcheck not installed"
@@ -199,6 +199,11 @@ rm "$D/2026-01-03-1100-bad-status.md"
 printf 'status: accepted\n' > "$D/2026-01-03-notes-v2.md"
 ! bash skills/document/scripts/docs-check.sh "$D" >/dev/null 2>&1 && ok "dated name outside pattern fails" || fail "bad name passed"
 rm "$D/2026-01-03-notes-v2.md"
+printf 'status: accepted\nplan: 2026-01-01-0900-first.md\nVERDICT: APPROVED\n' > "$D/2026-01-01-0900-first.review.md"
+bash skills/document/scripts/docs-check.sh "$D" >/dev/null && ok "review companion (.review.md) next to the plan passes" || fail "review companion rejected"
+printf 'status: accepted\n' > "$D/2026-01-01-0900-first.notes.md"
+! bash skills/document/scripts/docs-check.sh "$D" >/dev/null 2>&1 && ok "other dotted suffix still fails" || fail "dotted suffix passed"
+rm "$D/2026-01-01-0900-first.notes.md"
 printf 'status: superseded by 2026-09-09-0000-nope.md\n' > "$D/2026-01-04-1200-dangling.md"
 ! bash skills/document/scripts/docs-check.sh "$D" >/dev/null 2>&1 && ok "dangling superseded-by fails" || fail "dangling passed"
 rm "$D/2026-01-04-dangling.md" 2>/dev/null || rm "$D/2026-01-04-1200-dangling.md"
@@ -349,6 +354,90 @@ printf '// FENCE: spike\n// DUMP — not a guarantee\n' > "$RL/d_test.dart"
 ! bash skills/refute/scripts/refute-ledger.sh "$RL" --legacy "$RL/legacy.txt" >/dev/null 2>&1 && ok "diagnostic file counted as fence without --exclude" || fail "diagnostic ignored without --exclude"
 bash skills/refute/scripts/refute-ledger.sh "$RL" --legacy "$RL/legacy.txt" --exclude 'DUMP|SPIKE' | grep -q '2 fence(s), 1 legacy, 0 without' && ok "--exclude skips self-declared diagnostics" || fail "--exclude handling"
 
+# ── overnight-guard: inert without the marker, denies publishing with it ───
+section "overnight-guard"
+ON="$TMP/on"; mkdir -p "$ON/.roadworthy"; git -C "$ON" init -q; git -C "$ON" config user.email t@t; git -C "$ON" config user.name t
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$ON\",\"tool_input\":{\"command\":\"git push origin main\"}}"
+! denied && [ "$RC" -eq 0 ] && ok "no marker: git push untouched" || fail "no marker: push denied"
+echo '{"topic":"t"}' > "$ON/.roadworthy/overnight"
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$ON\",\"tool_input\":{\"command\":\"git push origin main\"}}"
+denied && printf '%s' "$OUT" | grep -q 'overnight' && ok "marker: git push denied, reason names overnight mode" || fail "marker: push passed"
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$ON\",\"tool_input\":{\"command\":\"cd $ON && git -C $ON merge feature\"}}"
+denied && ok "marker: git -C … merge denied" || fail "marker: merge passed"
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$ON\",\"tool_input\":{\"command\":\"gh pr merge 12\"}}"
+denied && ok "marker: gh pr merge denied" || fail "marker: gh pr merge passed"
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$ON\",\"tool_input\":{\"command\":\"git commit -m m && pytest -q\"}}"
+! denied && ok "marker: commit and tests untouched" || fail "marker: ordinary command denied"
+printf '# rules\ndeny: pio run .* -t upload\ndeny: (^|[;&| ])sudo( |$)\nfreeze: pubspec.yaml\nfreeze: CHANGELOG.md\n' > "$ON/.roadworthy/overnight-rules"
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$ON\",\"tool_input\":{\"command\":\"pio run -e board -t upload\"}}"
+denied && printf '%s' "$OUT" | grep -q 'pio run' && ok "deny: rule denied, reason names the rule" || fail "deny: rule passed"
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$ON\",\"tool_input\":{\"command\":\"pio run -e board\"}}"
+! denied && ok "deny: rule does not match a plain build" || fail "deny: rule over-matched"
+printf 'deny: (unclosed\n' > "$ON/.roadworthy/overnight-rules"
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$ON\",\"tool_input\":{\"command\":\"echo hello\"}}"
+denied && printf '%s' "$OUT" | grep -q 'internal error' && ok "malformed rule fails closed" || fail "malformed rule passed silently"
+printf 'freeze: pubspec.yaml\nfreeze: CHANGELOG.md\n' > "$ON/.roadworthy/overnight-rules"
+SUB="$ON/lib"; mkdir -p "$SUB"
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$SUB\",\"tool_input\":{\"command\":\"git push\"}}"
+denied && ok "marker found from a subdirectory of the repository" || fail "marker not found from a subdirectory"
+
+# ── protect-paths: overnight freeze ──────────────────────────────────────────
+section "protect-paths (overnight freeze)"
+run_hook protect-paths "{\"tool_name\":\"Edit\",\"cwd\":\"$ON\",\"tool_input\":{\"file_path\":\"$ON/pubspec.yaml\"}}"
+denied && printf '%s' "$OUT" | grep -q 'frozen for the night' && ok "frozen file denied with the marker" || fail "frozen file passed"
+run_hook protect-paths "{\"tool_name\":\"Edit\",\"cwd\":\"$ON\",\"tool_input\":{\"file_path\":\"$ON/lib/a.dart\"}}"
+! denied && ok "file outside the freeze list allowed" || fail "unfrozen file denied"
+run_hook protect-paths "{\"tool_name\":\"Edit\",\"cwd\":\"$SUB\",\"tool_input\":{\"file_path\":\"$ON/pubspec.yaml\"}}"
+denied && ok "frozen file denied from a subdirectory cwd (root = git top-level)" || fail "freeze fails open from a subdirectory"
+rm -f "$ON/.roadworthy/overnight"
+run_hook protect-paths "{\"tool_name\":\"Edit\",\"cwd\":\"$ON\",\"tool_input\":{\"file_path\":\"$ON/pubspec.yaml\"}}"
+! denied && ok "without the marker the freeze list is inert" || fail "freeze applied without the marker"
+
+# ── overnight scripts: start refuses, entry measures, close needs FRESH ─────
+section "overnight scripts"
+OV="$TMP/ov"; mkdir -p "$OV"; git -C "$OV" init -q; git -C "$OV" config user.email t@t; git -C "$OV" config user.name t
+bash skills/document/scripts/docs-init.sh "$OV" >/dev/null
+printf 'true\n' > "$OV/.roadworthy/gates"; printf 'docs/**\n' > "$OV/.roadworthy/scope"
+printf '# plan\n\n## Overnight policy\n- Decided at night, with a source: anything established.\n- Reserved for the user: none.\n' > "$OV/docs/plans/2026-01-02-0100-night.md"
+git -C "$OV" add -A; git -C "$OV" commit -q -m base
+S="$ROOT/skills/overnight/scripts"
+! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night) >/dev/null 2>"$TMP/ov1" && grep -q 'no review' "$TMP/ov1" && ok "start refused without a review" || fail "start without review: $(cat "$TMP/ov1")"
+sha="$(shasum -a 256 "$OV/docs/plans/2026-01-02-0100-night.md" | cut -d' ' -f1)"
+printf 'plan: 2026-01-02-0100-night.md\nplan-sha256: %s\nVERDICT: REJECTED\n' "$sha" > "$OV/docs/plans/2026-01-02-0100-night.review.md"
+git -C "$OV" add -A; git -C "$OV" commit -q -m rejected
+! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night) >/dev/null 2>"$TMP/ov2" && grep -q 'not APPROVED' "$TMP/ov2" && ok "start refused on a rejected review" || fail "start on rejected review: $(cat "$TMP/ov2")"
+printf 'plan: 2026-01-02-0100-night.md\nplan-sha256: 0000\nVERDICT: APPROVED\n' > "$OV/docs/plans/2026-01-02-0100-night.review.md"
+git -C "$OV" add -A; git -C "$OV" commit -q -m stale
+! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night) >/dev/null 2>"$TMP/ov2b" && grep -q 'SHA-256' "$TMP/ov2b" && ok "start refused on a review bound to another hash" || fail "start on stale review: $(cat "$TMP/ov2b")"
+printf 'plan: 2026-01-02-0100-night.md\nplan-sha256: %s\nVERDICT: APPROVED\n' "$sha" > "$OV/docs/plans/2026-01-02-0100-night.review.md"
+! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night) >/dev/null 2>"$TMP/ov3" && grep -q 'dirty' "$TMP/ov3" && ok "start refused on a dirty tree (approved review not committed)" || fail "start on dirty tree: $(cat "$TMP/ov3")"
+git -C "$OV" add -A; git -C "$OV" commit -q -m review
+printf '# plan without policy\n' > "$OV/docs/plans/2026-01-02-0200-nopolicy.md"
+sha2="$(shasum -a 256 "$OV/docs/plans/2026-01-02-0200-nopolicy.md" | cut -d' ' -f1)"
+printf 'plan: x\nplan-sha256: %s\nVERDICT: APPROVED\n' "$sha2" > "$OV/docs/plans/2026-01-02-0200-nopolicy.review.md"
+git -C "$OV" add -A; git -C "$OV" commit -q -m nopolicy
+! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0200-nopolicy.md night) >/dev/null 2>"$TMP/ov4" && grep -q 'Overnight policy' "$TMP/ov4" && ok "start refused on a plan without the Overnight policy section" || fail "start without policy section"
+t0="$(python3 -c 'import time; print(int(time.time()*1000))')"
+diary="$(cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night | tail -1)"
+t1="$(python3 -c 'import time; print(int(time.time()*1000))')"
+[ -f "$OV/.roadworthy/overnight" ] && [ -f "$OV/$diary" ] && ok "start writes the marker and the diary ($diary)" || fail "start did not write marker/diary"
+ms="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["started_ms"])' "$OV/.roadworthy/overnight")"
+[ "$ms" -ge "$t0" ] && [ "$ms" -le "$t1" ] && ok "started_ms was measured by the script (within the test's clock window)" || fail "started_ms outside window: $t0 ≤ $ms ≤ $t1"
+! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night) >/dev/null 2>"$TMP/ov5" && grep -q 'already on' "$TMP/ov5" && ok "start refused while the marker exists" || fail "double start accepted"
+! (cd "$OV" && bash "$S/overnight-entry.sh" --phase F1 --decision d --reason r) >/dev/null 2>"$TMP/ov6" && grep -q -- '--source' "$TMP/ov6" && ok "entry refused without a source" || fail "entry without source accepted"
+(cd "$OV" && bash "$S/overnight-entry.sh" --phase F1 --decision "use X" --reason "spec says so" --source "RFC 0000 §1" --ratify) >/dev/null && grep -q -E '^- `[0-9]{13}` · [0-9T:Z-]+ · \*\*F1\*\* · use X · reason: spec says so · source: RFC 0000 §1 · ratify in the morning$' "$OV/$diary" && ok "entry carries epoch ms + ISO taken by the script, under Decisions" || fail "entry format: $(grep 'use X' "$OV/$diary")"
+(cd "$OV" && bash "$S/overnight-entry.sh" --blocker "pricing is the user's") >/dev/null && python3 - "$OV/$diary" <<'PY' && ok "blocker lands under its own section" || fail "blocker section"
+import sys; t=open(sys.argv[1]).read(); i=t.index("## Blockers for the morning"); j=t.index("## Delivery"); sys.exit(0 if "pricing is the user's" in t[i:j] else 1)
+PY
+(cd "$OV" && bash "$S/overnight-entry.sh" --phase-done F1 --sha abc1234 --gates "suite green") >/dev/null && grep -q '^| F1 | `abc1234` | suite green |' "$OV/$diary" && [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["phase"])' "$OV/.roadworthy/overnight")" = "F1" ] && ok "phase ledger row; marker phase follows" || fail "phase ledger row / marker phase"
+export ROADWORTHY_DATA="$TMP/ovdata"
+! (cd "$OV" && bash "$S/overnight-close.sh") >/dev/null 2>"$TMP/ov7" && grep -q 'dirty' "$TMP/ov7" && ok "close refused on a dirty tree (the diary is uncommitted)" || fail "close on dirty tree"
+git -C "$OV" add -A; git -C "$OV" commit -q -m diary
+! (cd "$OV" && bash "$S/overnight-close.sh") >/dev/null 2>"$TMP/ov8" && grep -q -E 'STALE|MISSING' "$TMP/ov8" && [ -f "$OV/.roadworthy/overnight" ] && ok "close refused while a gate is MISSING; marker kept" || fail "close without evidence accepted"
+handoff="$(cd "$OV" && bash "$S/overnight-close.sh" --run | tail -1)"
+[ -f "$OV/$handoff" ] && [ ! -f "$OV/.roadworthy/overnight" ] && grep -q "pricing is the user's" "$OV/$handoff" && grep -q '| ov | ' "$OV/$handoff" && ok "close with FRESH gates writes the hand-off with the blockers and removes the marker" || fail "close --run: $handoff"
+unset ROADWORTHY_DATA
+
 # ── plan template: risk band ────────────────────────────────────────────────
 # ── rw-metrics: KPIs from a synthetic run ───────────────────────────────────
 section "rw-metrics"
@@ -371,6 +460,7 @@ fi
 
 section "plan template"
 grep -q '## Risk band' skills/plan/templates/plan.md && [ "$(grep -o -E '\*\*(protected|critical|standard|minimal)\*\*' skills/plan/templates/plan.md | sort -u | wc -l | tr -d ' ')" = "4" ] && ok "risk band with the four bands" || fail "risk band missing"
+grep -q '^## Overnight policy' skills/plan/templates/plan.md && grep -q 'Reserved for the user' skills/plan/templates/plan.md && ok "overnight policy section with the two lists" || fail "overnight policy section missing"
 
 # ── privacy: the plugin must carry no personal data ──────────────────────────
 section "privacy scan"
