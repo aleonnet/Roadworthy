@@ -52,6 +52,12 @@ invocation.
 And one agent, `cold-reviewer`: read-only, sees only the diff or plan and the criteria,
 reports only what affects correctness, fails closed.
 
+## Evals
+
+`evals/` holds six cases that measure the guardrails with and without the plugin on the same
+prompts; `bin/rw-metrics` turns the run into seven KPIs (task success, regression,
+out-of-scope files, false success, denials, tokens, turns). See `evals/README.md`.
+
 ## Configuration
 
 Set on enable, or later with `/plugin` → Roadworthy → Configure. Values reach the hooks as

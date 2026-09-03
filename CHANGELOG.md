@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `evals/`: six `claude plugin eval` cases (scope, protected, honest status, document, two
+  no-op cases) on a scaffolded toy project; graders judge file state and the final `STATUS:`
+  line, never the attempt.
+- `bin/rw-metrics`: the seven KPIs per case and arm from the eval JSON, the run trace
+  (`modelUsage`, `permission_denials`, `num_turns`, `duration_ms`) and the kept workspace
+  (`pytest` after the run, `git status` against `SCOPE.txt`).
+- `docs/reference/roadmap.md`: what is pending and why, measured.
+
 ## [0.2.1] - 2026-09-02
 
 Adopting 0.2.0 on a real multi-language monorepo showed four places where the scripts
