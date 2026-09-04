@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 # plan-review-gate — PreToolUse hook for ExitPlanMode.
 #
-# A plan may only be submitted for approval after an adversarial review that
-# is bound to the exact bytes of the plan. The review lives next to the plan
-# as `<plan>.review.md` and must carry:
+# A plan may only be submitted after an adversarial review that lives next to it
+# as `<plan>.review.md` (suffix configurable) and carries:
 #   plan: <plan file name>
-#   plan-sha256: <sha256 of the plan file>
-#   VERDICT: APPROVED
-# Any review for the same plan and SHA that says VERDICT: REJECTED wins.
-# The newest non-review .md in the plans directory is "the current plan".
-# Symlinks and names containing '/' are refused (path traversal).
+#   round: <n>                      (1 when absent)
+#   VERDICT: APPROVED | REJECTED | ESCALATE
+#   owner: <the user's written decision>   (only after an escalation / beyond round 2)
+#   sections-round1: <## headings of the plan at round 1, separated by " | ">   (optional)
 #
-# Deliberately a mechanical lock, not a conversation: the review is produced
-# by the agent itself (see /roadworthy:plan), never by the human.
+# Mechanical locks (2026-09-03, after a 16-round plan that grew to satisfy the reviewer):
+#   * the review is bound to the plan by NAME, not by hash: what the user approved is what
+#     counts, editing the plan after approval does not void it;
+#   * REJECTED denies; ESCALATE denies until the user answers (the review must then carry
+#     an `owner:` line and VERDICT: APPROVED);
+#   * two rounds is the ceiling: round ≥ 3 only passes with the user's `owner:` decision;
+#   * growth guard: a `## ` section that was not in `sections-round1:` denies, unless the
+#     user decided (`owner:`);
+#   * the current plan is the one the ExitPlanMode call submits (matched by content);
+#     only when the event carries no plan text is "newest .md in the directory" used.
+# Symlinks and names containing '/' are refused (path traversal).
 export RW_HOOK="plan-review-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -23,36 +30,80 @@ rw_bool "$(rw_option PLAN_REVIEW_REQUIRED true)" || exit 0
 plans="$(rw_option PLANS_DIR "")"
 [ -n "$plans" ] || plans="$HOME/.claude/plans"
 suffix="$(rw_option REVIEW_SUFFIX ".review.md")"
+max_rounds="$(rw_option MAX_REVIEW_ROUNDS 2)"
 [ -d "$plans" ] || deny PreToolUse "plans directory $plans does not exist (plan_review_required)."
 
-# The current plan is the most recently modified non-review .md file.
-plan="$(python3 - "$plans" "$suffix" <<'PY'
-import os, sys
-d, suffix = sys.argv[1], sys.argv[2]
-c = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".md") and not f.endswith(suffix)]
-c = [p for p in c if os.path.isfile(p)]
-print(max(c, key=os.path.getmtime) if c else "")
+submitted="$(rw_field tool_input.plan)"
+verdict="$(RW_SUBMITTED="$submitted" python3 - "$plans" "$suffix" "$max_rounds" <<'PY'
+import os, re, sys
+d, suffix, max_rounds = sys.argv[1], sys.argv[2], int(sys.argv[3])
+submitted = os.environ.get("RW_SUBMITTED", "").strip()
+
+def out(kind, msg=""):
+    print(kind + ("\t" + msg if msg else "")); sys.exit(0)
+
+cands = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".md") and not f.endswith(suffix)]
+cands = [p for p in cands if os.path.isfile(p) or os.path.islink(p)]
+if not cands: out("DENY", f"no plan found in {d}.")
+plan = None
+if submitted:
+    for p in cands:
+        if os.path.islink(p): continue
+        try:
+            if open(p, encoding="utf-8").read().strip() == submitted: plan = p; break
+        except Exception: pass
+if plan is None:
+    plan = max(cands, key=os.path.getmtime)
+if os.path.islink(plan): out("DENY", "the current plan is a symlink; refused.")
+name = os.path.basename(plan)
+
+def field(text, key):
+    m = re.search(r"^(?:%s):[ \t]*(.*)$" % key, text, re.M)
+    return m.group(1).strip() if m else ""
+
+reviews = []
+for f in os.listdir(d):
+    if not f.endswith(suffix): continue
+    p = os.path.join(d, f)
+    if os.path.islink(p): out("DENY", f"{f} is a symlink; refused.")
+    text = open(p, encoding="utf-8", errors="replace").read()
+    declared = field(text, "plan|plano")
+    if not declared: continue
+    if "/" in declared: out("DENY", f"{f} declares a plan path with '/'; refused.")
+    if declared != name: continue
+    reviews.append((os.path.getmtime(p), f, text))
+if not reviews: out("DENY", f"no review for the current plan ({name}). Run /roadworthy:plan review, then submit.")
+reviews.sort()
+_, rname, text = reviews[-1]
+v = field(text, "VERDICT|VEREDITO").upper()
+rnd = field(text, "round|rodada")
+rnd = int(rnd) if rnd.isdigit() else 1
+owner = field(text, "owner|dono")
+if "REJECT" in v or "REPROV" in v:
+    out("DENY", f"{rname} rejected the plan (round {rnd} of {max_rounds}). Fix the plan and review again; if the blockers do not fall, the next round is an escalation to the user, not another fix.")
+if "ESCAL" in v:
+    form = []
+    if not re.search(r"^## .*(Recomend|Recommend)", text, re.M): form.append("a '## Recomendações' section")
+    if not re.search(r"^## .*Alternativ", text, re.M): form.append("an '## Alternativas' section")
+    if not re.search(r"^\s*[-*].*(fonte|source):", text, re.M | re.I): form.append("a 'fonte:' line per alternative")
+    extra = (" The escalation is malformed: it lacks " + ", ".join(form) + ".") if form else ""
+    out("DENY", f"{rname} escalated the plan to the user after round {rnd}: blockers that did not fall between rounds, recommendations and sourced alternatives are in the review. Wait for the user's decision, record it as an 'owner:' line with VERDICT: APPROVED, then submit.{extra}")
+if not ("APPROV" in v or "APROV" in v):
+    out("DENY", f"{rname} has no verdict (VERDICT: APPROVED | REJECTED | ESCALATE).")
+if rnd > max_rounds and not owner:
+    out("DENY", f"{rname} is round {rnd}: the ceiling is {max_rounds}. Beyond it only the user's written decision unlocks the plan (an 'owner:' line in the review); stop iterating with the reviewer.")
+snap = field(text, "sections-round1|secoes-rodada1|seções-rodada1")
+if snap and not owner:
+    base = {s.strip() for s in snap.split("|") if s.strip()}
+    now = [l[3:].strip() for l in open(plan, encoding="utf-8", errors="replace").read().splitlines() if l.startswith("## ")]
+    grown = [s for s in now if s not in base]
+    if grown:
+        out("DENY", f"the plan grew {len(grown)} section(s) after round 1 ({'; '.join(grown)}): a plan that grows to satisfy the reviewer is the failure mode this gate exists for. Stop and report to the user; only an 'owner:' decision in the review unlocks it.")
+out("ALLOW")
 PY
 )"
-[ -n "$plan" ] || deny PreToolUse "no plan found in $plans."
-[ -L "$plan" ] && deny PreToolUse "the current plan is a symlink; refused."
-
-name="$(basename "$plan")"
-sha="$(shasum -a 256 "$plan" | cut -d' ' -f1)"
-approved=0
-for review in "$plans"/*"$suffix"; do
-  [ -e "$review" ] || continue
-  [ -L "$review" ] && deny PreToolUse "$(basename "$review") is a symlink; refused."
-  declared="$(grep -m1 -E '^(plan|plano):' "$review" | sed -E 's/^(plan|plano):[[:space:]]*//')"
-  [ -n "$declared" ] || continue
-  case "$declared" in */*) deny PreToolUse "$(basename "$review") declares a plan path with '/'; refused." ;; esac
-  [ "$declared" = "$name" ] || continue
-  [ "$(grep -m1 -E '^(plan|plano)-sha256:' "$review" | sed -E 's/^(plan|plano)-sha256:[[:space:]]*//')" = "$sha" ] || continue
-  # VERDICT: is the canonical line; VEREDITO: is accepted for reviews written in Portuguese.
-  case "$(grep -m1 -E '^(VERDICT|VEREDITO):' "$review" | tr -d '\r')" in
-    *REJECT*|*REPROV*) deny PreToolUse "$(basename "$review") rejected this exact version of the plan. Fix the plan and review again." ;;
-    *APPROV*|*APROV*) approved=$((approved + 1)) ;;
-  esac
-done
-[ "$approved" -ge 1 ] || deny PreToolUse "no approved review bound to the current plan ($name, sha ${sha:0:12}). Run /roadworthy:plan review, then submit."
-exit 0
+case "$verdict" in
+  ALLOW*) exit 0 ;;
+  DENY*) deny PreToolUse "${verdict#DENY	}" ;;
+  *) deny PreToolUse "plan-review-gate could not evaluate the review ($verdict)." ;;
+esac

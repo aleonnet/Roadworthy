@@ -29,7 +29,7 @@ idempotent; `claude plugin update roadworthy@roadworthy` picks up new versions.
 | `scope-lock` | Edit/Write | While `.roadworthy/scope` exists in the project, any edit outside the listed globs is denied. |
 | `protect-paths` | Edit/Write | Paths matching `protected_paths` are never edited, whatever the model decides. |
 | `guard-commit` | Bash | `git commit` with a forbidden flag (default `--trailer`) or with nothing staged is denied. |
-| `plan-review-gate` | ExitPlanMode | A plan can only be submitted with a review file bound to its SHA-256 that says `VERDICT: APPROVED`. |
+| `plan-review-gate` | ExitPlanMode | A plan can only be submitted with a review file for it (by name) that says `VERDICT: APPROVED`; REJECTED and ESCALATE deny, round 3 needs the user's `owner:` decision, and a section added after round 1 denies (growth guard). The submitted plan text picks the file, not the newest file in the shared directory. |
 | `overnight-guard` | Bash | While `.roadworthy/overnight` exists (set by `/roadworthy:overnight` on the user's order), `git push`, `git merge`, `git tag`, `gh pr merge` and every `deny:` rule of `.roadworthy/overnight-rules` are denied; `protect-paths` also freezes the file's `freeze:` globs. |
 
 Every hook declares its crash policy. The four guards **fail closed**: an internal error denies
@@ -58,7 +58,7 @@ table. Per-project freezes live in `.roadworthy/overnight-rules` (`deny: <regex>
 | `/roadworthy:close` | `close.sh` runs the gates declared in `.roadworthy/gates` after the last commit, records each with the content fingerprint of the tree, and says FRESH/STALE/MISSING later; `close-front.sh` moves a closed front into history with links rewritten. |
 | `/roadworthy:document` | Dated decision records with MADR status vocabulary, revision by new file, a Confirmation section; `docs-init.sh` builds the tree by role, `docs-check.sh` and `pointers-check.sh` keep it honest. Projects that write status words in another language declare them under `status` in `.roadworthy/docs.json`. |
 | `/roadworthy:resume` | Resume from disk: read the map, pick the newest handoff by name (`resume-pick.sh`), confirm the state, declare what was read. |
-| `/roadworthy:overnight` | Unattended execution of an approved plan, only on the user's order: `overnight-start.sh` checks the hash-bound review and the plan's Overnight policy and opens a diary whose timestamps are taken by script; `overnight-entry.sh` records decisions with a primary source, phase commits and blockers; `overnight-close.sh` requires every gate FRESH and writes the morning hand-off. |
+| `/roadworthy:overnight` | Unattended execution of an approved plan, only on the user's order: `overnight-start.sh` checks the approved review (by name) and the plan's Overnight policy (English or Portuguese title), listing every missing precondition at once and opens a diary whose timestamps are taken by script; `overnight-entry.sh` records decisions with a primary source, phase commits and blockers; `overnight-close.sh` requires every gate FRESH and writes the morning hand-off. |
 
 And one agent, `cold-reviewer`: read-only, sees only the diff or plan and the criteria,
 reports only what affects correctness, fails closed.

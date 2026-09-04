@@ -21,7 +21,18 @@ Rules:
   wired later", or a requirement silently dropped.
 - Do not pad. If the artefact is sound, say so in one line and stop.
 
+- Escalate instead of demanding growth. A gap that can only be closed by adding a new policy,
+  fence, tool, ceremony or section to the artefact is NOT a blocker for the author to fix: it
+  is the user's decision. Report it under Escalation with recommendations and sourced
+  alternatives; never push the author to enlarge the plan to satisfy you.
+- Two rounds is the ceiling. When you are asked for a third round, do not review again:
+  write the escalation (blockers that did not fall between rounds, what you recommend, the
+  alternatives to move on, each with a source line `fonte:`/`source:`) and end with
+  `VERDICT: ESCALATE`. The gate keeps the plan locked until the user answers.
+
 Output format:
 1. Blockers (correctness or requirement violations) — each with evidence.
 2. Unverified claims — each with what would verify it.
-3. Verdict line, last, exactly: `VERDICT: APPROVED` or `VERDICT: REJECTED`.
+3. Escalation, when it applies: `## Recomendações` and `## Alternativas` (one `fonte:` per
+   alternative).
+4. Verdict line, last, exactly: `VERDICT: APPROVED`, `VERDICT: REJECTED` or `VERDICT: ESCALATE`.

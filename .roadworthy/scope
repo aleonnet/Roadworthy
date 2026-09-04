@@ -1,0 +1,17 @@
+hooks/overnight-guard
+hooks/protect-paths
+hooks/hooks.json
+skills/overnight/**
+skills/plan/SKILL.md
+skills/plan/templates/plan.md
+tests/run.sh
+evals/overnight/**
+evals/README.md
+README.md
+CHANGELOG.md
+.claude-plugin/plugin.json
+.claude-plugin/marketplace.json
+docs/reference/roadmap.md
+docs/decisions/2026-09-03-1322-overnight-mode.md
+docs/plans/**
+skills/document/scripts/docs-check.sh

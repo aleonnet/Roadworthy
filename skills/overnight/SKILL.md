@@ -23,7 +23,9 @@ not the trigger. There is no clock: nothing starts because it is late.
 
 Refuses unless: no marker is on yet; `.roadworthy/scope` exists; the plan's review file
 (`<plan><review_suffix>`, default `.review.md`) says `VERDICT: APPROVED` for the plan's current
-SHA-256; the plan has a `## Overnight policy` section; and the tree is clean. On success it writes
+APPROVED (by name: what the user approved is what counts); the plan has a `## Overnight policy`
+(or `## Política da madrugada`) section; and the tree is clean. Every missing precondition is
+listed at once and reported to the user, never satisfied by widening the plan. On success it writes
 the marker `.roadworthy/overnight` (start time taken by the script, plan, hash, topic, diary path,
 current phase) and creates the diary `<YYYY-MM-DD-HHMM>-overnight-<topic>.md` in the decisions
 directory declared in `.roadworthy/docs.json`. The marker is local state: list

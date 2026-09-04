@@ -8,8 +8,8 @@ allowed-tools: Bash Read Grep Glob
 # Plan
 
 A plan is born ready. Review confirms it; review never completes it. The goal is approval in
-one round, at most one adjustment. Two rounds is the ceiling; if blockers do not fall between
-rounds, escalate to the user with the delta, do not iterate.
+one round, at most one adjustment. Two rounds is the ceiling, enforced by the gate; the third is an escalation to the
+user with the delta and sourced alternatives, never another fix.
 
 ## 1. Deep reading before a single line of plan
 
@@ -43,20 +43,28 @@ returns the delta to the user.
 Write the plan's globs to `.roadworthy/scope` in the project root (one per line). From that
 moment `scope-lock` denies edits outside them. Widen only with a written reason in the plan.
 
-## 4. Review bound to the hash
+## 4. Review by name, two rounds, then the user
 
 Run the `cold-reviewer` agent on the plan with the criteria from section 2. Write the verdict
 to `<plan>.review.md` next to the plan:
 
 ```
 plan: <plan file name>
-plan-sha256: <sha256 of the plan file>
-VERDICT: APPROVED | REJECTED
+round: <1 or 2>
+sections-round1: <the plan's "## " headings at round 1, separated by " | ">   (write it at round 1)
+VERDICT: APPROVED | REJECTED | ESCALATE
 ```
 
-Then, and only then, submit the plan. `plan-review-gate` refuses submission without an
-approved review for the exact bytes. Editing the plan invalidates the review; that is the
-point.
+`sections-round1` comes from `grep '^## ' <plan>`. The review is bound to the plan by NAME:
+what the user approves is what counts, and editing the plan afterwards does not void it.
+
+Rules the gate enforces (`plan-review-gate`): REJECTED denies; a `## ` section that was not in
+`sections-round1` denies ("the plan is growing to satisfy the reviewer": stop and report);
+round 3 does not exist — the reviewer writes an escalation (blockers that did not fall,
+recommendations, sourced alternatives) and `VERDICT: ESCALATE`, which denies until the user
+answers. Record the user's decision as an `owner:` line in the review with `VERDICT: APPROVED`
+and then submit. A missing precondition of any kind is reported to the user, never satisfied
+by adding policy, fences, tools or sections to the plan.
 
 ## 5. Closing
 

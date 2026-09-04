@@ -52,7 +52,7 @@ run_hook principles "{\"transcript_path\":\"$PROJ/s.jsonl\",\"cwd\":\"/tmp\",\"h
 [ "$RC" -eq 0 ] && [ -z "$ERR" ] && ok "exit 0, silent stderr" || fail "principles rc=$RC err=$ERR"
 n_general="$(context | awk '/^ROADWORTHY PRINCIPLES/{s=1;next} /^PROJECT RULES/{s=0} s' | grep -c -E '^[0-9]+[a-z]*\. ' || true)"
 n_project="$(context | awk '/^PROJECT RULES/{s=1;next} s' | grep -c -E '^[0-9]+[a-z]*\. ' || true)"
-[ "$n_general" = "13" ] && ok "13 bundled principles injected" || fail "bundled principles: $n_general"
+[ "$n_general" = "8" ] && ok "8 bundled principles injected (only rules with a mechanism behind them)" || fail "bundled principles: $n_general"
 [ "$n_project" = "2" ] && ok "2 project rules injected, prose skipped" || fail "project rules: $n_project"
 context | grep -q "](${PROJ}/memory/feedback_one.md)" && ok "relative link rewritten to absolute" || fail "link rewrite"
 run_hook principles "{\"transcript_path\":\"$HOME_SANDBOX/.claude/projects/-none/s.jsonl\"}"
@@ -133,22 +133,45 @@ run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$G\",\"tool_input\":{\"
 
 # ── plan-review-gate ─────────────────────────────────────────────────────────
 section "plan-review-gate"
-P="$HOME_SANDBOX/.claude/plans"; printf '# plan\n' > "$P/my-plan.md"
+P="$HOME_SANDBOX/.claude/plans"; printf '# plan\n\n## Goal\n' > "$P/my-plan.md"
 export CLAUDE_PLUGIN_OPTION_PLANS_DIR="$P"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
 denied && ok "no review → denied" || fail "no review passed"
-sha="$(shasum -a 256 "$P/my-plan.md" | cut -d' ' -f1)"
-printf 'plan: my-plan.md\nplan-sha256: %s\nVERDICT: APPROVED\n' "$sha" > "$P/my-plan.review.md"
+printf 'plan: my-plan.md\nround: 1\nVERDICT: APPROVED\n' > "$P/my-plan.review.md"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
-! denied && ok "approved review bound to sha → allowed" || fail "approved review denied"
-printf '# plan edited\n' > "$P/my-plan.md"
+! denied && ok "approved review by name → allowed" || fail "approved review denied"
+printf '# plan edited\n\n## Goal\n' > "$P/my-plan.md"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
-denied && ok "editing the plan invalidates the review" || fail "stale review accepted"
-sha="$(shasum -a 256 "$P/my-plan.md" | cut -d' ' -f1)"
-printf 'plan: my-plan.md\nplan-sha256: %s\nVERDICT: REJECTED\n' "$sha" > "$P/my-plan.review.md"
+! denied && ok "editing the plan keeps the approval (what the user approved is what counts, no hash)" || fail "edit voided the approval"
+printf 'plan: my-plan.md\nround: 2\nVERDICT: REJECTED\n' > "$P/my-plan.review.md"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
 denied && ok "rejected review → denied" || fail "rejected review passed"
-printf 'plan: ../x.md\nplan-sha256: %s\nVERDICT: APPROVED\n' "$sha" > "$P/evil.review.md"
+printf 'plan: my-plan.md\nround: 3\nVERDICT: ESCALATE\n## Recomendações\n- x\n## Alternativas\n- y — fonte: RFC 0000\n' > "$P/my-plan.review.md"
+run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
+denied && printf '%s' "$OUT" | grep -q "escalated" && ok "ESCALATE → denied until the user answers" || fail "ESCALATE passed"
+printf 'plan: my-plan.md\nround: 3\nVERDICT: ESCALATE\n' > "$P/my-plan.review.md"
+run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
+denied && printf '%s' "$OUT" | grep -q "malformed" && ok "ESCALATE without recommendations/alternatives/sources is named malformed" || fail "malformed escalation not named"
+printf 'plan: my-plan.md\nround: 3\nVERDICT: APPROVED\n' > "$P/my-plan.review.md"
+run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
+denied && printf '%s' "$OUT" | grep -q "ceiling" && ok "round 3 approved without the owner → denied (ceiling of 2)" || fail "round 3 passed without owner"
+printf 'plan: my-plan.md\nround: 3\nowner: keep the plan, drop item 4\nVERDICT: APPROVED\n' > "$P/my-plan.review.md"
+run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
+! denied && ok "round 3 with the owner's decision → allowed" || fail "owner decision not honoured"
+printf 'plan: my-plan.md\nround: 2\nsections-round1: Goal\nVERDICT: APPROVED\n' > "$P/my-plan.review.md"
+printf '# plan\n\n## Goal\n\n## Overnight policy\n' > "$P/my-plan.md"
+run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
+denied && printf '%s' "$OUT" | grep -q "grew" && ok "a section added after round 1 → denied (growth guard)" || fail "growth guard silent"
+printf '# plan\n\n## Goal\n' > "$P/my-plan.md"
+run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
+! denied && ok "same sections as round 1 → allowed" || fail "growth guard false positive"
+printf '# other plan\n' > "$P/other.md"; sleep 1; touch "$P/other.md"   # newest by mtime, no review
+run_hook plan-review-gate "$(python3 -c 'import json; print(json.dumps({"tool_name":"ExitPlanMode","tool_input":{"plan":"# plan\n\n## Goal"}}))')"
+! denied && ok "the submitted plan (by content) wins over the newest file in the shared directory" || fail "newest file chosen over the submitted plan"
+run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
+denied && ok "without submitted text the newest file is the plan (other.md, unreviewed → denied)" || fail "fallback to newest broken"
+rm "$P/other.md"
+printf 'plan: ../x.md\nVERDICT: APPROVED\n' > "$P/evil.review.md"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
 denied && ok "review with '/' in plan name refused" || fail "path traversal accepted"
 rm "$P/evil.review.md"
@@ -406,10 +429,10 @@ sha="$(shasum -a 256 "$OV/docs/plans/2026-01-02-0100-night.md" | cut -d' ' -f1)"
 printf 'plan: 2026-01-02-0100-night.md\nplan-sha256: %s\nVERDICT: REJECTED\n' "$sha" > "$OV/docs/plans/2026-01-02-0100-night.review.md"
 git -C "$OV" add -A; git -C "$OV" commit -q -m rejected
 ! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night) >/dev/null 2>"$TMP/ov2" && grep -q 'not APPROVED' "$TMP/ov2" && ok "start refused on a rejected review" || fail "start on rejected review: $(cat "$TMP/ov2")"
-printf 'plan: 2026-01-02-0100-night.md\nplan-sha256: 0000\nVERDICT: APPROVED\n' > "$OV/docs/plans/2026-01-02-0100-night.review.md"
-git -C "$OV" add -A; git -C "$OV" commit -q -m stale
-! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night) >/dev/null 2>"$TMP/ov2b" && grep -q 'SHA-256' "$TMP/ov2b" && ok "start refused on a review bound to another hash" || fail "start on stale review: $(cat "$TMP/ov2b")"
-printf 'plan: 2026-01-02-0100-night.md\nplan-sha256: %s\nVERDICT: APPROVED\n' "$sha" > "$OV/docs/plans/2026-01-02-0100-night.review.md"
+printf '# plan\n' > "$OV/docs/plans/2026-01-02-0300-bare.md"
+! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0300-bare.md night) >/dev/null 2>"$TMP/ov2b" && grep -q '3 precondition' "$TMP/ov2b" && grep -q 'no review' "$TMP/ov2b" && grep -q 'Overnight policy' "$TMP/ov2b" && grep -q 'dirty' "$TMP/ov2b" && ok "start lists EVERY missing precondition at once (review, policy, dirty tree)" || fail "preconditions not listed together: $(cat "$TMP/ov2b")"
+rm "$OV/docs/plans/2026-01-02-0300-bare.md"
+printf 'plan: 2026-01-02-0100-night.md\nVERDICT: APPROVED\n' > "$OV/docs/plans/2026-01-02-0100-night.review.md"
 ! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night) >/dev/null 2>"$TMP/ov3" && grep -q 'dirty' "$TMP/ov3" && ok "start refused on a dirty tree (approved review not committed)" || fail "start on dirty tree: $(cat "$TMP/ov3")"
 git -C "$OV" add -A; git -C "$OV" commit -q -m review
 printf '# plan without policy\n' > "$OV/docs/plans/2026-01-02-0200-nopolicy.md"
@@ -417,6 +440,10 @@ sha2="$(shasum -a 256 "$OV/docs/plans/2026-01-02-0200-nopolicy.md" | cut -d' ' -
 printf 'plan: x\nplan-sha256: %s\nVERDICT: APPROVED\n' "$sha2" > "$OV/docs/plans/2026-01-02-0200-nopolicy.review.md"
 git -C "$OV" add -A; git -C "$OV" commit -q -m nopolicy
 ! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0200-nopolicy.md night) >/dev/null 2>"$TMP/ov4" && grep -q 'Overnight policy' "$TMP/ov4" && ok "start refused on a plan without the Overnight policy section" || fail "start without policy section"
+printf '# plano\n\n## Política da madrugada\n- nada.\n' > "$OV/docs/plans/2026-01-02-0400-pt.md"
+printf 'plan: 2026-01-02-0400-pt.md\nVERDICT: APPROVED\n' > "$OV/docs/plans/2026-01-02-0400-pt.review.md"
+! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0400-pt.md night) >/dev/null 2>"$TMP/ov4b" && grep -q 'dirty' "$TMP/ov4b" && ! grep -q 'Overnight policy' "$TMP/ov4b" && ok "a plan titled 'Política da madrugada' is refused only for what is really missing (dirty tree), not for the title" || fail "PT title refused: $(cat "$TMP/ov4b")"
+rm "$OV/docs/plans/2026-01-02-0400-pt.md" "$OV/docs/plans/2026-01-02-0400-pt.review.md"
 t0="$(python3 -c 'import time; print(int(time.time()*1000))')"
 diary="$(cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night | tail -1)"
 t1="$(python3 -c 'import time; print(int(time.time()*1000))')"

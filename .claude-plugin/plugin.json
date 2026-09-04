@@ -59,8 +59,14 @@
     "plan_review_required": {
       "type": "boolean",
       "title": "Require plan review",
-      "description": "Deny ExitPlanMode unless a review file bound to the plan's SHA-256 records VERDICT: APPROVED.",
+      "description": "Deny ExitPlanMode unless the plan's review file (by name) records VERDICT: APPROVED; REJECTED and ESCALATE deny, and a round beyond the ceiling needs the user's owner: decision.",
       "default": true
+    },
+    "max_review_rounds": {
+      "type": "number",
+      "title": "Review rounds ceiling",
+      "description": "Rounds of cold review a plan may take before only the user's written decision (an owner: line in the review) unlocks it.",
+      "default": 2
     },
     "review_suffix": {
       "type": "string",

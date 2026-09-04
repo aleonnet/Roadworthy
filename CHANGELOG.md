@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — 2026-09-03, after a 16-round plan
+- `plan-review-gate`: the review binds to the plan by NAME (no hash: what the user approved is what counts); REJECTED and ESCALATE deny; round ≥ 3 passes only with the user's `owner:` decision; growth guard (a `## ` section absent from `sections-round1:` denies); the submitted plan text picks the file, not the newest `.md` in the shared directory. Option `max_review_rounds` (default 2).
+- `cold-reviewer`: third verdict `VERDICT: ESCALATE` with `## Recomendações` / `## Alternativas` (one `fonte:` per alternative); gaps that need new policy, fences, tools or sections are escalated, never demanded.
+- `overnight-start.sh`: lists every missing precondition at once; accepts `## Política da madrugada`; no hash check.
+- `principles/PRINCIPLES.md`: only rules with a mechanism behind them are injected (8 lines, each naming its hook).
+
+## [Unreleased]
+
 ## [0.3.0] - 2026-09-03
 
 Overnight mode: the routine of running an approved plan unattended and auditing it in the
