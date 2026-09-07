@@ -227,6 +227,14 @@ bash skills/document/scripts/docs-check.sh "$D" >/dev/null && ok "review compani
 printf 'status: accepted\n' > "$D/2026-01-01-0900-first.notes.md"
 ! bash skills/document/scripts/docs-check.sh "$D" >/dev/null 2>&1 && ok "other dotted suffix still fails" || fail "dotted suffix passed"
 rm "$D/2026-01-01-0900-first.notes.md"
+# The plan skill writes `<plan><review_suffix>`: a plan `x.plan.md` gets `x.plan.review.md`, and the
+# reviewer writes `plan:` / `round:` / `VERDICT:` — no `status:` line (measured 2026-09-07 on a project).
+printf 'status: accepted\n' > "$D/2026-01-06-1400-work.plan.md"
+printf 'plan: 2026-01-06-1400-work.plan.md\nround: 1\nVERDICT: APPROVED\n' > "$D/2026-01-06-1400-work.plan.review.md"
+bash skills/document/scripts/docs-check.sh "$D" >/dev/null && ok "the plan skill's review (x.plan.review.md, VERDICT instead of status) passes" || fail "plan review companion rejected"
+printf 'plan: 2026-01-06-1400-work.plan.md\nround: 1\n' > "$D/2026-01-06-1400-work.plan.review.md"
+! bash skills/document/scripts/docs-check.sh "$D" >/dev/null 2>&1 && ok "review companion without a VERDICT line fails" || fail "verdict-less review passed"
+rm "$D/2026-01-06-1400-work.plan.md" "$D/2026-01-06-1400-work.plan.review.md"
 printf 'status: superseded by 2026-09-09-0000-nope.md\n' > "$D/2026-01-04-1200-dangling.md"
 ! bash skills/document/scripts/docs-check.sh "$D" >/dev/null 2>&1 && ok "dangling superseded-by fails" || fail "dangling passed"
 rm "$D/2026-01-04-dangling.md" 2>/dev/null || rm "$D/2026-01-04-1200-dangling.md"
@@ -363,6 +371,14 @@ printf '# idx\n- [one](feedback_one.md)\n' > "$PC/mem/MEMORY.md"; : > "$PC/mem/f
 ! bash skills/document/scripts/pointers-check.sh "$PC/CLAUDE.md" --root "$PC" --memory "$PC/mem" >/dev/null 2>&1 && ok "orphan memory file fails" || fail "orphan passed"
 rm "$PC/mem/feedback_orphan.md"; printf -- '- [gone](feedback_gone.md)\n' >> "$PC/mem/MEMORY.md"
 ! bash skills/document/scripts/pointers-check.sh "$PC/CLAUDE.md" --root "$PC" --memory "$PC/mem" >/dev/null 2>&1 && ok "index line without file fails" || fail "dangling index line passed"
+# An index split by theme: MEMORY.md links a sub-index, the sub-index links the leaf (measured 2026-09-07:
+# 51 false orphans on a project whose history lived in one sub-index).
+printf '# idx\n- [one](feedback_one.md)\n- [history](project_history.md)\n' > "$PC/mem/MEMORY.md"
+printf -- '- [leaf](project_leaf.md)\n' > "$PC/mem/project_history.md"; : > "$PC/mem/project_leaf.md"
+bash skills/document/scripts/pointers-check.sh "$PC/CLAUDE.md" --root "$PC" --memory "$PC/mem" >/dev/null && ok "memory file reached through a sub-index is not an orphan" || fail "sub-indexed memory counted as orphan"
+: > "$PC/mem/project_orphan.md"
+! bash skills/document/scripts/pointers-check.sh "$PC/CLAUDE.md" --root "$PC" --memory "$PC/mem" >/dev/null 2>&1 && ok "a file no index reaches still fails" || fail "orphan passed next to a sub-index"
+rm "$PC/mem/project_orphan.md"
 
 # ── refute-ledger ───────────────────────────────────────────────────────────
 section "refute-ledger.sh"

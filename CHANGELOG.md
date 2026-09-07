@@ -5,6 +5,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — 2026-09-07, measured on a project's first morning after an overnight
+- `docs-check.sh`: the review the `plan` skill writes next to a plan is `<plan><review_suffix>` — for `x.plan.md` that is `x.plan.review.md`, carrying `plan:` / `round:` / `VERDICT:` and no `status:`. The name rule accepted `.plan.md` **or** `.review.md`, never both, and the status rule rejected every real review, so the gate the skill itself sets up was red by construction. Now `.plan.review.md` is a valid companion and a `.review.md` file must carry a `VERDICT:` line instead of a status.
+- `pointers-check.sh`: a memory file linked only from a sub-index that `MEMORY.md` links to (an index split by theme) counted as an orphan — 51 false failures on one project. Reachability now follows markdown links from the index through the files it reaches inside the memory directory; a file nothing reaches still fails, and the text-stem citation in `MEMORY.md` still counts.
+
 ### Changed — 2026-09-03, after a 16-round plan
 - `plan-review-gate`: the review binds to the plan by NAME (no hash: what the user approved is what counts); REJECTED and ESCALATE deny; round ≥ 3 passes only with the user's `owner:` decision; growth guard (a `## ` section absent from `sections-round1:` denies); the submitted plan text picks the file, not the newest `.md` in the shared directory. Option `max_review_rounds` (default 2).
 - `cold-reviewer`: third verdict `VERDICT: ESCALATE` with `## Recomendações` / `## Alternativas` (one `fonte:` per alternative); gaps that need new policy, fences, tools or sections are escalated, never demanded.

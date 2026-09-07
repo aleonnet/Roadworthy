@@ -7,7 +7,9 @@
 #      (`--root` may repeat; default: the file's own directory and its parent);
 #   2. a memory directory (--memory <dir>): every markdown link in its MEMORY.md
 #      resolves (relative to the directory, or absolute), and every *.md file in
-#      the directory is cited by MEMORY.md (no orphan memory).
+#      the directory is reached from MEMORY.md (no orphan memory) — directly, or
+#      through a sub-index MEMORY.md links to (an index split by theme keeps the
+#      loaded index short; what the index reaches by links is still indexed).
 # Usage: pointers-check.sh <instruction file...> [--root <dir>]... [--memory <dir>] [--allow <path>]...
 set -euo pipefail
 files=(); roots=(); memory=""; allow=()
@@ -45,10 +47,32 @@ if [ -n "$memory" ]; then
       case "$link" in /*) target="$link" ;; *) target="$memory/$link" ;; esac
       [ -f "$target" ] || problem "MEMORY.md: link '$link' points at a missing file"
     done < <(grep -o -E '\]\([^)]+\.md\)' "$idx" | sed -E 's/^\]\(//; s/\)$//' | sort -u)
+    # Every file the index reaches by markdown links, following links through the files it
+    # reaches inside the memory directory (sub-indexes). Absolute links count as reached too.
+    reached="$(python3 - "$memory" <<'PY'
+import os, re, sys
+d = sys.argv[1]
+link = re.compile(r'\]\(([^)]+\.md)(?:#[^)]*)?\)')
+seen, todo = set(), ["MEMORY.md"]
+while todo:
+    n = todo.pop()
+    if n in seen:
+        continue
+    seen.add(n)
+    p = n if os.path.isabs(n) else os.path.join(d, n)
+    if not os.path.isfile(p) or os.path.dirname(os.path.abspath(p)) != os.path.abspath(d):
+        continue
+    with open(p, encoding="utf-8", errors="replace") as fh:
+        todo.extend(link.findall(fh.read()))
+print("\n".join(sorted(seen)))
+PY
+)"
     for m in "$memory"/*.md; do
       [ -e "$m" ] || continue
       n="$(basename "$m")"; [ "$n" = "MEMORY.md" ] && continue
-      grep -q -F "${n%.md}" "$idx" || problem "$n: memory file not cited by MEMORY.md (orphan)"
+      grep -q -F "${n%.md}" "$idx" && continue          # cited in the index text (link or stem)
+      printf '%s\n' "$reached" | grep -q -x -F "$n" && continue   # reached through a sub-index
+      problem "$n: memory file not reached from MEMORY.md (orphan)"
     done
   fi
 fi

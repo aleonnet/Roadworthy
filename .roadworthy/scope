@@ -15,3 +15,6 @@ docs/reference/roadmap.md
 docs/decisions/2026-09-03-1322-overnight-mode.md
 docs/plans/**
 skills/document/scripts/docs-check.sh
+# widened 2026-09-07 (measured on navblue_flutter_app after its first overnight): pointers-check counted 51 memory files
+# reached only through a sub-index as orphans; docs-check rejected the review file the plan skill itself writes
+skills/document/scripts/pointers-check.sh

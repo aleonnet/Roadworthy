@@ -2,11 +2,14 @@
 # docs-check.sh — language-agnostic fence for a docs tree, role-aware.
 #
 # Fails (exit 1) on:
-#   * a dated file (YYYY-MM-DD…) without a `status:` line in its first 5 lines;
+#   * a dated file (YYYY-MM-DD…) without a `status:` line in its first 5 lines
+#     (a `.review.md` companion is the reviewer's verdict, not a document: it must carry
+#      a `VERDICT:` line instead);
 #   * a status outside: proposed | rejected | accepted | deprecated | superseded by <file>.md
 #     (a project may declare its own words for these five states under "status" in docs.json,
 #      e.g. {"accepted": "aceito", "superseded by": "superado por"}; unlisted states keep English)
-#   * a dated file name outside YYYY-MM-DD-HHMM-<kebab>.md (optionally .plan.md);
+#   * a dated file name outside YYYY-MM-DD-HHMM-<kebab>.md (optionally .plan.md, .review.md or
+#     .plan.review.md — the review the plan skill writes next to `<plan>.plan.md`);
 #   * `superseded by <file>` whose target does not exist in the tree;
 #   * a relative markdown link to a .md file that does not exist;
 #   * with .roadworthy/docs.json present (role-aware):
@@ -46,9 +49,9 @@ w_superseded="${w_superseded//_/ }"
 vocab="^status: ($w_proposed|$w_rejected|$w_accepted|$w_deprecated|$w_superseded [^ ]+\.md)$"
 superseded="^status: $w_superseded (.+)$"
 dated='^[0-9]{4}-[0-9]{2}-[0-9]{2}'
-# `.plan.md` and `.review.md` are companions of a dated document (the plan's review file that
-# plan-review-gate binds to the plan's hash lives next to it, with the same stem).
-pattern='^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}-[a-z0-9-]+(\.plan|\.review)?\.md$'
+# `.plan.md` and `.review.md` are companions of a dated document: the plan skill writes the review
+# as `<plan><review_suffix>`, so a plan named `x.plan.md` gets `x.plan.review.md` (both suffixes).
+pattern='^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}-[a-z0-9-]+(\.plan)?(\.review)?\.md$'
 
 while IFS= read -r -d '' f; do
   name="$(basename "$f")"
@@ -56,7 +59,11 @@ while IFS= read -r -d '' f; do
   if [[ "$name" =~ $dated ]]; then
     if [[ "${name:0:10}" > "$since" || "${name:0:10}" == "$since" ]]; then
       [[ "$name" =~ $pattern ]] || problem "$f: dated name outside YYYY-MM-DD-HHMM-description.md"
-      [ -n "$status" ] || problem "$f: dated file without a status line"
+      if [[ "$name" == *.review.md ]]; then
+        grep -q -E '^VERDICT: ' "$f" || problem "$f: review companion without a VERDICT line"
+      else
+        [ -n "$status" ] || problem "$f: dated file without a status line"
+      fi
     fi
   fi
   if [ -n "$status" ]; then
