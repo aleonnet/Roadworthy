@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-07
+
 ### Fixed — 2026-09-07, measured on a project's first morning after an overnight
 - `docs-check.sh`: the review the `plan` skill writes next to a plan is `<plan><review_suffix>` — for `x.plan.md` that is `x.plan.review.md`, carrying `plan:` / `round:` / `VERDICT:` and no `status:`. The name rule accepted `.plan.md` **or** `.review.md`, never both, and the status rule rejected every real review, so the gate the skill itself sets up was red by construction. Now `.plan.review.md` is a valid companion and a `.review.md` file must carry a `VERDICT:` line instead of a status.
 - `pointers-check.sh`: a memory file linked only from a sub-index that `MEMORY.md` links to (an index split by theme) counted as an orphan — 51 false failures on one project. Reachability now follows markdown links from the index through the files it reaches inside the memory directory; a file nothing reaches still fails, and the text-stem citation in `MEMORY.md` still counts.
@@ -14,8 +16,6 @@ All notable changes to this project are documented here. The format follows
 - `cold-reviewer`: third verdict `VERDICT: ESCALATE` with `## Recomendações` / `## Alternativas` (one `fonte:` per alternative); gaps that need new policy, fences, tools or sections are escalated, never demanded.
 - `overnight-start.sh`: lists every missing precondition at once; accepts `## Política da madrugada`; no hash check.
 - `principles/PRINCIPLES.md`: only rules with a mechanism behind them are injected (8 lines, each naming its hook).
-
-## [Unreleased]
 
 ## [0.3.0] - 2026-09-03
 
