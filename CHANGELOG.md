@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Known — 2026-09-07, measured on the first full overnight → close → merge cycle
 - `overnight-close.sh` writes `status: accepted` in the hand-off it generates, ignoring the project's `status` vocabulary in `.roadworthy/docs.json`; on a project declaring Portuguese words `docs-check` rejects the file the plugin itself wrote (fixed by hand on the project; to fix here: read the vocabulary like `docs-check.sh` does).
+- `resume-pick.sh` follows only the English `status: superseded by <file>` line; on a project that declares its own words in `.roadworthy/docs.json` (`"superseded by": "superado por"`) it returns the SUPERSEDED hand-off (measured 2026-09-07: the newest file by name was `…-1215-handoff-overnight-…`, marked `superado por …-0056-…`, and the script printed the 1215 file). To fix here: read the vocabulary the way `docs-check.sh` does before matching the status line.
 - `overnight-guard` finds the marker by walking up from the session's cwd, not from the repository the command targets: `cd <other-repo> && git push` run from inside a project in overnight mode was denied although the other repository had no marker (workaround: run from a directory outside the marked project; to fix here: resolve the marker from the `-C`/`cd` target the way `guard-commit` already does).
 
 ## [0.4.0] - 2026-09-07
