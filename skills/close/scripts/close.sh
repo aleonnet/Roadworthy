@@ -44,11 +44,15 @@ case "${1:-}" in
     record "needs-human: $item" 0 "$item"
     echo "close: needs_human — $item"; exit 0 ;;
   --check)
-    [ -f "$gates" ] || { echo "close: no $gates"; exit 0; }
+    # No gates, or a file that declares none, is not "everything fresh": it is nothing measured.
+    # Reporting success here let a night close declaring every gate FRESH with zero gates
+    # (measured 2026-09-13 on this repository, which had no .roadworthy/gates at all).
+    [ -f "$gates" ] || { echo "close: no $gates — a closing with no declared gate is not a closing; write the gate commands there, one per line" >&2; exit 1; }
     read -r _ wtree _ <<< "$(fp)"
-    fail=0
+    fail=0; declared=0
     while IFS= read -r cmd; do
       [[ "$cmd" =~ ^[[:space:]]*(#|$) ]] && continue
+      declared=$((declared + 1))
       status="$(python3 - "$ledger" "$cmd" "$wtree" <<'PY'
 import json, sys, os
 ledger, cmd, wtree = sys.argv[1:4]
@@ -66,6 +70,7 @@ PY
       printf '  %-9s %s\n' "$status" "$cmd"
       [ "$status" = "FRESH" ] || fail=1
     done < "$gates"
+    [ "$declared" -gt 0 ] || { echo "close: $gates declares no gate (only blank lines or comments); nothing was measured" >&2; exit 1; }
     exit $fail ;;
   "") ;;
   *) echo "close: unknown argument $1" >&2; exit 1 ;;
@@ -78,13 +83,18 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 read -r head wtree _ <<< "$(fp)"
 echo "close: HEAD $head · tree $wtree"
-failed=0
+failed=0; ran=0
 while IFS= read -r cmd; do
   [[ "$cmd" =~ ^[[:space:]]*(#|$) ]] && continue
+  ran=$((ran + 1))
   out="$(bash -c "$cmd" 2>&1)"; rc=$?
   record "$cmd" "$rc" "$out"
   if [ $rc -eq 0 ]; then printf '  OK    %s\n' "$cmd"; else printf '  FAIL  %s (exit %s)\n' "$cmd" "$rc"; printf '%s\n' "$out" | tail -5 | sed 's/^/        /'; failed=$((failed + 1)); fi
 done < "$gates"
+if [ $ran -eq 0 ]; then
+  echo "gaps_found" > "$state_file"
+  echo "close: $gates declares no gate; nothing was measured, so nothing passed — the scope stays locked" >&2; exit 1
+fi
 if [ $failed -eq 0 ]; then
   echo "passed" > "$state_file"
   rm -f .roadworthy/scope

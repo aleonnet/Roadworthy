@@ -14,8 +14,11 @@ refuse() { echo "overnight-close: $1" >&2; exit 1; }
 [ -f .roadworthy/overnight ] || refuse "overnight mode is not on (no .roadworthy/overnight)"
 [ -z "$(git status --porcelain)" ] || refuse "the tree is dirty; commit the last phase first"
 close="$here/../../close/scripts/close.sh"
-if [ "${1:-}" = "--run" ]; then bash "$close" || refuse "gates red — the night ends as gaps_found; fix and close again"; fi
-check="$(bash "$close" --check 2>&1)" || { printf '%s\n' "$check" >&2; refuse "a gate is STALE or MISSING for this tree; run close.sh (or --run) after the last commit"; }
+if [ "${1:-}" = "--run" ]; then bash "$close" || refuse "gates red, or no gate declared — the night ends as gaps_found; fix and close again"; fi
+# A project with no declared gate used to reach this point silently: close.sh --check printed the
+# absence and exited 0, no refusal word matched, and the night closed claiming every gate FRESH
+# (measured 2026-09-13). close.sh now fails there, and the reason it prints is shown here.
+check="$(bash "$close" --check 2>&1)" || { printf '%s\n' "$check" >&2; refuse "no gate is declared, or a gate is STALE or MISSING for this tree; declare the gates in .roadworthy/gates and run close.sh (or --run) after the last commit"; }
 printf '%s' "$check" | grep -q -E '^\s+(STALE|MISSING|FRESH-RED)' && { printf '%s\n' "$check" >&2; refuse "a gate is not FRESH"; }
 
 read -r topic diary plan <<< "$(python3 -c 'import json; m=json.load(open(".roadworthy/overnight")); print(m["topic"], m["diary"], m["plan"])')"

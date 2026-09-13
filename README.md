@@ -26,7 +26,7 @@ idempotent; `claude plugin update roadworthy@roadworthy` picks up new versions.
 | Hook | Event | Guarantee |
 |---|---|---|
 | `principles` | every prompt | Injects your numbered principles (bundled set or your own file) plus the numbered rules of the current project's memory, so they never lose salience in a long session. |
-| `scope-lock` | Edit/Write | While `.roadworthy/scope` exists in the project, any edit outside the listed globs is denied. |
+| `scope-lock` | Edit/Write | While `.roadworthy/scope` exists in the project, any edit outside the listed globs is denied. The plan file itself (in `plans_dir`) is exempt: it is the rite's own artefact. **The guard watches the edit tools, not the shell** — a `cat >` or `sed -i` run through Bash is not seen; see [Declared limits](docs/reference/roadmap.md). |
 | `protect-paths` | Edit/Write | Paths matching `protected_paths` are never edited, whatever the model decides. |
 | `guard-commit` | Bash | `git commit` with a forbidden flag (default `--trailer`) or with nothing staged is denied. |
 | `plan-review-gate` | ExitPlanMode | A plan can only be submitted with a review file for it (by name) that says `VERDICT: APPROVED`; REJECTED and ESCALATE deny, round 3 needs the user's `owner:` decision, and a section added after round 1 denies (growth guard). The submitted plan text picks the file, not the newest file in the shared directory. |
@@ -84,7 +84,13 @@ Set on enable, or later with `/plugin` → Roadworthy → Configure. Values reac
 | `block_empty_commits` | `true` | Deny `git commit` with nothing staged. |
 | `plan_review_required` | `true` | Require the hash-bound review before ExitPlanMode. |
 | `review_suffix` | `.review.md` | Suffix of the review file next to the plan. |
-| `plans_dir` | `~/.claude/plans` | Where Claude Code writes plan-mode plans. |
+| `plans_dir` | `~/.claude/plans` | Where Claude Code writes plan-mode plans. The directory is shared by every project, so a plan declares `project: <repository>` in its header and the gate elects by that, not by date. |
+
+**A changed option does not reach a session that is already open.** Claude Code reads the plugin
+options when it loads the plugin, so after changing one in `/plugin` → Configure (or in
+`settings.json`) run **`/reload-plugins`** — it applies without losing the conversation — or start
+a new session. Measured on 2026-09-13: the option was right on disk, the hook honoured it when the
+variable reached it, and the open session kept denying with the old value.
 
 ## Principles
 

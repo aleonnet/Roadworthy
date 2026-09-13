@@ -100,6 +100,16 @@ run_hook scope-lock "{\"tool_name\":\"Edit\",\"cwd\":\"$REPO\",\"tool_input\":{\
 ! denied && ok "edit inside scope allowed" || fail "inside scope denied"
 run_hook scope-lock "{\"tool_name\":\"Edit\",\"cwd\":\"$REPO\",\"tool_input\":{\"file_path\":\"$REPO/.roadworthy/scope\"}}"
 ! denied && ok "scope file itself editable" || fail "scope file denied"
+# The plan lives outside the project, in the plans directory: the lock must not deny the rite's
+# own artefact. Measured in the field on 2026-09-08 and again on 2026-09-13, in two projects:
+# denied there, the agent's only way out was widening the scope by hand.
+PLANS_SB="$TMP/plansdir"; mkdir -p "$PLANS_SB/sub"
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$PLANS_SB" run_hook scope-lock "{\"tool_name\":\"Write\",\"cwd\":\"$REPO\",\"tool_input\":{\"file_path\":\"$PLANS_SB/my-plan.md\"}}"
+! denied && ok "the plan file (plans_dir) is editable while the lock is on" || fail "plan file denied by the scope lock"
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$PLANS_SB" run_hook scope-lock "{\"tool_name\":\"Write\",\"cwd\":\"$REPO\",\"tool_input\":{\"file_path\":\"$PLANS_SB/sub/my-plan.md\"}}"
+! denied && ok "a subdirectory of the plans directory too" || fail "plans subdirectory denied"
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$PLANS_SB" run_hook scope-lock "{\"tool_name\":\"Write\",\"cwd\":\"$REPO\",\"tool_input\":{\"file_path\":\"$TMP/elsewhere.md\"}}"
+denied && ok "another path outside the project is still denied" || fail "outside path passed"
 rm "$REPO/.roadworthy/scope"
 run_hook scope-lock "{\"tool_name\":\"Edit\",\"cwd\":\"$REPO\",\"tool_input\":{\"file_path\":\"$REPO/docs/readme.md\"}}"
 ! denied && ok "no scope file → lock inactive" || fail "lock active without scope file"
@@ -177,6 +187,87 @@ denied && ok "review with '/' in plan name refused" || fail "path traversal acce
 rm "$P/evil.review.md"
 CLAUDE_PLUGIN_OPTION_PLAN_REVIEW_REQUIRED=false run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
 ! denied && ok "plan_review_required=false honoured" || fail "plan_review_required=false"
+unset CLAUDE_PLUGIN_OPTION_PLANS_DIR
+
+# ── plan-review-gate: the review inside the plan, and the project binding ────
+section "plan-review-gate (plan mode writes one file)"
+PB="$TMP/planbind"; RA="$TMP/repoA"; RB="$TMP/repoB"; mkdir -p "$PB" "$RA" "$RB"
+git -C "$RA" init -q; git -C "$RB" init -q
+export CLAUDE_PLUGIN_OPTION_PLANS_DIR="$PB"
+ev() { printf '{"tool_name":"ExitPlanMode","cwd":"%s","tool_input":{}}' "$1"; }
+# Plan mode lets the agent write ONE file. Requiring the review as a second file made the rite
+# impossible there (measured 2026-09-13: a ten-minute review with twelve blockers could not be
+# written down at all), so the review may live in a '## Review' section of the plan itself.
+printf '# plan\nproject: %s\n\n## Goal\n\n## Review\nround: 1\nVERDICT: APPROVED\n' "$RA" > "$PB/a.md"
+run_hook plan-review-gate "$(ev "$RA")"
+! denied && ok "review in a '## Review' section of the plan → allowed" || fail "in-plan review denied: $OUT"
+printf '# plan\nproject: %s\n\n## Goal\n\n## Review\nround: 1\n' "$RA" > "$PB/a.md"
+run_hook plan-review-gate "$(ev "$RA")"
+denied && ok "in-plan review without a verdict → denied" || fail "verdict-less in-plan review passed"
+printf '# plan\nproject: %s\n\n## Goal\n\n## Review\nVERDICT: APPROVED\n' "$RA" > "$PB/a.md"
+printf 'plan: a.md\nVERDICT: REJECTED\n' > "$PB/a.review.md"
+run_hook plan-review-gate "$(ev "$RA")"
+denied && ok "the sidecar review takes precedence over the in-plan section" || fail "sidecar ignored"
+rm "$PB/a.review.md"
+# The plans directory is shared by every project: 101 plans of several projects in one
+# directory on the machine where this was measured, and the gate elected another project's.
+printf '# plan\nproject: %s\n\n## Goal\n\n## Review\nVERDICT: APPROVED\n' "$RA" > "$PB/a.md"
+sleep 1; printf '# other\nproject: %s\n\n## Goal\n' "$RB" > "$PB/b.md"   # newer, another project, unreviewed
+run_hook plan-review-gate "$(ev "$RA")"
+! denied && ok "a newer plan of another project does not win over this project's" || fail "cross-project plan elected"
+run_hook plan-review-gate "$(ev "$RB")"
+denied && printf '%s' "$OUT" | grep -q 'b.md' && ok "from the other repository its own plan is elected" || fail "project binding ignores the caller"
+mkdir -p "$TMP/onlyother"; printf '# other\nproject: %s\n\n## Goal\n' "$RB" > "$TMP/onlyother/b.md"
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$TMP/onlyother" run_hook plan-review-gate "$(ev "$RA")"
+denied && printf '%s' "$OUT" | grep -q 'belongs to another project' && ok "another project's plan is named, not asked for a review" || fail "cryptic denial for another project's plan"
+# One directory, two names: /var is a link to /private/var on macOS, so a declared path and a
+# `git rev-parse` root differ as strings. Both sides are resolved before comparing.
+printf '# plan\nproject: %s\n\n## Goal\n\n## Review\nVERDICT: APPROVED\n' "$(cd "$RA" && pwd -P)" > "$PB/a.md"
+run_hook plan-review-gate "$(ev "$RA")"
+! denied && ok "a project declared through a resolved path still matches" || fail "symlinked project path treated as another project"
+# The in-plan review's own heading is not growth.
+printf '# plan\nproject: %s\n\n## Goal\n\n## Review\nround: 2\nsections-round1: Goal\nVERDICT: APPROVED\n' "$RA" > "$PB/a.md"
+run_hook plan-review-gate "$(ev "$RA")"
+! denied && ok "the review's own heading does not trip the growth guard" || fail "in-plan review counted as growth"
+printf '# plan\nproject: %s\n\n## Goal\n\n## New\n\n## Review\nround: 2\nsections-round1: Goal\nVERDICT: APPROVED\n' "$RA" > "$PB/a.md"
+run_hook plan-review-gate "$(ev "$RA")"
+denied && printf '%s' "$OUT" | grep -q 'grew' && ok "a real new section still denies" || fail "growth guard broken"
+# A superseded plan is not a candidate: that is how the documentation norm retires one, and the
+# gate reads the same vocabulary docs-check.sh reads (.roadworthy/docs.json, "status").
+printf '# plan\nproject: %s\nstatus: superseded by b.md\n\n## Goal\n' "$RA" > "$PB/a.md"
+printf '# plan\nproject: %s\n\n## Goal\n\n## Review\nVERDICT: APPROVED\n' "$RA" > "$PB/b.md"
+run_hook plan-review-gate "$(ev "$RA")"
+! denied && ok "a plan marked superseded is not elected" || fail "superseded plan elected: $OUT"
+mkdir -p "$RA/.roadworthy"; printf '{"status":{"superseded by":"superado por"}}' > "$RA/.roadworthy/docs.json"
+printf '# plan\nproject: %s\nstatus: superado por b.md\n\n## Goal\n' "$RA" > "$PB/a.md"
+run_hook plan-review-gate "$(ev "$RA")"
+! denied && ok "the project's own word for superseded is recognised" || fail "project status vocabulary ignored: $OUT"
+# Two live plans of one project and nothing to tell them apart: refuse naming both. Electing the
+# newest by date submitted a stale draft in the field (2026-09-13).
+printf '# plan\nproject: %s\n\n## Goal\n' "$RA" > "$PB/a.md"
+run_hook plan-review-gate "$(ev "$RA")"
+denied && printf '%s' "$OUT" | grep -q 'a.md, b.md' && ok "two live plans of one project → denied, both named" || fail "ambiguous plans not refused: $OUT"
+# A directory of undeclared legacy drafts is NOT judged that way: it would block every user on
+# upgrade. The old fallback still elects the newest.
+mkdir -p "$TMP/legacy"; printf '# one\n' > "$TMP/legacy/one.md"; printf '# two\n' > "$TMP/legacy/two.md"
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$TMP/legacy" run_hook plan-review-gate "$(ev "$RA")"
+denied && printf '%s' "$OUT" | grep -q 'no review for the current plan' && ok "undeclared drafts are not blocked as ambiguous" || fail "legacy drafts refused as ambiguous: $OUT"
+# A front written against a tag, with the tree ahead of it: plan and review must name the same
+# base, and the base must resolve.
+(cd "$RA" && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m base && git tag v0)
+printf '# plan\nproject: %s\nstatus: superado por a.md\n\n## Goal\n' "$RA" > "$PB/b.md"
+printf '# plan\nproject: %s\nbase: v0\n\n## Goal\n\n## Review\nbase: v0\nVERDICT: APPROVED\n' "$RA" > "$PB/a.md"
+run_hook plan-review-gate "$(ev "$RA")"
+! denied && ok "plan and review declaring the same base → allowed" || fail "same base denied: $OUT"
+printf '# plan\nproject: %s\nbase: v0\n\n## Goal\n\n## Review\nVERDICT: APPROVED\n' "$RA" > "$PB/a.md"
+run_hook plan-review-gate "$(ev "$RA")"
+denied && printf '%s' "$OUT" | grep -q 'the working tree' && ok "a review with no base, on a plan that declares one → denied" || fail "baseless review passed: $OUT"
+printf '# plan\nproject: %s\nbase: v0\n\n## Goal\n\n## Review\nbase: HEAD\nVERDICT: APPROVED\n' "$RA" > "$PB/a.md"
+run_hook plan-review-gate "$(ev "$RA")"
+denied && printf '%s' "$OUT" | grep -q "declares base 'v0'" && ok "a review made against another base → denied" || fail "wrong base passed: $OUT"
+printf '# plan\nproject: %s\nbase: v-nope\n\n## Goal\n\n## Review\nbase: v-nope\nVERDICT: APPROVED\n' "$RA" > "$PB/a.md"
+run_hook plan-review-gate "$(ev "$RA")"
+denied && printf '%s' "$OUT" | grep -q 'does not resolve' && ok "a base that does not resolve → denied, naming the ref" || fail "unresolvable base passed: $OUT"
 unset CLAUDE_PLUGIN_OPTION_PLANS_DIR
 
 # ── refute.sh (refuted with a toy check) ─────────────────────────────────────
@@ -358,6 +449,16 @@ git -C "$CF" checkout -q -- docs/README.md
 printf 'false\n' > "$CF/.roadworthy/gates"; printf 'docs/**\n' > "$CF/.roadworthy/scope"; git -C "$CF" add -A; git -C "$CF" commit -q -m red
 ! (cd "$CF" && bash "$ROOT/skills/close/scripts/close.sh") >/dev/null 2>&1 && [ -f "$CF/.roadworthy/scope" ] && [ "$(cat "$ROADWORTHY_DATA/state")" = "gaps_found" ] && ok "red gate → gaps_found, scope kept" || fail "red gate handling"
 (cd "$CF" && bash "$ROOT/skills/close/scripts/close.sh" --needs-human "device bench") >/dev/null && [ "$(cat "$ROADWORTHY_DATA/state")" = "needs_human" ] && ok "--needs-human records the state" || fail "needs_human"
+# Nothing measured is not "everything fresh". --check used to print the absence and exit 0, which
+# is what let a night close claiming every gate FRESH with zero gates (measured 2026-09-13 on this
+# repository, which had no .roadworthy/gates at all and a scope six days past its front).
+NG="$TMP/nogates"; mkdir -p "$NG/.roadworthy"; git -C "$NG" init -q
+(cd "$NG" && printf 'x\n' > f && git -c user.email=t@t -c user.name=t add -A && git -c user.email=t@t -c user.name=t commit -q -m base)
+! (cd "$NG" && ROADWORTHY_DATA="$TMP/ngdata" bash "$ROOT/skills/close/scripts/close.sh" --check) >/dev/null 2>&1 && ok "--check without a gates file fails" || fail "--check passed with no gates file"
+printf '# only a comment\n\n' > "$NG/.roadworthy/gates"; printf 'f\n' > "$NG/.roadworthy/scope"
+git -C "$NG" -c user.email=t@t -c user.name=t add -A; git -C "$NG" -c user.email=t@t -c user.name=t commit -q -m gates
+! (cd "$NG" && ROADWORTHY_DATA="$TMP/ngdata" bash "$ROOT/skills/close/scripts/close.sh" --check) >/dev/null 2>&1 && ok "--check on a gates file that declares none fails" || fail "--check passed with zero declared gates"
+! (cd "$NG" && ROADWORTHY_DATA="$TMP/ngdata" bash "$ROOT/skills/close/scripts/close.sh") >/dev/null 2>&1 && [ -f "$NG/.roadworthy/scope" ] && ok "close with zero declared gates fails and keeps the scope" || fail "close released the scope with nothing measured"
 unset ROADWORTHY_DATA
 
 # ── pointers-check ──────────────────────────────────────────────────────────
@@ -477,6 +578,13 @@ export ROADWORTHY_DATA="$TMP/ovdata"
 ! (cd "$OV" && bash "$S/overnight-close.sh") >/dev/null 2>"$TMP/ov7" && grep -q 'dirty' "$TMP/ov7" && ok "close refused on a dirty tree (the diary is uncommitted)" || fail "close on dirty tree"
 git -C "$OV" add -A; git -C "$OV" commit -q -m diary
 ! (cd "$OV" && bash "$S/overnight-close.sh") >/dev/null 2>"$TMP/ov8" && grep -q -E 'STALE|MISSING' "$TMP/ov8" && [ -f "$OV/.roadworthy/overnight" ] && ok "close refused while a gate is MISSING; marker kept" || fail "close without evidence accepted"
+# A night must not close with nothing measured: with no gate declared, close.sh fails and the
+# refusal reaches here instead of being read as "every gate FRESH".
+printf '# no gate declared\n' > "$OV/.roadworthy/gates"
+git -C "$OV" -c user.email=t@t -c user.name=t commit -qam 'no gates'
+! (cd "$OV" && bash "$S/overnight-close.sh") >/dev/null 2>"$TMP/ov9" && grep -q 'no gate' "$TMP/ov9" && [ -f "$OV/.roadworthy/overnight" ] && ok "the night refuses to close with no gate declared; marker kept" || fail "night closed with nothing measured: $(cat "$TMP/ov9")"
+printf 'true\n' > "$OV/.roadworthy/gates"
+git -C "$OV" -c user.email=t@t -c user.name=t commit -qam 'gates back'
 handoff="$(cd "$OV" && bash "$S/overnight-close.sh" --run | tail -1)"
 [ -f "$OV/$handoff" ] && [ ! -f "$OV/.roadworthy/overnight" ] && grep -q "pricing is the user's" "$OV/$handoff" && grep -q '| ov | ' "$OV/$handoff" && ok "close with FRESH gates writes the hand-off with the blockers and removes the marker" || fail "close --run: $handoff"
 unset ROADWORTHY_DATA

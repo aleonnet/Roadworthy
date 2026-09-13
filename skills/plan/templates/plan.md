@@ -1,6 +1,16 @@
 # <Title>
 
+project: <absolute path of the repository this plan belongs to>
+base: <git ref this plan is written against — omit when it is the working tree>
 status: proposed
+
+`project:` binds the plan to its repository: the plans directory is shared by every project,
+and without it the gate can elect a newer plan of another project. `base:` is for a front that
+branches from a tag or a release branch instead of the tip: declare it and every reading —
+yours and the reviewer's — is done with `git show <base>:<path>` and `git grep <pattern> <base>`
+instead of the working tree, so the review does not report divergences that only exist against
+HEAD. The gate refuses a base that does not resolve, and refuses a review that declares a
+different base from the plan's.
 
 ## Context
 Why this change, what prompted it, the intended outcome.

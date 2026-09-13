@@ -10,6 +10,75 @@ All notable changes to this project are documented here. The format follows
 - `resume-pick.sh` follows only the English `status: superseded by <file>` line; on a project that declares its own words in `.roadworthy/docs.json` (`"superseded by": "superado por"`) it returns the SUPERSEDED hand-off (measured 2026-09-07: the newest file by name was `…-1215-handoff-overnight-…`, marked `superado por …-0056-…`, and the script printed the 1215 file). To fix here: read the vocabulary the way `docs-check.sh` does before matching the status line.
 - `overnight-guard` finds the marker by walking up from the session's cwd, not from the repository the command targets: `cd <other-repo> && git push` run from inside a project in overnight mode was denied although the other repository had no marker (workaround: run from a directory outside the marked project; to fix here: resolve the marker from the `-C`/`cd` target the way `guard-commit` already does).
 
+The first two are the same class of defect that 0.5.0 fixed in `plan-review-gate`: read the
+project's state vocabulary from `.roadworthy/docs.json`, one dictionary for the whole house.
+`resume-pick.sh` and the hand-off writer were outside the approved scope of that front, so they
+stay reported here rather than changed in passing.
+
+
+## [0.5.0] - 2026-09-13
+
+The plan rite could not be executed in the mode the plugin tells the agent to use. Two sessions,
+in two projects, hit it on the same day; both escaped by hand, and one lost a ten-minute review
+because the verdict had nowhere to go. This release makes the rite fit in plan mode, binds a plan
+to its project and its base, and stops a closing from reporting success with nothing measured.
+
+### Fixed — 2026-09-13, the rite was impossible inside plan mode
+The plan rite asked for three files — the plan, the scope lock and the review — and plan mode
+lets an agent write one. Two sessions in two projects hit it on the same day; both escaped by
+widening the scope by hand or by leaving the mode, and one lost a ten-minute review with twelve
+blockers because the verdict could not be written anywhere. The contradiction was in the plugin,
+not in the models following it.
+- `scope-lock`: the plan file is exempt. Its own comment already promised that the plan's
+  artefacts are always editable, but the exemption covered only `.roadworthy/`; the plan lives in
+  `plans_dir`, outside the project, so it was compared as an absolute path and denied. Paths are
+  resolved through symlinks on both sides before matching.
+- `plan-review-gate`: the review may live in a `## Review` (`## Banca`) section of the plan
+  itself, which is what plan mode allows; the sidecar `<plan><review_suffix>` keeps working and
+  takes precedence. The review's own heading never counts as growth, so a plan that already had
+  round 1 can adopt the new form without tripping the growth guard.
+- `plan-review-gate`: the plans directory is shared by every project (101 plans of several
+  projects in one directory, measured), and the gate elected another project's plan and denied
+  with a cryptic "no review". A plan now declares `project:` in its header and the gate elects by
+  that; a plan of another project is named in the denial. Comparison resolves symlinks (`/var`
+  and `/private/var` named one directory as two on macOS).
+- `plan-review-gate`: a plan marked superseded in its header is not a candidate, read with the
+  words the project declares under `status` in `.roadworthy/docs.json` — the same vocabulary
+  `docs-check.sh` reads, not a second dictionary. Two live plans of one project are refused with
+  both names instead of resolved by date; a directory of older drafts that declare no project is
+  left alone, so nobody is blocked on upgrade.
+- `plan-review-gate`: a plan may declare `base:` when the front is written against a tag or a
+  release branch instead of the tip. The gate refuses a base that does not resolve, and refuses a
+  review that declares a different base from the plan's — which is what turns "remember to tell
+  the reviewer which ref to read" into a mechanism. Undeclared, the base is the working tree and
+  nothing changes.
+- `skills/plan`: the scope lock is written as the first act of execution, not before the plan is
+  approved; the review goes in the plan in plan mode; the reviewer runs in the background because
+  the harness offers no foreground, and its verdict is written to disk the moment it arrives.
+  Reading and reviewing follow the plan's `base:` when it declares one.
+- Internal: an unpaired apostrophe in a comment inside the gate's `$( … )` block breaks the hook
+  with a syntax error far from the cause — bash counts quotes while scanning a command
+  substitution, heredoc included. Three such lines were already in the file. All paired, with a
+  note at the block; `bash -n` in `tests/run.sh` is the mechanism that catches it.
+- `tests/run.sh`: 20 assertions for the above, in both directions, and each guarantee refuted
+  (defect injected, expected failure text, file restored with its hash verified).
+
+### Fixed — 2026-09-13, a closing that measured nothing reported success
+- `close.sh --check`: no `.roadworthy/gates`, or a file that declares none, now **fails**. It
+  used to print the absence and exit 0, and `overnight-close.sh` reads that output looking for
+  refusal words — so a project with no declared gate closed the night reporting every gate FRESH.
+  Measured on this repository, which had no gates file at all; the consequence was a scope lock
+  that nobody could release, still standing six days after its front shipped, which is what sends
+  the next front to widen the scope by hand.
+- `close.sh`: the same for a real run — with zero declared gates it fails, keeps the scope and
+  records `gaps_found`, instead of writing `passed` and releasing the lock.
+- `overnight-close.sh`: the refusal now names the missing declaration instead of speaking only of
+  STALE and MISSING gates.
+- `skills/plan`: the skill writes `.roadworthy/gates` from the plan's Verification section in the
+  same act as the scope, so the file `close` requires exists from the start.
+- `scope-lock`: the denial says what to do when the scope belongs to a front that already
+  finished — close it, not widen it.
+
 ## [0.4.0] - 2026-09-07
 
 ### Fixed — 2026-09-07, measured on a project's first morning after an overnight

@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # plan-review-gate — PreToolUse hook for ExitPlanMode.
 #
-# A plan may only be submitted after an adversarial review that lives next to it
-# as `<plan>.review.md` (suffix configurable) and carries:
-#   plan: <plan file name>
+# A plan may only be submitted after an adversarial review. The review lives EITHER next to
+# the plan as `<plan>.review.md` (suffix configurable), OR — when the plan was written inside
+# plan mode, where the harness lets the agent write one file and one file only — as a
+# `## Review` (`## Banca`) section of the plan itself. Measured on 2026-09-13: requiring the
+# separate file made the rite impossible inside plan mode, so a ten-minute review with twelve
+# blockers could not be written down at all and lived only in the conversation.
+# Either form carries:
+#   plan: <plan file name>          (the sidecar only; the section is already in the plan)
 #   round: <n>                      (1 when absent)
 #   VERDICT: APPROVED | REJECTED | ESCALATE
 #   owner: <the user's written decision>   (only after an escalation / beyond round 2)
@@ -16,9 +21,15 @@
 #     an `owner:` line and VERDICT: APPROVED);
 #   * two rounds is the ceiling: round ≥ 3 only passes with the user's `owner:` decision;
 #   * growth guard: a `## ` section that was not in `sections-round1:` denies, unless the
-#     user decided (`owner:`);
+#     user decided (`owner:`); the in-plan review's own heading never counts as growth;
 #   * the current plan is the one the ExitPlanMode call submits (matched by content);
 #     only when the event carries no plan text is "newest .md in the directory" used.
+#
+# The plans directory is shared by every project (measured 2026-09-13: 101 plans of several
+# projects in one directory, and the gate elected another project's plan), so a plan that
+# declares `project:` (`projeto:`) equal to the repository of the event wins over any newer
+# plan of another project, and an elected plan that belongs elsewhere is NAMED in the denial
+# instead of producing a cryptic "no review for the current plan".
 # Symlinks and names containing '/' are refused (path traversal).
 export RW_HOOK="plan-review-gate"
 export RW_ON_CRASH=deny
@@ -33,18 +44,79 @@ suffix="$(rw_option REVIEW_SUFFIX ".review.md")"
 max_rounds="$(rw_option MAX_REVIEW_ROUNDS 2)"
 [ -d "$plans" ] || deny PreToolUse "plans directory $plans does not exist (plan_review_required)."
 
+# The repository the call comes from, for the project binding below.
+cwd="$(rw_field cwd)"
+root=""
+[ -n "$cwd" ] && root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cwd")"
+
 submitted="$(rw_field tool_input.plan)"
-verdict="$(RW_SUBMITTED="$submitted" python3 - "$plans" "$suffix" "$max_rounds" <<'PY'
-import os, re, sys
+# NOTE: bash counts quotes while scanning this $( ... ), heredoc body included. An apostrophe
+# with no pair ("the project's") desynchronises the scan and breaks the `case` below with a
+# syntax error far from the cause. Keep every ' paired inside the block; `bash -n` catches it.
+verdict="$(RW_SUBMITTED="$submitted" python3 - "$plans" "$suffix" "$max_rounds" "$root" <<'PY'
+import json, os, re, subprocess, sys
 d, suffix, max_rounds = sys.argv[1], sys.argv[2], int(sys.argv[3])
+root = sys.argv[4] if len(sys.argv) > 4 else ""
 submitted = os.environ.get("RW_SUBMITTED", "").strip()
 
 def out(kind, msg=""):
     print(kind + ("\t" + msg if msg else "")); sys.exit(0)
 
+def field(text, key):
+    m = re.search(r"^(?:%s):[ \t]*(.*)$" % key, text, re.M)
+    return m.group(1).strip() if m else ""
+
+def preamble(path):
+    # Only the header, before the first '## ' heading: a plan may carry an in-plan review
+    # section with its own fields, and those are the review's, not the plan's.
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read(8192).split("\n## ", 1)[0]
+    except Exception:
+        return ""
+
+def declared_project(path):
+    return field(preamble(path), "project|projeto")
+
+# One dictionary for the whole house: the words for the MADR states live under "status" in
+# the .roadworthy/docs.json of the project, the same file docs-check.sh reads. A plan marked
+# superseded by the documentation norm must be recognised here, not by a second vocabulary.
+superseded_words = ["superseded by"]
+if root:
+    try:
+        declared = (json.load(open(os.path.join(root, ".roadworthy", "docs.json"))).get("status") or {}).get("superseded by")
+        if declared and declared not in superseded_words:
+            superseded_words.append(declared)
+    except Exception:
+        pass
+
+def is_superseded(path):
+    st = field(preamble(path), "status|estado").lower()
+    return any(st.startswith(w.lower() + " ") for w in superseded_words)
+
+def same(a, b):
+    # Symlinks are resolved on BOTH sides: on macOS /var is a link to /private/var, so a plan
+    # that declares the path the user typed and a root that `git rev-parse` resolved differ as
+    # strings while naming the same directory (measured 2026-09-13, the gate then called every
+    # plan "another project"). `~` in a declared path is expanded for the same reason.
+    if not a or not b:
+        return False
+    return os.path.realpath(os.path.expanduser(a)) == os.path.realpath(os.path.expanduser(b))
+
 cands = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".md") and not f.endswith(suffix)]
 cands = [p for p in cands if os.path.isfile(p) or os.path.islink(p)]
 if not cands: out("DENY", f"no plan found in {d}.")
+
+# A plan marked superseded is not a candidate: that is how the documentation norm retires one.
+live = [p for p in cands if not is_superseded(p)]
+if live: cands = live
+
+# The plans directory is shared by every project: a plan that declares THIS repository wins
+# over a newer plan of another project. With none declaring, the old fallback stands.
+mine = [p for p in cands if not os.path.islink(p) and same(declared_project(p), root)]
+ambiguous = len(mine) > 1
+if mine: cands = mine
+
 plan = None
 if submitted:
     for p in cands:
@@ -52,14 +124,36 @@ if submitted:
         try:
             if open(p, encoding="utf-8").read().strip() == submitted: plan = p; break
         except Exception: pass
+# Two live plans of the SAME project and nothing in the call to tell them apart: electing the
+# newest by date is how a stale draft got submitted in the field (2026-09-13). Refusing and
+# naming both is a thirty-second fix; choosing wrong in silence is not. Only plans that declare
+# this project are judged this way, so a directory of undeclared legacy drafts is not blocked.
+if plan is None and ambiguous:
+    names = ", ".join(sorted(os.path.basename(p) for p in cands))
+    out("DENY", f"{len(cands)} live plans in {d} declare this project ({names}) and the call carries no plan text to tell them apart. Leave exactly one live: mark the others 'status: {superseded_words[-1]} <the current plan>.md' in their header, or move them out of the directory.")
 if plan is None:
     plan = max(cands, key=os.path.getmtime)
 if os.path.islink(plan): out("DENY", "the current plan is a symlink; refused.")
 name = os.path.basename(plan)
 
-def field(text, key):
-    m = re.search(r"^(?:%s):[ \t]*(.*)$" % key, text, re.M)
-    return m.group(1).strip() if m else ""
+ptext = open(plan, encoding="utf-8", errors="replace").read()
+pre = ptext.split("\n## ", 1)[0]
+
+proj = field(pre, "project|projeto")
+if root and proj and not same(proj, root):
+    out("DENY", f"the plan this call would submit ({name}) belongs to another project ({proj}); the plans directory is shared by every project. Write the plan of this project there with a 'project: {root}' line and submit again.")
+
+# A front that branches from a tag or a release branch is written against that ref, not the
+# working tree. Declared, the base must resolve — a typo or an unfetched tag would otherwise
+# send the reviewer to the wrong bytes without anyone noticing (measured 2026-09-13: a tree 75
+# commits ahead of the plan's base, and three manual warnings in the reviewer's prompt).
+base = field(pre, "base")
+if base:
+    if not root:
+        out("DENY", f"{name} declares base '{base}', but this call carries no repository to resolve it in.")
+    if subprocess.run(["git", "-C", root, "rev-parse", "--verify", "--quiet", base + "^{commit}"],
+                      capture_output=True).returncode != 0:
+        out("DENY", f"{name} declares base '{base}', which does not resolve to a commit in {root}. Fetch the ref or fix the line: every reading of the plan and of its review is made through it (git show {base}:<path>).")
 
 reviews = []
 for f in os.listdir(d):
@@ -72,9 +166,27 @@ for f in os.listdir(d):
     if "/" in declared: out("DENY", f"{f} declares a plan path with '/'; refused.")
     if declared != name: continue
     reviews.append((os.path.getmtime(p), f, text))
-if not reviews: out("DENY", f"no review for the current plan ({name}). Run /roadworthy:plan review, then submit.")
+
+# Plan mode allows exactly one file to be written: the plan. So the review may live in a
+# '## Review' / '## Banca' section of the plan itself. The sidecar file takes precedence.
+inline_heading = ""
+if not reviews:
+    m = re.search(r"^(## +(?:Review|Banca|Revis[ãa]o)[^\n]*)\n(.*?)(?=\n## |\Z)", ptext, re.M | re.S)
+    if m and re.search(r"^(?:VERDICT|VEREDITO):", m.group(2), re.M):
+        inline_heading = m.group(1)[3:].strip()
+        reviews = [(os.path.getmtime(plan), f"the '{inline_heading}' section of {name}", m.group(2))]
+
+if not reviews:
+    out("DENY", f"no review for the current plan ({name}). Run /roadworthy:plan review, then write the verdict down: next to the plan as {name.rsplit('.md', 1)[0]}{suffix}, or — in plan mode, where only the plan may be written — as a '## Review' section of the plan itself.")
 reviews.sort()
 _, rname, text = reviews[-1]
+# The review must say which base it was made against. This is what turns "remember to tell the
+# reviewer" into a mechanism: a review that read the working tree cannot be passed off as a
+# review of a plan written against a tag.
+rbase = field(text, "base")
+if base and rbase != base:
+    against = f"'{rbase}'" if rbase else "the working tree (no base line)"
+    out("DENY", f"{rname} was made against {against}, but the plan declares base '{base}'. Review the plan through its base (git show {base}:<path>, git grep <pattern> {base}) and record 'base: {base}' in the review.")
 v = field(text, "VERDICT|VEREDITO").upper()
 rnd = field(text, "round|rodada")
 rnd = int(rnd) if rnd.isdigit() else 1
@@ -87,16 +199,17 @@ if "ESCAL" in v:
     if not re.search(r"^## .*Alternativ", text, re.M): form.append("an '## Alternativas' section")
     if not re.search(r"^\s*[-*].*(fonte|source):", text, re.M | re.I): form.append("a 'fonte:' line per alternative")
     extra = (" The escalation is malformed: it lacks " + ", ".join(form) + ".") if form else ""
-    out("DENY", f"{rname} escalated the plan to the user after round {rnd}: blockers that did not fall between rounds, recommendations and sourced alternatives are in the review. Wait for the user's decision, record it as an 'owner:' line with VERDICT: APPROVED, then submit.{extra}")
+    out("DENY", f"{rname} escalated the plan to the user after round {rnd}: blockers that did not fall between rounds, recommendations and sourced alternatives are in the review. Wait for the decision of the user, record it as an 'owner:' line with VERDICT: APPROVED, then submit.{extra}")
 if not ("APPROV" in v or "APROV" in v):
     out("DENY", f"{rname} has no verdict (VERDICT: APPROVED | REJECTED | ESCALATE).")
 if rnd > max_rounds and not owner:
-    out("DENY", f"{rname} is round {rnd}: the ceiling is {max_rounds}. Beyond it only the user's written decision unlocks the plan (an 'owner:' line in the review); stop iterating with the reviewer.")
+    out("DENY", f"{rname} is round {rnd}: the ceiling is {max_rounds}. Beyond it only the written decision of the user unlocks the plan (an 'owner:' line in the review); stop iterating with the reviewer.")
 snap = field(text, "sections-round1|secoes-rodada1|seções-rodada1")
 if snap and not owner:
-    base = {s.strip() for s in snap.split("|") if s.strip()}
-    now = [l[3:].strip() for l in open(plan, encoding="utf-8", errors="replace").read().splitlines() if l.startswith("## ")]
-    grown = [s for s in now if s not in base]
+    round1 = {s.strip() for s in snap.split("|") if s.strip()}
+    now = [l[3:].strip() for l in ptext.splitlines() if l.startswith("## ")]
+    if inline_heading: now = [s for s in now if s != inline_heading]
+    grown = [s for s in now if s not in round1]
     if grown:
         out("DENY", f"the plan grew {len(grown)} section(s) after round 1 ({'; '.join(grown)}): a plan that grows to satisfy the reviewer is the failure mode this gate exists for. Stop and report to the user; only an 'owner:' decision in the review unlocks it.")
 out("ALLOW")

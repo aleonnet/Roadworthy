@@ -1,0 +1,5 @@
+# Portoes desta frente, copiados da secao de Verificacao do plano aprovado em 2026-09-13.
+# close.sh le este arquivo e nada mais; sem ele o fechamento nao passa e a trava nunca e liberada.
+bash tests/run.sh
+bash skills/document/scripts/docs-check.sh docs
+claude plugin validate . --strict
