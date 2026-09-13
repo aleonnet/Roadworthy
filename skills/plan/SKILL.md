@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Write a plan that is born ready, declare its file scope, and produce the adversarial review bound to the plan's hash that plan-review-gate requires. Use when starting any change that touches more than one file, before entering or leaving plan mode, or when the user asks for a plan.
+description: Write a plan that is born ready, declare its file scope, and record the adversarial review that plan-review-gate requires — inside the plan itself when working in plan mode, where only one file may be written, or beside it otherwise. Use when starting any change that touches more than one file, before entering or leaving plan mode, or when the user asks for a plan.
 argument-hint: [draft|scope|review|close]
 allowed-tools: Bash Read Grep Glob
 ---

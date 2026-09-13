@@ -34,6 +34,12 @@ this is in `docs/plans/2026-09-13-1315-handoff-the-rite-inside-plan-mode.md`.
 with no `.roadworthy/gates`, where it used to print the absence and exit 0. That is the fix, and
 it will surface in projects that never declared gates.
 
+**Check your own repository for this one:** `close.sh` records each gate's output in
+`.roadworthy/evidence.jsonl`, and that output carries the absolute paths of the machine that ran
+it. Committing that file publishes them. The ledger, the denials log and the recorded state are
+now in this repository's `.gitignore` — add them to yours. Found by closing this very front: the
+ledger turned the plugin's own privacy gate red.
+
 ### Fixed — 2026-09-13, the rite was impossible inside plan mode
 The plan rite asked for three files — the plan, the scope lock and the review — and plan mode
 lets an agent write one. Two sessions in two projects hit it on the same day; both escaped by
@@ -89,6 +95,18 @@ not in the models following it.
   same act as the scope, so the file `close` requires exists from the start.
 - `scope-lock`: the denial says what to do when the scope belongs to a front that already
   finished — close it, not widen it.
+
+### Fixed — 2026-09-13, documentation that described a plugin that no longer existed
+Found by reading the files while releasing, and swept as a class across the repository.
+- `README.md` said the review is bound to the plan's **hash** or to "their exact bytes", in four
+  places including the opening paragraph. It binds by **name** since 0.3.0 — what the user
+  approved is what counts. The `plan-review-gate` row also still described the pre-0.5.0 gate.
+- `skills/plan/SKILL.md`: the same false claim sat in the skill's own `description`, which is the
+  text a model reads to decide whether to use the rite at all.
+- `README.md` said the bundled principles are "thirteen numbered lines"; `grep` counts eight, and
+  the suite has asserted eight since 0.4.0.
+- `.gitignore` and the privacy scan: the evidence ledger, the denials log and the recorded state
+  are local machine state, not plugin sources. A new assertion fails if they are tracked again.
 
 ## [0.4.0] - 2026-09-07
 

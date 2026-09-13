@@ -5,8 +5,8 @@
 Roadworthy is a Claude Code plugin that turns quality rules into mechanisms. Agents that
 touch code do one nice thing and break ten others; instructions in prose do not stop that,
 hooks do. Roadworthy locks edits to a declared scope, refuses commits that carry forbidden
-flags or nothing staged, refuses plans that were not reviewed against their exact bytes, and
-gives the agent the tools to prove its guarantees can fail before it calls them guarantees.
+flags or nothing staged, refuses plans that were not reviewed, and gives the agent the tools to
+prove its guarantees can fail before it calls them guarantees.
 
 Built on the official Claude Code plugin format: hooks, skills, agents, user configuration.
 No daemon, no swarm, no framework to learn.
@@ -29,7 +29,7 @@ idempotent; `claude plugin update roadworthy@roadworthy` picks up new versions.
 | `scope-lock` | Edit/Write | While `.roadworthy/scope` exists in the project, any edit outside the listed globs is denied. The plan file itself (in `plans_dir`) is exempt: it is the rite's own artefact. **The guard watches the edit tools, not the shell** — a `cat >` or `sed -i` run through Bash is not seen; see [Declared limits](docs/reference/roadmap.md). |
 | `protect-paths` | Edit/Write | Paths matching `protected_paths` are never edited, whatever the model decides. |
 | `guard-commit` | Bash | `git commit` with a forbidden flag (default `--trailer`) or with nothing staged is denied. |
-| `plan-review-gate` | ExitPlanMode | A plan can only be submitted with a review file for it (by name) that says `VERDICT: APPROVED`; REJECTED and ESCALATE deny, round 3 needs the user's `owner:` decision, and a section added after round 1 denies (growth guard). The submitted plan text picks the file, not the newest file in the shared directory. |
+| `plan-review-gate` | ExitPlanMode | A plan can only be submitted with a review that says `VERDICT: APPROVED` — either next to it as `<plan><review_suffix>`, or, in plan mode where only one file may be written, as a `## Review` section of the plan itself. REJECTED and ESCALATE deny, round 3 needs the user's `owner:` decision, and a section added after round 1 denies (growth guard). The plans directory is shared by every project, so the plan declares `project:` and the gate elects by that, names a plan that belongs elsewhere, skips one marked superseded, and refuses two live plans of one project instead of choosing by date. A plan may declare `base:`; the ref must resolve and the review must name the same one. |
 | `overnight-guard` | Bash | While `.roadworthy/overnight` exists (set by `/roadworthy:overnight` on the user's order), `git push`, `git merge`, `git tag`, `gh pr merge` and every `deny:` rule of `.roadworthy/overnight-rules` are denied; `protect-paths` also freezes the file's `freeze:` globs. |
 
 Every hook declares its crash policy. The four guards **fail closed**: an internal error denies
@@ -53,7 +53,7 @@ table. Per-project freezes live in `.roadworthy/overnight-rules` (`deny: <regex>
 
 | Skill | Use |
 |---|---|
-| `/roadworthy:plan` | A plan born ready: whole-file reading, impact sweep with commands, EARS acceptance criteria, `[NEEDS CLARIFICATION]` instead of assumptions, scope declaration, hash-bound review. |
+| `/roadworthy:plan` | A plan born ready: whole-file reading, impact sweep with commands, EARS acceptance criteria, `[NEEDS CLARIFICATION]` instead of assumptions, scope declaration, and the review the gate requires — inside the plan in plan mode, or beside it. |
 | `/roadworthy:refute` | Prove a check can fail: inject the defect, expect the intended failure text, restore byte for byte, verify the hash. `scripts/refute.sh` does it mechanically. |
 | `/roadworthy:close` | `close.sh` runs the gates declared in `.roadworthy/gates` after the last commit, records each with the content fingerprint of the tree, and says FRESH/STALE/MISSING later; `close-front.sh` moves a closed front into history with links rewritten. |
 | `/roadworthy:document` | Dated decision records with MADR status vocabulary, revision by new file, a Confirmation section; `docs-init.sh` builds the tree by role, `docs-check.sh` and `pointers-check.sh` keep it honest. Projects that write status words in another language declare them under `status` in `.roadworthy/docs.json`. |
@@ -82,7 +82,7 @@ Set on enable, or later with `/plugin` → Roadworthy → Configure. Values reac
 | `scope_lock` | `true` | Honour `.roadworthy/scope`. |
 | `forbidden_commit_flags` | `--trailer` | Comma-separated flags denied in commit commands. |
 | `block_empty_commits` | `true` | Deny `git commit` with nothing staged. |
-| `plan_review_required` | `true` | Require the hash-bound review before ExitPlanMode. |
+| `plan_review_required` | `true` | Require the review before ExitPlanMode. It binds to the plan by name, never by hash: what the user approved is what counts. |
 | `review_suffix` | `.review.md` | Suffix of the review file next to the plan. |
 | `plans_dir` | `~/.claude/plans` | Where Claude Code writes plan-mode plans. The directory is shared by every project, so a plan declares `project: <repository>` in its header and the gate elects by that, not by date. |
 
@@ -94,7 +94,7 @@ variable reached it, and the open session kept denying with the old value.
 
 ## Principles
 
-The bundled principles are thirteen numbered lines, each naming the failure it prevents and
+The bundled principles are eight numbered lines, each naming the failure it prevents and
 the mechanism behind it. Read them in [`principles/PRINCIPLES.md`](principles/PRINCIPLES.md).
 Keep them, or point `principles_file` at your own.
 

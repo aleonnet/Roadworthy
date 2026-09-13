@@ -4,3 +4,13 @@
 tests/run.sh
 CHANGELOG.md
 docs/plans/2026-09-13-1315-handoff-the-rite-inside-plan-mode.md
+# Alargado em 2026-09-13, com motivo: a linha do portao do plano no README descreve o
+# comportamento que ESTA frente mudou (defeito da minha entrega), e a leitura do arquivo
+# expos duas afirmacoes falsas anteriores, ambas medidas agora: "treze linhas numeradas"
+# quando sao 8 (grep em principles/PRINCIPLES.md) e "hash-bound review" quando a banca
+# prende por NOME desde 0.3.0 (hooks/plan-review-gate:18). Publicar texto falso nao e opcao.
+README.md
+# Alargado em 2026-09-13: a varredura da classe (grep no repo inteiro por "hash"/"exact bytes")
+# achou a mesma afirmacao falsa na DESCRICAO do skill do plano, que e o texto pelo qual o modelo
+# decide usar o rito. Consertar so o README deixaria a classe pela metade.
+skills/plan/SKILL.md
