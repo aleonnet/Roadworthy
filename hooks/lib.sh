@@ -95,11 +95,11 @@ PY
 }
 
 # rw_glob_match <path> <comma-separated globs> — 0 when any glob matches.
-# Globs use the shell's `**`-aware matching via python fnmatch after
-# normalising `**/` to match any depth.
+# Globs are translated to a regular expression, not matched with fnmatch:
+# `**/` becomes any depth, `*` stops at a separator, `?` takes one character.
 rw_glob_match() {
   python3 - "$1" "$2" <<'PY'
-import fnmatch, os, re, sys
+import os, re, sys
 path, globs = sys.argv[1], [g.strip() for g in sys.argv[2].split(",") if g.strip()]
 path = os.path.normpath(path)
 def to_regex(g):
