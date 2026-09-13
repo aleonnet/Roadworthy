@@ -23,6 +23,17 @@ in two projects, hit it on the same day; both escaped by hand, and one lost a te
 because the verdict had nowhere to go. This release makes the rite fit in plan mode, binds a plan
 to its project and its base, and stops a closing from reporting success with nothing measured.
 
+**What is proved and what is not.** Every change here is covered by the suite in both directions
+and refuted once (defect injected, expected failure text, file restored by hash). What is *not*
+proved is the end-to-end path: this front submitted its own plan with the gate suspended, because
+the gate blocked the repair of itself, and every hook was exercised with synthetic events against
+this working tree — never against the installed copy in a real session. The bench that closes
+this is in `docs/plans/2026-09-13-1315-handoff-the-rite-inside-plan-mode.md`.
+
+**Behaviour change to know about before upgrading:** `close.sh --check` now fails in a project
+with no `.roadworthy/gates`, where it used to print the absence and exit 0. That is the fix, and
+it will surface in projects that never declared gates.
+
 ### Fixed — 2026-09-13, the rite was impossible inside plan mode
 The plan rite asked for three files — the plan, the scope lock and the review — and plan mode
 lets an agent write one. Two sessions in two projects hit it on the same day; both escaped by

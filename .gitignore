@@ -1,3 +1,10 @@
 .DS_Store
 *.refute-bak
 evals/results/
+
+# Local Roadworthy state, never content: close.sh writes the evidence ledger and the recorded
+# state here, and a gate's output carries absolute paths of the machine that ran it. They are the
+# same files tree-fingerprint.sh leaves out of the fingerprint for the same reason.
+.roadworthy/evidence.jsonl
+.roadworthy/denials.jsonl
+.roadworthy/state

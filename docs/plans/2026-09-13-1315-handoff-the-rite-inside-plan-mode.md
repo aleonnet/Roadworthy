@@ -51,8 +51,30 @@ file in the same act as the scope; the scope-lock denial points at closing inste
 | 6 | the elected plan belongs to another project | deny naming it | same |
 | 7 | the closing runs with no gates file | fail | `tests/run.sh`, close section |
 | 8 | the night closes with zero gates declared | refuse, keep the marker | `tests/run.sh`, overnight section |
-| 9 | the whole rite runs inside plan mode | the plan reaches the approval screen with no gesture outside the mode | this front: it did |
+| 9 | the whole rite runs inside plan mode | the plan reaches the approval screen with no gesture outside the mode | **NOT PROVED — see below** |
 | 10 | the suite runs | `RESULT: gate clean` | `bash tests/run.sh` |
+
+**Acceptance 9 is not proved, and it is the heart of this release.** This front submitted its own
+plan with the gate *suspended* by the owner, because the gate blocked the repair of itself; and
+every other proof here was made against this working tree with synthetic hook events, never
+against the **installed** copy of the plugin in a real session — which is the copy a session
+actually runs. Nothing in this release is claimed on that point. The bench below closes it, and
+until it is filled the release is "proved by the suite, unproved in the field".
+
+### Bench — fill the result column in a real session running 0.5.0
+
+| # | step | expected result | a wrong result means |
+|---|---|---|---|
+| 1 | `/plugin` after updating and `/reload-plugins` | version 0.5.0 | the update did not land |
+| 2 | with a scope lock declared, write the plan file in plan mode | allowed | the plans-directory exemption did not ship |
+| 3 | write a file outside the scope | denied, with the literal scope message | the lock loosened |
+| 4 | submit a plan with no review section | denied, naming **this** plan and where to write the verdict | if it names another project's plan, the project binding did not ship |
+| 5 | add `## Review` with `VERDICT: APPROVED` and submit | the plan reaches the approval screen | acceptance 9 fails: the rite still does not fit in the mode |
+| 6 | declare a `base:` that does not exist and submit | denied, naming the ref | the base check did not ship |
+| 7 | in a project with no `.roadworthy/gates`, run `close.sh --check` | fails | a closing can still report success with nothing measured |
+
+Step 4 is only meaningful while the shared plans directory still holds plans of other projects —
+101 of them when this was written.
 
 ## Proof
 
