@@ -114,6 +114,28 @@ rw_realpath() {
   esac
 }
 
+# rw_root <dir> — the repository the directory belongs to, resolved, or the directory itself.
+# A guard that reads `<cwd>/.roadworthy/...` is INERT one directory down: the session's cwd is
+# wherever the agent happens to be, and the project's files live at the top level.
+rw_root() {
+  local d="$1"
+  [ -n "$d" ] || return 0
+  rw_realpath "$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$d")"
+}
+
+# rw_cmd_dir <command> <cwd> — the directory a shell command actually acts on: `git -C <dir>`,
+# a leading `cd <dir> &&`, else the session's cwd. Generalised from the empty-staging check of
+# guard-commit, which had the only copy of this reasoning.
+rw_cmd_dir() {
+  local command="$1" cwd="$2" dir
+  dir="$(printf '%s' "$command" | sed -n -E 's/.*git[[:space:]]+-C[[:space:]]+([^[:space:]]+).*/\1/p' | head -1)"
+  [ -n "$dir" ] || dir="$(printf '%s' "$command" | sed -n -E 's/^[[:space:]]*cd[[:space:]]+([^[:space:];&|]+)[[:space:]]*(&&|;).*/\1/p' | head -1)"
+  [ -n "$dir" ] || dir="$cwd"
+  dir="${dir/#\~/$HOME}"; dir="${dir%\"}"; dir="${dir#\"}"
+  case "$dir" in /*) ;; *) dir="$cwd/$dir" ;; esac
+  printf '%s' "$dir"
+}
+
 # rw_glob_match <path> <comma-separated globs> — 0 when any glob matches.
 # Globs are translated to a regular expression, not matched with fnmatch:
 # `**/` becomes any depth, `*` stops at a separator, `?` takes one character.

@@ -110,14 +110,29 @@ run_hook protect-paths "$E"
 
 # ── scope-lock ───────────────────────────────────────────────────────────────
 section "scope-lock"
-REPO="$TMP/repo"; mkdir -p "$REPO/.roadworthy" "$REPO/src" "$REPO/docs"
+REPO="$TMP/repo"; mkdir -p "$REPO/.roadworthy" "$REPO/src" "$REPO/docs" "$REPO/src/deep"
+git -C "$REPO" init -q
 printf '# scope\nsrc/**\n' > "$REPO/.roadworthy/scope"
 run_hook scope-lock "{\"tool_name\":\"Edit\",\"cwd\":\"$REPO\",\"tool_input\":{\"file_path\":\"$REPO/docs/readme.md\"}}"
 denied && ok "edit outside scope denied" || fail "outside scope not denied"
 run_hook scope-lock "{\"tool_name\":\"Edit\",\"cwd\":\"$REPO\",\"tool_input\":{\"file_path\":\"$REPO/src/a.dart\"}}"
 ! denied && ok "edit inside scope allowed" || fail "inside scope denied"
+# The foundation of the front is NOT editable by hand: exempting the whole .roadworthy/
+# directory put the scope, the gates and the ledgers inside the blind spot of the guard that
+# exists to protect them. Human configuration of the project stays editable, by name.
 run_hook scope-lock "{\"tool_name\":\"Edit\",\"cwd\":\"$REPO\",\"tool_input\":{\"file_path\":\"$REPO/.roadworthy/scope\"}}"
-! denied && ok "scope file itself editable" || fail "scope file denied"
+denied && ok "the scope file itself is NOT editable by hand" || fail "scope file still editable"
+for cfg in docs.json protected overnight-rules; do
+  run_hook scope-lock "{\"tool_name\":\"Edit\",\"cwd\":\"$REPO\",\"tool_input\":{\"file_path\":\"$REPO/.roadworthy/$cfg\"}}"
+  ! denied || fail "human configuration $cfg denied"
+done
+ok "human configuration (docs.json, protected, overnight-rules) stays editable"
+# The scope belongs to the project, so the lock has to hold from a subdirectory too. Read at
+# the session cwd it was simply absent one level down, and every edit passed.
+run_hook scope-lock "{\"tool_name\":\"Edit\",\"cwd\":\"$REPO/src/deep\",\"tool_input\":{\"file_path\":\"$REPO/docs/readme.md\"}}"
+denied && ok "the lock holds from a subdirectory of the project" || fail "lock inert from a subdirectory"
+run_hook scope-lock "{\"tool_name\":\"Edit\",\"cwd\":\"$REPO/src/deep\",\"tool_input\":{\"file_path\":\"$REPO/src/a.dart\"}}"
+! denied && ok "and still allows what is inside the scope from there" || fail "in-scope edit denied from a subdirectory"
 # The plan lives outside the project, in the plans directory: the lock must not deny the rite's
 # own artefact. Measured in the field on 2026-09-08 and again on 2026-09-13, in two projects:
 # denied there, the agent's only way out was widening the scope by hand.
@@ -357,6 +372,10 @@ run_hook protect-paths "{\"tool_name\":\"Edit\",\"cwd\":\"$PP\",\"tool_input\":{
 denied && ok "project file glob denied without any user option" || fail "project protected file ignored"
 run_hook protect-paths "{\"tool_name\":\"Edit\",\"cwd\":\"$PP\",\"tool_input\":{\"file_path\":\"$PP/lib/other.py\"}}"
 ! denied && ok "outside project globs allowed" || fail "outside project glob denied"
+# Same reason as the scope: the project list lives at the top level.
+git -C "$PP" init -q; mkdir -p "$PP/lib/auth/deep"
+run_hook protect-paths "{\"tool_name\":\"Edit\",\"cwd\":\"$PP/lib/auth/deep\",\"tool_input\":{\"file_path\":\"$PP/lib/auth/x.py\"}}"
+denied && ok "the project protected list holds from a subdirectory" || fail "project protected list inert from a subdirectory"
 
 # ── plan-review-gate: review_suffix and Portuguese fields ───────────────────
 section "plan-review-gate (review_suffix)"
@@ -538,6 +557,13 @@ printf 'freeze: pubspec.yaml\nfreeze: CHANGELOG.md\n' > "$ON/.roadworthy/overnig
 SUB="$ON/lib"; mkdir -p "$SUB"
 run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$SUB\",\"tool_input\":{\"command\":\"git push\"}}"
 denied && ok "marker found from a subdirectory of the repository" || fail "marker not found from a subdirectory"
+# The night belongs to the repository the COMMAND acts on. Resolving from the session cwd
+# denied a push to an unmarked repository just because the session stood in a marked one.
+OTHER="$TMP/othernight"; mkdir -p "$OTHER"; git -C "$OTHER" init -q
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$ON\",\"tool_input\":{\"command\":\"git -C $OTHER push origin main\"}}"
+! denied && ok "a push to another, unmarked repository passes from inside a marked one" || fail "the night denied another repository"
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$OTHER\",\"tool_input\":{\"command\":\"git -C $ON push origin main\"}}"
+denied && ok "and a push to the MARKED repository is denied from outside it" || fail "the night missed the repository the command attacks"
 
 # ── protect-paths: overnight freeze ──────────────────────────────────────────
 section "protect-paths (overnight freeze)"

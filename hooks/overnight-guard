@@ -17,9 +17,12 @@ rw_read_event
 command="$(rw_field tool_input.command)"
 [ -n "$command" ] || exit 0
 
-cwd="$(rw_field cwd)"
+cwd="$(rw_realpath "$(rw_field cwd)")"
 [ -n "$cwd" ] || exit 0
-root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cwd")"
+# The night belongs to the repository the COMMAND acts on, not to the one the session stands
+# in. Resolving from the cwd denied `git -C <other-repo> push` from inside a marked project,
+# and let the same command through from outside it -- wrong in both directions.
+root="$(rw_root "$(rw_cmd_dir "$command" "$cwd")")"
 marker="$root/.roadworthy/overnight"
 [ -f "$marker" ] || exit 0
 

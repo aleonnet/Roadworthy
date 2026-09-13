@@ -14,7 +14,10 @@ rw_read_event
 rw_bool "$(rw_option SCOPE_LOCK true)" || exit 0
 
 cwd="$(rw_realpath "$(rw_field cwd)")"
-scope_file="$cwd/.roadworthy/scope"
+# The scope belongs to the PROJECT, not to wherever the agent happens to stand: reading it at
+# "$cwd/.roadworthy/scope" left the lock inert one directory down.
+root="$(rw_root "$cwd")"
+scope_file="$root/.roadworthy/scope"
 [ -f "$scope_file" ] || exit 0
 
 target="$(rw_field tool_input.file_path)"
@@ -24,12 +27,14 @@ target="$(rw_realpath "$target")"
 
 relative="$target"
 case "$target" in
-  "$cwd"/*) relative="${target#"$cwd"/}" ;;
+  "$root"/*) relative="${target#"$root"/}" ;;
 esac
 
-# The scope file itself and the plan's own artefacts are always editable.
+# Human configuration of the project is always editable; the rest of .roadworthy/ is not.
+# Exempting the whole directory put the front's own foundation -- the scope, the gates, the
+# ledgers -- inside the blind spot of the guard that is supposed to protect it.
 case "$relative" in
-  .roadworthy/*) exit 0 ;;
+  .roadworthy/docs.json|.roadworthy/protected|.roadworthy/overnight-rules) exit 0 ;;
 esac
 # The plan and its review live in the plans directory (`plans_dir`), outside the project, so
 # they are matched on the absolute path. Without this the lock denies the very artefact the
