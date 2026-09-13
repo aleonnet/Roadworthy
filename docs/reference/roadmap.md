@@ -6,7 +6,8 @@ Living document (undated name by design). One line per item, with the measured r
 - 0.1 hooks and skills; 0.2 documentation tree by role, evidence-gated close, refutation
   ledger, resume by name; 0.2.1 per-project status vocabulary (found by adopting on a
   Portuguese-language monorepo).
-- Evals suite (`evals/`, six cases) and `bin/rw-metrics` (seven KPIs from the eval JSON, the
+- Evals suite: `evals/` (seven cases) and `evals-round2/` (six, the same cases with the rules moved
+  from the prompt into the project's own CLAUDE.md), plus `bin/rw-metrics` (seven KPIs from the eval JSON, the
   run trace and the kept workspace).
 - 0.3.0 overnight mode: `/roadworthy:overnight`, `overnight-guard`, `freeze:` in `protect-paths`,
   the Overnight policy section, the `overnight` eval (record `docs/decisions/2026-09-03-1322-overnight-mode.md`).
