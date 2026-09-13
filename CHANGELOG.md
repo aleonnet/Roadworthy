@@ -107,6 +107,14 @@ Found by reading the files while releasing, and swept as a class across the repo
   the suite has asserted eight since 0.4.0.
 - `.gitignore` and the privacy scan: the evidence ledger, the denials log and the recorded state
   are local machine state, not plugin sources. A new assertion fails if they are tracked again.
+- `.gitignore`: `.roadworthy/scope` joins them, measured while closing this front. `close.sh`
+  requires a clean tree, and the scope file dirties it: tracked, every close needs a housekeeping
+  commit afterwards for the deletion `close.sh` itself made (twice in one session here);
+  untracked, the tree is never clean and `close.sh` refuses to run. It is transient state that a
+  front declares and the closing removes — the same class `tree-fingerprint.sh` already excludes
+  from the fingerprint. **Add these four lines to your own project's `.gitignore`.**
+- `README.md`: refutation is once per guarantee, when the fence is written — not the whole suite
+  on every change. A refutation runs the check twice, and nothing said so.
 
 ## [0.4.0] - 2026-09-07
 
