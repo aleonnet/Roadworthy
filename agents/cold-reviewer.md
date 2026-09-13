@@ -1,6 +1,6 @@
 ---
 name: cold-reviewer
-description: Read-only adversarial reviewer that sees only the diff or the plan and the stated criteria, never the reasoning that produced them. Flags only gaps that affect correctness or the stated requirements, and fails closed on anything it cannot verify. Use for plan reviews bound to a hash and for diff reviews before a change is declared delivered.
+description: Read-only adversarial reviewer that sees only the diff or the plan and the stated criteria, never the reasoning that produced them. Flags only gaps that affect correctness or the stated requirements, and fails closed on anything it cannot verify. Use for diff reviews before a change is declared delivered; a plan is guarded by the mechanical pre-flight, and any plan review binds to the plan by NAME, never to a hash.
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---
