@@ -15,7 +15,7 @@ each run, the trace it points at and the kept workspace next to it:
 Usage: rw-metrics LABEL=run.json [LABEL=run.json ...] [--md out.md] [--csv out.csv]
 The kept workspace is copied to a temporary directory before git or pytest run in it.
 """
-import fnmatch, json, os, re, shutil, stat, subprocess, sys, tempfile
+import fnmatch, json, os, re, shutil, subprocess, sys, tempfile
 
 def chmod_open(path):
     for p in (path, os.path.join(path, "sealed")):
