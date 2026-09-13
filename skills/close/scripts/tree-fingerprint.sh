@@ -16,10 +16,15 @@ tmp_index="$(mktemp)"
 rm -f "$tmp_index"
 export GIT_INDEX_FILE="$tmp_index"
 git add -A . >/dev/null 2>&1
-# Transient Roadworthy state is not content: the scope lock, the recorded state
-# and the ledgers change as a side effect of measuring, and must not move the
-# fingerprint they are measured against.
-git rm --cached -q --ignore-unmatch .roadworthy/scope .roadworthy/state .roadworthy/evidence.jsonl .roadworthy/denials.jsonl >/dev/null 2>&1 || true
+# Transient Roadworthy state is not content: the scope lock, the recorded state, the
+# snapshot, the night marker, the stop latch and the ledgers change as a side effect of
+# measuring, and must not move the fingerprint they are measured against. The gates file
+# is NOT here: it survives the close and is versioned like a test.
+git rm --cached -q -r --ignore-unmatch \
+  .roadworthy/scope .roadworthy/state .roadworthy/plan.snapshot .roadworthy/overnight \
+  .roadworthy/evidence.jsonl .roadworthy/denials.jsonl .roadworthy/refutations.jsonl \
+  .roadworthy/preflight.jsonl .roadworthy/readings.jsonl .roadworthy/stop-latch \
+  >/dev/null 2>&1 || true
 tree="$(git write-tree | cut -c1-16)"
 unset GIT_INDEX_FILE
 rm -f "$tmp_index"

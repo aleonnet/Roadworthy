@@ -8,7 +8,22 @@ evals/results/
 # when the gates pass, so tracking it forces a housekeeping commit at every close, and leaving
 # it untracked keeps the tree dirty and close.sh refuses to run at all. These are the same files
 # tree-fingerprint.sh leaves out of the fingerprint, for the same reason.
+.roadworthy/scope
+.roadworthy/state
+.roadworthy/plan.snapshot
+.roadworthy/overnight
 .roadworthy/evidence.jsonl
 .roadworthy/denials.jsonl
-.roadworthy/state
-.roadworthy/scope
+.roadworthy/refutations.jsonl
+.roadworthy/preflight.jsonl
+.roadworthy/readings.jsonl
+.roadworthy/stop-latch/
+
+# NOT here on purpose: .roadworthy/gates and .roadworthy/docs.json. The gates file survives the
+# close (close.sh removes only the scope), carries no machine path, and a clone needs it -- without
+# it close.sh refuses to close at all. It is the project's declared quality bar, versioned like a
+# test. docs.json is human configuration for the same reason.
+
+# Python leaves this behind whenever bin/rw-metrics is imported or compiled; it is a build
+# artefact of the machine that ran it, never source.
+bin/__pycache__/

@@ -1,5 +1,7 @@
-# Portoes desta frente, copiados da secao de Verificacao do plano aprovado em 2026-09-13.
-# close.sh le este arquivo e nada mais; sem ele o fechamento nao passa e a trava nunca e liberada.
+# Portoes desta frente. close.sh executa cada linha com bash -c: nenhuma pode ser prosa.
+# Comeca com os quatro que EXISTEM hoje; tests/attack.sh e o --sources do catalogo entram
+# quando forem construidos, nos entregaveis que os criam.
 bash tests/run.sh
 bash skills/document/scripts/docs-check.sh docs
+bash skills/document/scripts/pointers-check.sh README.md --root .
 claude plugin validate . --strict
