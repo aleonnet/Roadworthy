@@ -11,6 +11,11 @@ root="$(cd "${1:-.}" && pwd)"
 cfg="$root/.roadworthy/docs.json"
 [ -f "$cfg" ] || { echo "resume-pick: $cfg not found; run docs-init.sh" >&2; exit 1; }
 plans="$root/$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["plans"])' "$cfg")"
+# The word for "superseded by" is the project's, declared under "status" in docs.json -- the same
+# dictionary docs-check.sh reads. Matching only the English form returned the SUPERSEDED hand-off
+# on a project that writes in Portuguese (measured 2026-09-07). Both forms are accepted, so a
+# project that declares its own word does not lose the English one mid-migration.
+W_SUP="$(python3 -c 'import json,sys; m=(json.load(open(sys.argv[1])).get("status") or {}); print(m.get("superseded by","superseded by"))' "$cfg")"
 [ -d "$plans" ] || { echo "resume-pick: plans directory $plans does not exist" >&2; exit 1; }
 newest="$(find "$plans" -maxdepth 1 -name '*-handoff-*.md' -print | sed 's|.*/||' | sort | tail -1)"
 [ -n "$newest" ] || { echo "resume-pick: no handoff in $plans" >&2; exit 1; }
@@ -19,7 +24,7 @@ current="$newest"
 for _ in 1 2 3 4 5 6 7 8; do
   for s in "${seen[@]:-}"; do [ "$s" = "$current" ] && { echo "resume-pick: cycle in superseded-by at $current" >&2; exit 1; }; done
   seen+=("$current")
-  target="$(head -5 "$plans/$current" | grep -m1 -E '^status: superseded by ' | sed -E 's/^status: superseded by //' || true)"
+  target="$(head -5 "$plans/$current" | grep -m1 -E "^status: ($W_SUP|superseded by) " | sed -E "s/^status: ($W_SUP|superseded by) //" || true)"
   if [ -z "$target" ]; then echo "$plans/$current"; exit 0; fi
   [ -f "$plans/$target" ] || { echo "resume-pick: $current is superseded by '$target', which does not exist" >&2; exit 1; }
   [[ "$target" > "$current" ]] || { echo "resume-pick: $current is superseded by '$target', which is not newer by name" >&2; exit 1; }

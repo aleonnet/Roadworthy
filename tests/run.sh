@@ -393,6 +393,11 @@ section "docs-init.sh"
 DI="$TMP/di"; mkdir -p "$DI"
 bash skills/document/scripts/docs-init.sh "$DI" > "$TMP/di1.log" && ok "first run creates the tree" || fail "docs-init first run"
 grep -q 'created  docs/decisions/' "$TMP/di1.log" && [ -f "$DI/docs/README.md" ] && [ -f "$DI/docs/plans/done/README.md" ] && ok "map, roles and done index created" || fail "tree incomplete"
+# The generated docs.json carries the status dictionary, EMPTY and uncommented: docs-check.sh and
+# plan-review-gate read it with json.load, and one "//" would break the documentation gate of
+# every new project. A project that never declares a word keeps English, which is the default.
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get("status")=={} else 1)' "$DI/.roadworthy/docs.json" \
+  && ok "the generated docs.json has an empty status dictionary and parses as JSON" || fail "generated docs.json has no usable status key"
 snap="$(cd "$DI" && find . -type f -exec shasum -a 256 {} + | sort)"
 bash skills/document/scripts/docs-init.sh "$DI" > "$TMP/di2.log"
 [ "$snap" = "$(cd "$DI" && find . -type f -exec shasum -a 256 {} + | sort)" ] && ! grep -q 'created' "$TMP/di2.log" && ok "second run changes nothing and reports 'exists'" || fail "docs-init not idempotent"
@@ -445,6 +450,14 @@ touch "$DI/docs/plans/2026-01-01-0900-handoff-a.md"   # older handoff, newer mti
 [ "$(bash skills/resume/scripts/resume-pick.sh "$DI")" = "$DI/docs/plans/2026-01-02-0900-handoff-b.md" ] && ok "picks the newest by name despite mtime" || fail "resume-pick chose by mtime"
 printf 'status: superseded by 2026-01-01-0900-handoff-a.md\n' > "$DI/docs/plans/2026-01-02-0900-handoff-b.md"
 ! bash skills/resume/scripts/resume-pick.sh "$DI" >/dev/null 2>&1 && ok "superseded-by pointing at something older fails" || fail "backward pointer accepted"
+printf 'status: accepted\n' > "$DI/docs/plans/2026-01-02-0900-handoff-b.md"
+# The pointer has to be READ in the word the project declares -- here Portuguese, set above in
+# this tree's docs.json. A pointer the script cannot read is a pointer it ignores, and ignoring it
+# means handing back the SUPERSEDED hand-off as if it were current (measured 2026-09-07 on a real
+# project: the newest file by name was marked "superado por" and the script printed it anyway).
+printf 'status: superado por 2026-01-01-0900-handoff-a.md\n' > "$DI/docs/plans/2026-01-02-0900-handoff-b.md"
+! bash skills/resume/scripts/resume-pick.sh "$DI" >/dev/null 2>&1 \
+  && ok "a superseded-by written in the project word is READ, not ignored" || fail "resume ignored the project vocabulary and returned the superseded hand-off"
 printf 'status: accepted\n' > "$DI/docs/plans/2026-01-02-0900-handoff-b.md"
 
 # ── close-front: dry-run then apply with link rewrite ───────────────────────
@@ -609,6 +622,13 @@ t0="$(python3 -c 'import time; print(int(time.time()*1000))')"
 diary="$(cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night | tail -1)"
 t1="$(python3 -c 'import time; print(int(time.time()*1000))')"
 [ -f "$OV/.roadworthy/overnight" ] && [ -f "$OV/$diary" ] && ok "start writes the marker and the diary ($diary)" || fail "start did not write marker/diary"
+# The diary is written by a script, so its status line is the project's word, never hardcoded.
+head -1 "$OV/$diary" | grep -q '^status: accepted$' \
+  && ok "the diary carries the status word (English here: this project declares none)" || fail "diary status line: $(head -1 "$OV/$diary")"
+DIARY_PT="$(sed -e "s|{{status}}|aceito|" "$ROOT/skills/overnight/templates/diary.md" | head -1)"
+[ "$DIARY_PT" = "status: aceito" ] && ok "the diary template takes the word from the placeholder, not from a literal" || fail "diary template still hardcodes a word: $DIARY_PT"
+HANDOFF_PT="$(sed -e "s|{{status}}|aceito|" "$ROOT/skills/overnight/templates/handoff.md" | head -1)"
+[ "$HANDOFF_PT" = "status: aceito" ] && ok "and so does the hand-off template" || fail "hand-off template still hardcodes a word: $HANDOFF_PT"
 ms="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["started_ms"])' "$OV/.roadworthy/overnight")"
 [ "$ms" -ge "$t0" ] && [ "$ms" -le "$t1" ] && ok "started_ms was measured by the script (within the test's clock window)" || fail "started_ms outside window: $t0 ≤ $ms ≤ $t1"
 ! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night) >/dev/null 2>"$TMP/ov5" && grep -q 'already on' "$TMP/ov5" && ok "start refused while the marker exists" || fail "double start accepted"

@@ -11,6 +11,17 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "overnight-close: not a git repository" >&2; exit 1; }
 cd "$root"
 refuse() { echo "overnight-close: $1" >&2; exit 1; }
+
+# The status word is the project's, declared under "status" in .roadworthy/docs.json -- the same
+# dictionary docs-check.sh reads. Writing "accepted" by hand produced a file the plugin's own
+# documentation gate rejected on a project that writes in Portuguese (measured 2026-09-07).
+rw_status_word() {
+  python3 -c 'import json,os,sys
+p=".roadworthy/docs.json"
+m=(json.load(open(p)).get("status") or {}) if os.path.exists(p) else {}
+print(m.get(sys.argv[1], sys.argv[1]))' "$1"
+}
+
 [ -f .roadworthy/overnight ] || refuse "overnight mode is not on (no .roadworthy/overnight)"
 [ -z "$(git status --porcelain)" ] || refuse "the tree is dirty; commit the last phase first"
 close="$here/../../close/scripts/close.sh"
@@ -46,11 +57,11 @@ lines = [l for l in body.splitlines() if l.strip() and not l.strip().startswith(
 print("\n".join(lines) if lines else "- none")
 PY
 )"
-python3 - "$here/../templates/handoff.md" "$handoff" "$topic" "$closed_iso" "$(basename "$root")" "$branch" "$head" "clean" "$unpushed" "$diary" "$plan" "$blockers" <<'PY'
+python3 - "$here/../templates/handoff.md" "$handoff" "$topic" "$closed_iso" "$(basename "$root")" "$branch" "$head" "clean" "$unpushed" "$diary" "$plan" "$blockers" "$(rw_status_word accepted)" <<'PY'
 import sys
-tpl, out, topic, closed, repo, branch, head, tree, unpushed, diary, plan, blockers = sys.argv[1:13]
+tpl, out, topic, closed, repo, branch, head, tree, unpushed, diary, plan, blockers, status = sys.argv[1:14]
 t = open(tpl, encoding="utf-8").read()
-for k, v in {"topic": topic, "closed_iso": closed, "repo": repo, "branch": branch, "head": head, "tree": tree,
+for k, v in {"status": status, "topic": topic, "closed_iso": closed, "repo": repo, "branch": branch, "head": head, "tree": tree,
              "unpushed": unpushed, "diary": diary, "plan": plan, "blockers": blockers}.items():
     t = t.replace("{{%s}}" % k, v)
 open(out, "w", encoding="utf-8").write(t)

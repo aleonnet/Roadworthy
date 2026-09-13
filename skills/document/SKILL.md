@@ -15,6 +15,13 @@ context boundary.
 - **Name:** `YYYY-MM-DD-HHMM-short-description.md`. No `-v2`; a revision is a new file.
 - **Status line first:** `status: proposed | rejected | accepted | deprecated | superseded by <file>.md`
   (MADR 4.0.0 vocabulary). The target of `superseded by` must exist.
+- **The five words are the project's to name.** A project writing its documents in another
+  language maps them under `"status"` in `.roadworthy/docs.json`, for example
+  `{"accepted": "aceito", "superseded by": "superado por"}`. A mapped word REPLACES the
+  English one; the states left out keep English, so a project can map one word and no more.
+  `docs-check.sh`, `resume-pick.sh` and `plan-review-gate` all read that one dictionary --
+  writing a second vocabulary anywhere is how a document the plugin itself wrote came back
+  rejected by the plugin's own gate.
 - **Never rewrite in place.** Keep the old file, mark it superseded (Nygard, 2011).
 - **Confirmation section** in every decision: which check proves the decision is in force.
 - **Links resolve.** Run `scripts/docs-check.sh <docs dir>`; it fails on status outside the

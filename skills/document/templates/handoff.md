@@ -1,4 +1,7 @@
 status: accepted
+<!-- status: use the word your project declares under "status" in .roadworthy/docs.json.
+     Left in English here because this template is copied by hand, with no script to fill it;
+     docs-check.sh will tell you if the word is wrong for your project. -->
 
 # Handoff — <front> — <YYYY-MM-DD HH:MM>
 

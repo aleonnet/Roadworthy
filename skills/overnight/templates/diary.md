@@ -1,4 +1,4 @@
-status: accepted
+status: {{status}}
 
 # Overnight diary — {{topic}} — {{started_iso}}
 

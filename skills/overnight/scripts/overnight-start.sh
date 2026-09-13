@@ -15,6 +15,16 @@ plan="${1:?usage: overnight-start.sh <plan.md> <topic>}"
 topic="${2:?usage: overnight-start.sh <plan.md> <topic>}"
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "overnight-start: not a git repository" >&2; exit 1; }
 cd "$root"
+# The status word is the project's, declared under "status" in .roadworthy/docs.json -- the same
+# dictionary docs-check.sh reads. Writing "accepted" by hand produced a file the plugin's own
+# documentation gate rejected on a project that writes in Portuguese (measured 2026-09-07).
+rw_status_word() {
+  python3 -c 'import json,os,sys
+p=".roadworthy/docs.json"
+m=(json.load(open(p)).get("status") or {}) if os.path.exists(p) else {}
+print(m.get(sys.argv[1], sys.argv[1]))' "$1"
+}
+
 missing=()
 miss() { missing+=("$1"); }
 refuse() { echo "overnight-start: $1" >&2; exit 1; }
@@ -50,7 +60,8 @@ started_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 stamp="$(date +%Y-%m-%d-%H%M)"
 diary="$decisions/$stamp-overnight-$topic.md"
 [ ! -e "$diary" ] || refuse "diary already exists: $diary"
-sed -e "s|{{topic}}|$topic|g" -e "s|{{plan}}|$plan|g" -e "s|{{plan_sha}}|$sha|g" \
+sed -e "s|{{status}}|$(rw_status_word accepted)|g" \
+    -e "s|{{topic}}|$topic|g" -e "s|{{plan}}|$plan|g" -e "s|{{plan_sha}}|$sha|g" \
     -e "s|{{started_iso}}|$started_iso|g" -e "s|{{started_ms}}|$started_ms|g" \
     "$here/../templates/diary.md" > "$diary"
 python3 - "$plan" "$sha" "$topic" "$diary" "$started_ms" "$started_iso" <<'PY'

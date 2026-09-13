@@ -6,5 +6,8 @@
   "history": "docs/history",
   "reference": "docs/reference",
   "guides": "docs/guides",
-  "archive": "docs/archive"
+  "archive": "docs/archive",
+  "status": {
+    "superseded by": "superado por"
+  }
 }

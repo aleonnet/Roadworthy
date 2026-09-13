@@ -3,6 +3,10 @@
 #
 # Roles, not names: the project chooses the directory for each role in
 # .roadworthy/docs.json; the defaults below are used for anything missing.
+# The file also carries "status": a project writing its documents in another language maps
+# the five MADR states there (see skills/document/SKILL.md). It is generated EMPTY and never
+# commented: docs-check.sh and plan-review-gate read it with json.load, and JSON has no
+# comments -- one "//" would break the documentation gate of every new project.
 # Existing files and directories are never overwritten. A second run produces
 # no change. Prints one line per role: created | exists.
 #
@@ -21,7 +25,8 @@ if [ ! -f "$cfg" ]; then
   "history": "docs/history",
   "reference": "docs/reference",
   "guides": "docs/guides",
-  "archive": "docs/archive"
+  "archive": "docs/archive",
+  "status": {}
 }
 JSON
   echo "created  .roadworthy/docs.json (defaults)"

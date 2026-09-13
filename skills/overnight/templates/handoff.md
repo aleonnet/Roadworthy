@@ -1,4 +1,4 @@
-status: accepted
+status: {{status}}
 
 # Handoff — overnight {{topic}} — {{closed_iso}}
 

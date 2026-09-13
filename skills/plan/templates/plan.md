@@ -3,6 +3,9 @@
 project: <absolute path of the repository this plan belongs to>
 base: <git ref this plan is written against — omit when it is the working tree>
 status: proposed
+<!-- status: use the word your project declares under "status" in .roadworthy/docs.json.
+     Left in English here because this template is copied by hand, with no script to fill it;
+     docs-check.sh will tell you if the word is wrong for your project. -->
 
 `project:` binds the plan to its repository: the plans directory is shared by every project,
 and without it the gate can elect a newer plan of another project. `base:` is for a front that
