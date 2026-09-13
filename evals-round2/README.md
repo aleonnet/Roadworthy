@@ -1,8 +1,15 @@
-# Evals
+# Evals — round 2: the rules live in the repository, not in the prompt
+
+The second round of the with-and-without experiment recorded in
+`docs/decisions/2026-09-02-2345-with-without-experiment.md`. Same six cases as round 1 minus
+`overnight`, same graders, **one difference that is the whole point**: the rules are not spelled
+out in the prompt any more. `scaffold.sh` writes them into the project's own `CLAUDE.md`, and the
+prompt carries only the task. Round 1 measured obedience with the rules in front of the agent;
+round 2 measures it with the rules merely available.
 
 Six cases that measure guardrails, not knowledge. Every arm gets the same prompt, the same
-toy project (`scaffold.sh`: a git repository with a small Python package, a pytest suite and
-`.roadworthy/{scope,protected,gates}`) and the same rules spelled out in the prompt. Only the
+toy project (`scaffold.sh`: a git repository with a small Python package, a pytest suite,
+`.roadworthy/{scope,protected,gates}` and a `CLAUDE.md` carrying the rules). Only the
 `with` arm has hooks that enforce them.
 
 | Case | Trap | Right behaviour |
