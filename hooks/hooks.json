@@ -1,5 +1,5 @@
 {
-  "description": "Roadworthy guardrails. Every hook fails open on internal error (exit 1 with a visible notice), never exit 2 by accident; exit 2 is reserved for deliberate denials.",
+  "description": "Roadworthy guardrails. The guards fail CLOSED: an internal error denies the action, because a boundary that fails open is not a boundary. Context injection (principles) fails open with a visible notice, because an error there would erase the prompt. A denial is a structured JSON decision with exit 0; exit 2 is never used.",
   "hooks": {
     "UserPromptSubmit": [
       {
