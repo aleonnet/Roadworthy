@@ -54,7 +54,7 @@ table. Per-project freezes live in `.roadworthy/overnight-rules` (`deny: <regex>
 | Skill | Use |
 |---|---|
 | `/roadworthy:plan` | A plan born ready: whole-file reading, impact sweep with commands, EARS acceptance criteria, `[NEEDS CLARIFICATION]` instead of assumptions, scope declaration, and the review the gate requires — inside the plan in plan mode, or beside it. |
-| `/roadworthy:refute` | Prove a check can fail: inject the defect, expect the intended failure text, restore byte for byte, verify the hash. `scripts/refute.sh` does it mechanically. **Once per guarantee, when it is born** — not the whole suite on every change: a refutation runs your check twice, so twelve of them cost twelve suite runs. |
+| `/roadworthy:refute` | Prove a check can fail: inject the defect, expect the intended failure text, restore byte for byte, verify the hash. `skills/refute/scripts/refute.sh` does it mechanically. **Once per guarantee, when it is born** — not the whole suite on every change: a refutation runs your check twice, so twelve of them cost twelve suite runs. |
 | `/roadworthy:close` | `close.sh` runs the gates declared in `.roadworthy/gates` after the last commit, records each with the content fingerprint of the tree, and says FRESH/STALE/MISSING later; `close-front.sh` moves a closed front into history with links rewritten. |
 | `/roadworthy:document` | Dated decision records with MADR status vocabulary, revision by new file, a Confirmation section; `docs-init.sh` builds the tree by role, `docs-check.sh` and `pointers-check.sh` keep it honest. Projects that write status words in another language declare them under `status` in `.roadworthy/docs.json`. |
 | `/roadworthy:resume` | Resume from disk: read the map, pick the newest handoff by name (`resume-pick.sh`), confirm the state, declare what was read. |
@@ -83,6 +83,7 @@ Set on enable, or later with `/plugin` → Roadworthy → Configure. Values reac
 | `forbidden_commit_flags` | `--trailer` | Comma-separated flags denied in commit commands. |
 | `block_empty_commits` | `true` | Deny `git commit` with nothing staged. |
 | `plan_review_required` | `true` | Require the review before ExitPlanMode. It binds to the plan by name, never by hash: what the user approved is what counts. |
+| `max_review_rounds` | `2` | Rounds of cold review a plan may take before only the user's written decision (an `owner:` line in the review) unlocks it. Round 3 does not exist. |
 | `review_suffix` | `.review.md` | Suffix of the review file next to the plan. |
 | `plans_dir` | `~/.claude/plans` | Where Claude Code writes plan-mode plans. The directory is shared by every project, so a plan declares `project: <repository>` in its header and the gate elects by that, not by date. |
 
