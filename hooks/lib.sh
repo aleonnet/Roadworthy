@@ -34,6 +34,10 @@ PY
       exit 1 ;;
   esac
 }
+# errtrace makes the ERR trap inherit into functions, command substitutions and subshells.
+# Without it the trap is installed and silently absent exactly where the work happens, and a
+# guard that declares RW_ON_CRASH=deny would fail OPEN inside any helper.
+set -o errtrace
 trap 'rw_crash "line $LINENO"' ERR
 
 # Read the whole hook event from stdin once; expose a field reader.
@@ -94,6 +98,22 @@ PY
   exit 0
 }
 
+# rw_realpath <path> — the path with its directory resolved through symlinks.
+# macOS hands the hooks a cwd under /var and `git rev-parse` answers under /private/var, so a
+# prefix comparison between the two never matches and the "relative" path stays absolute. The
+# glob matcher used to paper over that by matching a bare name at any depth; now that it is
+# anchored, both sides have to be resolved before they are compared.
+rw_realpath() {
+  local p="$1" d b
+  [ -n "$p" ] || return 0
+  d="$(dirname "$p")"; b="$(basename "$p")"
+  d="$(cd "$d" 2>/dev/null && pwd -P || printf '%s' "$d")"
+  case "$d" in
+    */) printf '%s%s' "$d" "$b" ;;
+    *)  printf '%s/%s' "$d" "$b" ;;
+  esac
+}
+
 # rw_glob_match <path> <comma-separated globs> — 0 when any glob matches.
 # Globs are translated to a regular expression, not matched with fnmatch:
 # `**/` becomes any depth, `*` stops at a separator, `?` takes one character.
@@ -119,7 +139,10 @@ def to_regex(g):
             out += re.escape(g[i]); i += 1
     return "^" + out + "$"
 for g in globs:
-    if re.match(to_regex(g), path) or re.search("(^|/)" + to_regex(g)[1:], path):
+    # Anchored at the root, always. A bare `README.md` used to also match `docs/README.md`,
+    # because the old fallback stripped the leading anchor and searched at any separator.
+    # A glob that means "at any depth" says so: `**/README.md`.
+    if re.match(to_regex(g), path):
         sys.exit(0)
 sys.exit(1)
 PY

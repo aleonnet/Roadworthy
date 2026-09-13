@@ -77,6 +77,15 @@ run_hook principles 'not json'
 [ "$RC" -eq 1 ] && [ -z "$OUT" ] && ok "context hook with invalid stdin → exit 1 notice (fails open, never 2)" || fail "principles crash rc=$RC"
 RW_ON_CRASH_TEST="$(RW_HOOK=x bash -c 'source hooks/lib.sh; rw_crash test' 2>&1 || true)"
 printf '%s' "$RW_ON_CRASH_TEST" | grep -q 'no crash policy' && ok "hook without declared policy is itself an error" || fail "missing policy not detected"
+# The ERR trap has to INHERIT. Without `set -o errtrace` it is installed at the top level and
+# silently absent inside functions, command substitutions and subshells -- which is exactly where
+# the work happens, so a guard declaring RW_ON_CRASH=deny would fail OPEN in every helper.
+RW_ERRTRACE="$(RW_HOOK=x RW_ON_CRASH=deny bash -c 'source hooks/lib.sh; f() { false; true; }; f' 2>&1 || true)"
+printf '%s' "$RW_ERRTRACE" | grep -q '"permissionDecision": "deny"' \
+  && ok "a failure inside a function fails closed (the ERR trap inherits)" || fail "ERR trap does not inherit into functions"
+RW_NOTRACE="$(RW_HOOK=x RW_ON_CRASH=deny bash -c 'source hooks/lib.sh; set +o errtrace; f() { false; true; }; f; echo NO-TRAP' 2>&1 || true)"
+printf '%s' "$RW_NOTRACE" | grep -q 'NO-TRAP' \
+  && ok "and without errtrace the same failure passes silently (the check discriminates)" || fail "errtrace check does not discriminate"
 
 # ── protect-paths ────────────────────────────────────────────────────────────
 section "protect-paths"
@@ -87,6 +96,15 @@ CLAUDE_PLUGIN_OPTION_PROTECTED_PATHS='lib/ble/**' run_hook protect-paths '{"tool
 ! denied && [ "$RC" -eq 0 ] && ok "edit outside protected glob allowed" || fail "outside glob wrongly denied"
 CLAUDE_PLUGIN_OPTION_PROTECTED_PATHS='**/permissions.dart' run_hook protect-paths '{"tool_name":"Write","cwd":"/repo","tool_input":{"file_path":"/repo/a/b/permissions.dart"}}'
 denied && ok "** matches any depth" || fail "** depth"
+# A glob is anchored at the root. A bare `README.md` used to match `docs/README.md` too, because
+# the matcher fell back to searching at any separator -- which silently widened every scope and
+# every protected list one level deeper than it was written.
+CLAUDE_PLUGIN_OPTION_PROTECTED_PATHS='README.md' run_hook protect-paths '{"tool_name":"Edit","cwd":"/repo","tool_input":{"file_path":"/repo/README.md"}}'
+denied && ok "a bare name matches at the root" || fail "bare name did not match at the root"
+CLAUDE_PLUGIN_OPTION_PROTECTED_PATHS='README.md' run_hook protect-paths '{"tool_name":"Edit","cwd":"/repo","tool_input":{"file_path":"/repo/docs/README.md"}}'
+! denied && ok "a bare name does NOT match one level down" || fail "bare name still matches at any depth"
+CLAUDE_PLUGIN_OPTION_PROTECTED_PATHS='**/README.md' run_hook protect-paths '{"tool_name":"Edit","cwd":"/repo","tool_input":{"file_path":"/repo/docs/README.md"}}'
+denied && ok "**/ is how you say any depth, and it still works" || fail "**/ regressed"
 run_hook protect-paths "$E"
 ! denied && ok "empty option → guard inactive" || fail "empty option denied"
 

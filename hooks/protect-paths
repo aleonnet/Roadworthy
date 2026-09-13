@@ -9,7 +9,7 @@ export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
 rw_read_event
 
-cwd="$(rw_field cwd)"
+cwd="$(rw_realpath "$(rw_field cwd)")"
 globs="$(rw_option PROTECTED_PATHS "")"
 # The project may declare its own protected globs in .roadworthy/protected
 # (one per line, `#` comments); they are joined with the user option.
@@ -22,7 +22,7 @@ fi
 # a bump or a changelog entry waits for the morning.
 frozen=""
 if [ -n "$cwd" ]; then
-  root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cwd")"
+  root="$(rw_realpath "$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cwd")")"
   if [ -f "$root/.roadworthy/overnight" ] && [ -f "$root/.roadworthy/overnight-rules" ]; then
     frozen="$(grep -E '^[[:space:]]*freeze:' "$root/.roadworthy/overnight-rules" | sed 's/^[[:space:]]*freeze:[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | tr '\n' ',' | sed 's/,$//')"
   fi
@@ -32,6 +32,7 @@ fi
 target="$(rw_field tool_input.file_path)"
 [ -n "$target" ] || target="$(rw_field tool_input.notebook_path)"
 [ -n "$target" ] || exit 0
+target="$(rw_realpath "$target")"
 
 relative="$target"
 case "$target" in

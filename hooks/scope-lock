@@ -13,13 +13,14 @@ rw_read_event
 
 rw_bool "$(rw_option SCOPE_LOCK true)" || exit 0
 
-cwd="$(rw_field cwd)"
+cwd="$(rw_realpath "$(rw_field cwd)")"
 scope_file="$cwd/.roadworthy/scope"
 [ -f "$scope_file" ] || exit 0
 
 target="$(rw_field tool_input.file_path)"
 [ -n "$target" ] || target="$(rw_field tool_input.notebook_path)"
 [ -n "$target" ] || exit 0
+target="$(rw_realpath "$target")"
 
 relative="$target"
 case "$target" in
