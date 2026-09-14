@@ -118,6 +118,17 @@ measured in that run; the owner asked for it to be recorded for another model to
   edits. It is test-asset refactoring, not a guarantee, and it is written here with the cost
   measured rather than done in a release about fences.
 
+- **`stop-gate` blocked a turn whose gates were FRESH.** Measured 2026-09-14, in the first session
+  the gate ever ran in: it reported all six declared gates as `MISSING` — not `STALE` — and one
+  minute later `close.sh --check` reported all six `FRESH`, both from the working tree and from the
+  installed copy. `MISSING` is the symptom of having looked in a different evidence ledger:
+  `close.sh` resolves it through `ROADWORTHY_DATA` / `CLAUDE_PLUGIN_DATA`, and a hook's environment
+  is not the shell's (in the shell both are unset and the ledger falls where the evidence is,
+  `.roadworthy/evidence.jsonl`). Candidate: have `stop-gate` pass the project's own data directory
+  explicitly, and add an assertion that the block never fires on a tree whose gates are fresh.
+  **Deliberately not fixed in the session that found it**, which had already been told to stop
+  opening the next front.
+
 ## Declared limits — decided, not pending (2026-09-13)
 
 These are not on the list above because they are not going to be fixed as stated. Each is a

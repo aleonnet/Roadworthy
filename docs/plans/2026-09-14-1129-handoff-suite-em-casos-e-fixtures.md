@@ -1,4 +1,4 @@
-status: accepted
+status: superado por 2026-09-14-1222-handoff-a-cerca-encontra-a-sessao-real.md
 
 # Handoff — the suite becomes cases and fixtures — 2026-09-14 11:29
 
