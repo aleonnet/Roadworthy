@@ -9,12 +9,12 @@ status: accepted
 
 | Repository | Branch | HEAD | Tree | Version | Unpushed |
 |---|---|---|---|---|---|
-| `/Users/alessandro/Development/roadworthy` | `main` | `d31312f0fc91` | clean | 0.6.0 (manifests) | 23 commits |
+| `roadworthy` (this repository) | `main` | `d31312f0fc91` | clean | 0.6.0 (manifests) | 23 commits |
 
 Suite: 318 assertions, `RESULT: gate clean`. Attack suite: 37 attacks, 32 refused, 5 declared. Refutations recorded by the script in `.roadworthy/refutations.jsonl`: 23 of this repository's own files, across 10 of them (the ledger also holds the toy refutations every suite run makes, which are not these).
 
 ## Where the real state lives
-- `~/.claude/plans/leia-as-diretrizes-do-quiet-hopcroft.md` — the approved plan, 54 defects each
+- `<plans_dir>/leia-as-diretrizes-do-quiet-hopcroft.md` — the approved plan, 54 defects each
   with an explicit destination, 63 acceptance rows, and the reading counter that took seven rounds.
 - `.roadworthy/plan.snapshot` — what was approved: the plan, the base HEAD, the globs, the gates
   and the three digests the closing measures against.
