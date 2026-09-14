@@ -21,8 +21,36 @@ data="${ROADWORTHY_DATA:-${CLAUDE_PLUGIN_DATA:-$root/.roadworthy}}"
 mkdir -p "$data"
 ledger="$data/evidence.jsonl"
 state_file="$data/state"
+# The state is written in BOTH places. $data may point anywhere (ROADWORTHY_DATA, or the
+# plugin's own directory shared by every project), and `close.sh --state` and /roadworthy:resume
+# read it to decide whether a front closed cleanly -- reading another project's state and
+# reporting "passed" on a front full of gaps is the failure this closes. The project copy is
+# authoritative for the project; the data copy stays for whoever points ROADWORTHY_DATA at it.
+project_state=".roadworthy/state"
+record_state() {  # record_state <passed|gaps_found|needs_human>
+  mkdir -p "$(dirname "$state_file")" ".roadworthy" 2>/dev/null || true
+  printf '%s\n' "$1" > "$state_file"
+  [ "$(cd "$(dirname "$state_file")" && pwd -P)/$(basename "$state_file")" = "$(cd .roadworthy && pwd -P)/state" ] \
+    || printf '%s\n' "$1" > "$project_state"
+}
+# Reading follows the same order: the project first, the shared data only as a fallback.
+read_state() {
+  if [ -f "$project_state" ]; then cat "$project_state"
+  elif [ -f "$state_file" ]; then cat "$state_file"
+  else echo "none"; fi
+}
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fp() { bash "$here/tree-fingerprint.sh" "$root"; }
+# A gate that cannot go red is a green light, not a measurement. This is a NAMED enumeration and
+# it never closes, so it warns and never refuses -- what defends the closing is that every gate
+# has to come from the plan. Silence, though, is how "every gate FRESH" gets written under a
+# file containing the single word `true`.
+trivially_green() {
+  case "$(printf '%s' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')" in
+    true|:|"bash -c true"|"sh -c true"|"test 1 = 1"|"[ 1 = 1 ]"|"python3 -c pass"|"python -c pass"|"exit 0") return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 record() { # cmd exit tail
   python3 - "$ledger" "$1" "$2" "$3" "$(fp)" <<'PY'
@@ -37,10 +65,10 @@ PY
 }
 
 case "${1:-}" in
-  --state) cat "$state_file" 2>/dev/null || echo "none"; exit 0 ;;
+  --state) read_state; exit 0 ;;
   --needs-human)
     item="${2:?--needs-human needs an item}"
-    echo "needs_human" > "$state_file"
+    record_state needs_human
     record "needs-human: $item" 0 "$item"
     echo "close: needs_human — $item"; exit 0 ;;
   --check)
@@ -68,6 +96,7 @@ else: print("STALE")
 PY
 )"
       printf '  %-9s %s\n' "$status" "$cmd"
+      trivially_green "$cmd" && printf '  %-9s %s\n' "WARN" "that gate cannot fail: it proves nothing"
       [ "$status" = "FRESH" ] || fail=1
     done < "$gates"
     [ "$declared" -gt 0 ] || { echo "close: $gates declares no gate (only blank lines or comments); nothing was measured" >&2; exit 1; }
@@ -77,9 +106,16 @@ PY
 esac
 
 [ -f "$gates" ] || { echo "close: no $gates — declare the gates first"; exit 1; }
-if [ -n "$(git status --porcelain)" ]; then
+# The dirty check ignores the plugin's OWN transient state, the same list tree-fingerprint.sh
+# leaves out of the fingerprint. Without this, writing the recorded state dirties the tree of
+# any project that has not gitignored it yet, and the next closing refuses -- the plugin would
+# block itself with a file it wrote.
+rw_dirty() {
+  git status --porcelain | grep -v -E ' \.roadworthy/(scope|state|plan\.snapshot|overnight|evidence\.jsonl|denials\.jsonl|refutations\.jsonl|preflight\.jsonl|readings\.jsonl|stop-latch/)'
+}
+if [ -n "$(rw_dirty)" ]; then
   echo "close: the tree is dirty; commit first — a gate measured before the last commit is not a gate of this closing"
-  echo "gaps_found" > "$state_file"; exit 1
+  record_state gaps_found; exit 1
 fi
 read -r head wtree _ <<< "$(fp)"
 echo "close: HEAD $head · tree $wtree"
@@ -89,17 +125,17 @@ while IFS= read -r cmd; do
   ran=$((ran + 1))
   out="$(bash -c "$cmd" 2>&1)"; rc=$?
   record "$cmd" "$rc" "$out"
-  if [ $rc -eq 0 ]; then printf '  OK    %s\n' "$cmd"; else printf '  FAIL  %s (exit %s)\n' "$cmd" "$rc"; printf '%s\n' "$out" | tail -5 | sed 's/^/        /'; failed=$((failed + 1)); fi
+  if [ $rc -eq 0 ]; then printf '  OK    %s\n' "$cmd"; trivially_green "$cmd" && printf '  WARN  %s\n' "that gate cannot fail: it proves nothing"; else printf '  FAIL  %s (exit %s)\n' "$cmd" "$rc"; printf '%s\n' "$out" | tail -5 | sed 's/^/        /'; failed=$((failed + 1)); fi
 done < "$gates"
 if [ $ran -eq 0 ]; then
-  echo "gaps_found" > "$state_file"
+  record_state gaps_found
   echo "close: $gates declares no gate; nothing was measured, so nothing passed — the scope stays locked" >&2; exit 1
 fi
 if [ $failed -eq 0 ]; then
-  echo "passed" > "$state_file"
+  record_state passed
   rm -f .roadworthy/scope
   echo "close: passed — evidence in $ledger; scope released"
 else
-  echo "gaps_found" > "$state_file"
+  record_state gaps_found
   echo "close: gaps_found — $failed gate(s) red; scope kept"; exit 1
 fi

@@ -41,6 +41,18 @@ elif [ -n "$done_phase" ]; then
 else
   [ -n "$phase" ] && [ -n "$decision" ] && [ -n "$reason" ] || refuse "a decision needs --phase, --decision and --reason"
   [ -n "$source" ] || refuse "a decision needs --source (a primary source; 'my judgement' is not one)"
+  # "Not empty" is not a source. A primary source is something a reader can open: a file that
+  # exists, an http(s) address, or a git ref that resolves in this repository. Anything else is
+  # a sentence, and a sentence is exactly what the diary exists to replace.
+  case "$source" in
+    http://*|https://*) ;;
+    *)
+      src_path="${source%%[[:space:]]*}"
+      if [ ! -e "$src_path" ] && [ ! -e "$source" ] \
+         && ! git rev-parse --verify --quiet "${src_path}^{commit}" >/dev/null 2>&1; then
+        refuse "--source '$source' is not a primary source: no such file, not an http(s) address, and not a git ref that resolves here"
+      fi ;;
+  esac
   section="## Decisions"; line="- \`$ms\` · $iso · **$phase** · $decision · reason: $reason · source: $source${ratify:+ · ratify in the morning}"
 fi
 python3 - "$diary" "$section" "$line" <<'PY'

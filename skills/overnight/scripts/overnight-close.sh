@@ -32,7 +32,13 @@ if [ "${1:-}" = "--run" ]; then bash "$close" || refuse "gates red, or no gate d
 check="$(bash "$close" --check 2>&1)" || { printf '%s\n' "$check" >&2; refuse "no gate is declared, or a gate is STALE or MISSING for this tree; declare the gates in .roadworthy/gates and run close.sh (or --run) after the last commit"; }
 printf '%s' "$check" | grep -q -E '^\s+(STALE|MISSING|FRESH-RED)' && { printf '%s\n' "$check" >&2; refuse "a gate is not FRESH"; }
 
-read -r topic diary plan <<< "$(python3 -c 'import json; m=json.load(open(".roadworthy/overnight")); print(m["topic"], m["diary"], m["plan"])')"
+read -r topic diary plan plan_sha <<< "$(python3 -c 'import json; m=json.load(open(".roadworthy/overnight")); print(m["topic"], m["diary"], m["plan"], m.get("plan_sha256",""))')"
+# The night started against a specific plan. overnight-start.sh has always recorded its hash and
+# nobody ever read it, so the plan could be rewritten mid-night and the morning would never know.
+if [ -n "$plan_sha" ] && [ -f "$plan" ]; then
+  now_sha="$(shasum -a 256 "$plan" | cut -d' ' -f1)"
+  [ "$now_sha" = "$plan_sha" ] || refuse "the plan changed during the night: $plan is $now_sha, the night started on $plan_sha. What ran is not what was approved; report it instead of closing."
+fi
 plans="docs/plans"
 if [ -f .roadworthy/docs.json ]; then
   plans="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("plans","docs/plans"))' .roadworthy/docs.json)"

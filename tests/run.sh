@@ -10,6 +10,13 @@ cd "$ROOT"
 export CLAUDE_PLUGIN_ROOT="$ROOT"
 
 FAIL=0
+# A TRAP THIS SUITE SET FOR ITSELF, measured 2026-09-13: with `set -o pipefail` above, a
+# pipeline `<live command> | grep -q PATTERN` fails whenever the producer writes anything AFTER
+# the match -- grep -q exits at once, the producer takes SIGPIPE (141), and pipefail turns that
+# into a red assertion about something that actually worked. Adding one warning line to
+# close.sh broke an unrelated FRESH assertion this way. Rule: capture the output into a
+# variable first, then match it. Only match a live pipeline when the pattern is on its LAST
+# line, where there is nothing left to write.
 ok()   { printf '  [OK]   %s\n' "$1"; }
 fail() { printf '  [FAIL] %s\n' "$1" >&2; FAIL=$((FAIL + 1)); }
 section() { printf '\n== %s\n' "$1"; }
@@ -65,7 +72,7 @@ n_general="$(context | awk '/^ROADWORTHY PRINCIPLES/{s=1;next} /^PROJECT RULES/{
 n_project="$(context | awk '/^PROJECT RULES/{s=1;next} s' | grep -c -E '^[0-9]+[a-z]*\. ' || true)"
 [ "$n_general" = "8" ] && ok "8 bundled principles injected (only rules with a mechanism behind them)" || fail "bundled principles: $n_general"
 [ "$n_project" = "2" ] && ok "2 project rules injected, prose skipped" || fail "project rules: $n_project"
-context | grep -q "](${PROJ}/memory/feedback_one.md)" && ok "relative link rewritten to absolute" || fail "link rewrite"
+CTX="$(context)"; printf '%s' "$CTX" | grep -q "](${PROJ}/memory/feedback_one.md)" && ok "relative link rewritten to absolute" || fail "link rewrite"
 run_hook principles "{\"transcript_path\":\"$HOME_SANDBOX/.claude/projects/-none/s.jsonl\"}"
 [ "$(context | grep -c '^PROJECT RULES')" = "0" ] && ok "no memory dir → general layer only" || fail "unexpected project layer"
 CLAUDE_PLUGIN_OPTION_PROJECT_RULES=false run_hook principles "{\"transcript_path\":\"$PROJ/s.jsonl\"}"
@@ -334,6 +341,16 @@ before="$(shasum -a 256 "$T/config.txt" | cut -d' ' -f1)"
 bash skills/refute/scripts/refute.sh --file "$T/config.txt" --sed 's/42/43/' --expect 'answer is not 42' -- "$T/check.sh" >/dev/null \
   && ok "check goes red for the intended reason; file restored" || fail "refute happy path"
 [ "$(shasum -a 256 "$T/config.txt" | cut -d' ' -f1)" = "$before" ] && ok "hash identical after restore" || fail "hash differs after restore"
+# The record is written by the script, not by whoever reports the result. A refutation that exists
+# only as a sentence in a report is precisely what this tool replaces.
+RLED="$TMP/rwdata-refute/refutations.jsonl"
+ROADWORTHY_DATA="$TMP/rwdata-refute" bash skills/refute/scripts/refute.sh --file "$T/config.txt" --sed 's/42/43/' --expect 'answer is not 42' -- "$T/check.sh" >/dev/null
+[ -f "$RLED" ] && python3 -c 'import json,sys
+r = json.loads(open(sys.argv[1]).read().strip().splitlines()[-1])
+need = {"ts","file","sha_before","sha_after","restored","injection","expect","exit_red","exit_clean","check_cmd","head"}
+missing = need - set(r)
+sys.exit(0 if not missing and r["restored"] and r["exit_red"] != 0 and r["exit_clean"] == 0 else 1)' "$RLED" \
+  && ok "refute.sh records the refutation itself, with both hashes and both exit codes" || fail "no usable refutation record"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$T/green.sh"; chmod +x "$T/green.sh"
 ! bash skills/refute/scripts/refute.sh --file "$T/config.txt" --sed 's/42/43/' --expect 'x' -- "$T/green.sh" >/dev/null 2>&1 \
   && ok "a check that stays green is reported as a failed refutation" || fail "green check accepted"
@@ -511,9 +528,24 @@ rc=0; (cd "$CF" && bash "$ROOT/skills/close/scripts/close.sh") > "$TMP/close1.lo
 git -C "$CF" add -A; git -C "$CF" commit -q -m gates
 (cd "$CF" && bash "$ROOT/skills/close/scripts/close.sh") > "$TMP/close2.log" 2>&1 && ok "green gate → passed" || { fail "green gate failed"; cat "$TMP/close2.log"; }
 [ ! -f "$CF/.roadworthy/scope" ] && [ "$(cat "$ROADWORTHY_DATA/state")" = "passed" ] && ok "scope released, state passed" || fail "scope/state after pass"
-(cd "$CF" && bash "$ROOT/skills/close/scripts/close.sh" --check) | grep -q 'FRESH     true' && ok "--check reports FRESH on the same tree" || fail "not FRESH"
+# The state is written in BOTH places: the shared data directory may belong to another project,
+# and reporting "passed" for a front full of gaps is how a resume lies to the next session.
+[ "$(cat "$CF/.roadworthy/state")" = "passed" ] && ok "the state is recorded in the project too" || fail "project state: $(cat "$CF/.roadworthy/state" 2>&1)"
+# Discriminating on purpose: the two copies are made to DISAGREE, so the assertion can only pass
+# by reading the project one. With both saying "passed" it passed either way and measured
+# nothing -- caught by planting the defect.
+printf 'needs_human\n' > "$ROADWORTHY_DATA/state"
+[ "$( (cd "$CF" && bash "$ROOT/skills/close/scripts/close.sh" --state) )" = "passed" ] && ok "--state reads the project copy, not the shared one" || fail "--state read the wrong copy"
+printf 'passed\n' > "$ROADWORTHY_DATA/state"
+# A gate that cannot go red is a green light, not a measurement. It warns; what refuses is that
+# every gate has to come from the plan.
+CLOSE_OUT="$( (cd "$CF" && bash "$ROOT/skills/close/scripts/close.sh" --check) 2>&1 || true )"
+printf '%s' "$CLOSE_OUT" | grep -q 'cannot fail' && ok "a gate that cannot fail is named, not silently accepted" || fail "trivial gate accepted in silence: $CLOSE_OUT"
+CHK="$( (cd "$CF" && bash "$ROOT/skills/close/scripts/close.sh" --check) 2>&1 )"
+printf '%s' "$CHK" | grep -q 'FRESH     true' && ok "--check reports FRESH on the same tree" || fail "not FRESH; --check said: $CHK"
 echo y >> "$CF/docs/README.md"
-{ (cd "$CF" && bash "$ROOT/skills/close/scripts/close.sh" --check) || true; } | grep -q 'STALE' && ok "--check reports STALE after an edit" || fail "not STALE after edit"
+CHK="$( (cd "$CF" && bash "$ROOT/skills/close/scripts/close.sh" --check) 2>&1 || true )"
+printf '%s' "$CHK" | grep -q 'STALE' && ok "--check reports STALE after an edit" || fail "not STALE after edit; --check said: $CHK"
 git -C "$CF" checkout -q -- docs/README.md
 printf 'false\n' > "$CF/.roadworthy/gates"; printf 'docs/**\n' > "$CF/.roadworthy/scope"; git -C "$CF" add -A; git -C "$CF" commit -q -m red
 ! (cd "$CF" && bash "$ROOT/skills/close/scripts/close.sh") >/dev/null 2>&1 && [ -f "$CF/.roadworthy/scope" ] && [ "$(cat "$ROADWORTHY_DATA/state")" = "gaps_found" ] && ok "red gate → gaps_found, scope kept" || fail "red gate handling"
@@ -671,7 +703,19 @@ ms="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["started_m
 [ "$ms" -ge "$t0" ] && [ "$ms" -le "$t1" ] && ok "started_ms was measured by the script (within the test's clock window)" || fail "started_ms outside window: $t0 ≤ $ms ≤ $t1"
 ! (cd "$OV" && bash "$S/overnight-start.sh" docs/plans/2026-01-02-0100-night.md night) >/dev/null 2>"$TMP/ov5" && grep -q 'already on' "$TMP/ov5" && ok "start refused while the marker exists" || fail "double start accepted"
 ! (cd "$OV" && bash "$S/overnight-entry.sh" --phase F1 --decision d --reason r) >/dev/null 2>"$TMP/ov6" && grep -q -- '--source' "$TMP/ov6" && ok "entry refused without a source" || fail "entry without source accepted"
-(cd "$OV" && bash "$S/overnight-entry.sh" --phase F1 --decision "use X" --reason "spec says so" --source "RFC 0000 §1" --ratify) >/dev/null && grep -q -E '^- `[0-9]{13}` · [0-9T:Z-]+ · \*\*F1\*\* · use X · reason: spec says so · source: RFC 0000 §1 · ratify in the morning$' "$OV/$diary" && ok "entry carries epoch ms + ISO taken by the script, under Decisions" || fail "entry format: $(grep 'use X' "$OV/$diary")"
+# A source has to be openable. "RFC 0000 §1" was accepted here for a year and is exactly the
+# shape the rule exists to refuse: a citation nobody can follow.
+! (cd "$OV" && bash "$S/overnight-entry.sh" --phase F1 --decision d --reason r --source "RFC 0000 §1") >/dev/null 2>&1 \
+  && ok "a source that is only a sentence is refused" || fail "unopenable source accepted"
+! (cd "$OV" && bash "$S/overnight-entry.sh" --phase F1 --decision d --reason r --source "docs/nao-existe.md") >/dev/null 2>&1 \
+  && ok "a path that does not exist is refused" || fail "missing path accepted as a source"
+(cd "$OV" && bash "$S/overnight-entry.sh" --phase F1 --decision "use X" --reason "spec says so" --source "https://example.invalid/spec#1" --ratify) >/dev/null \
+  && grep -q -E '^- `[0-9]{13}` · [0-9T:Z-]+ · \*\*F1\*\* · use X · reason: spec says so · source: https://example.invalid/spec#1 · ratify in the morning$' "$OV/$diary" \
+  && ok "entry carries epoch ms + ISO taken by the script, under Decisions" || fail "entry format: $(grep 'use X' "$OV/$diary")"
+(cd "$OV" && bash "$S/overnight-entry.sh" --phase F1 --decision d2 --reason r --source "docs/plans/2026-01-02-0100-night.md") >/dev/null \
+  && ok "an existing file is a source" || fail "existing file refused as a source"
+(cd "$OV" && bash "$S/overnight-entry.sh" --phase F1 --decision d3 --reason r --source HEAD) >/dev/null \
+  && ok "a git ref that resolves is a source" || fail "git ref refused as a source"
 (cd "$OV" && bash "$S/overnight-entry.sh" --blocker "pricing is the user's") >/dev/null && python3 - "$OV/$diary" <<'PY' && ok "blocker lands under its own section" || fail "blocker section"
 import sys; t=open(sys.argv[1]).read(); i=t.index("## Blockers for the morning"); j=t.index("## Delivery"); sys.exit(0 if "pricing is the user's" in t[i:j] else 1)
 PY
@@ -687,6 +731,20 @@ git -C "$OV" -c user.email=t@t -c user.name=t commit -qam 'no gates'
 ! (cd "$OV" && bash "$S/overnight-close.sh") >/dev/null 2>"$TMP/ov9" && grep -q 'no gate' "$TMP/ov9" && [ -f "$OV/.roadworthy/overnight" ] && ok "the night refuses to close with no gate declared; marker kept" || fail "night closed with nothing measured: $(cat "$TMP/ov9")"
 printf 'true\n' > "$OV/.roadworthy/gates"
 git -C "$OV" -c user.email=t@t -c user.name=t commit -qam 'gates back'
+# The night started against a specific plan, and its hash has been recorded since 0.3.0 with
+# nobody reading it: the plan could be rewritten mid-night and the morning would never know.
+printf '# plan\n\n## Overnight policy\n- rewritten mid-night.\n' > "$OV/docs/plans/2026-01-02-0100-night.md"
+git -C "$OV" -c user.email=t@t -c user.name=t commit -qam 'plan rewritten'
+! (cd "$OV" && bash "$S/overnight-close.sh" --run) >/dev/null 2>"$TMP/ovsha" && grep -q 'the plan changed during the night' "$TMP/ovsha" \
+  && ok "the night refuses to close when the plan changed under it" || fail "plan rewritten mid-night and the close did not notice: $(cat "$TMP/ovsha")"
+python3 - "$OV/.roadworthy/overnight" "$OV/docs/plans/2026-01-02-0100-night.md" <<'PY'
+import hashlib, json, sys
+m = json.load(open(sys.argv[1]))
+m["plan_sha256"] = hashlib.sha256(open(sys.argv[2], "rb").read()).hexdigest()
+json.dump(m, open(sys.argv[1], "w"), indent=1)
+PY
+git -C "$OV" -c user.email=t@t -c user.name=t add -A >/dev/null 2>&1 || true
+git -C "$OV" -c user.email=t@t -c user.name=t commit -qam 'marker' >/dev/null 2>&1 || true
 handoff="$(cd "$OV" && bash "$S/overnight-close.sh" --run | tail -1)"
 [ -f "$OV/$handoff" ] && [ ! -f "$OV/.roadworthy/overnight" ] && grep -q "pricing is the user's" "$OV/$handoff" && grep -q '| ov | ' "$OV/$handoff" && ok "close with FRESH gates writes the hand-off with the blockers and removes the marker" || fail "close --run: $handoff"
 unset ROADWORTHY_DATA

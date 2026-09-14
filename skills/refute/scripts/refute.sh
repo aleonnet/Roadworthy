@@ -74,4 +74,26 @@ if [ "$rc_clean" -ne 0 ]; then
   echo "refute: FAILED — the check is also red on the clean file (exit $rc_clean); it does not measure the defect" >&2
   exit 1
 fi
+# The record is written by THIS script, never by the agent: a refutation that exists only as a
+# sentence in a report is the thing this tool exists to replace. It carries both exit codes and
+# both hashes, so the claim can be checked without trusting anyone.
+data="${ROADWORTHY_DATA:-${CLAUDE_PLUGIN_DATA:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.roadworthy}}"
+if mkdir -p "$data" 2>/dev/null; then
+  after="$(hash "$file")"
+  python3 - "$data/refutations.jsonl" "$file" "$before" "$after" "$sed_expr$patch_file" "$expect" "$rc" "$rc_clean" "$*" <<'PY' || true
+import json, subprocess, sys, time
+ledger, f, before, after, injection, expect, red, clean, cmd = sys.argv[1:10]
+try:
+    w = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], capture_output=True, text=True).stdout.strip()
+except Exception:
+    w = ""
+with open(ledger, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "file": f,
+                         "sha_before": before, "sha_after": after, "restored": before == after,
+                         "injection": injection, "expect": expect,
+                         "exit_red": int(red), "exit_clean": int(clean),
+                         "check_cmd": cmd, "head": w}) + "\n")
+PY
+fi
 echo "refute: OK — red with the defect ('$expect', exit $rc), green on the clean file, $file restored (hash verified)"
+[ -f "$data/refutations.jsonl" ] && echo "refute: recorded in $data/refutations.jsonl"
