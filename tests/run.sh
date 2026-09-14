@@ -1016,6 +1016,33 @@ printf '%s' "$SWERR3" | grep -q '\.roadworthy/' && fail "the closing counted its
   || ok "the plugin's own .roadworthy/ files are not counted against the front"
 
 # ── goldens: the envelope every guard returns, compared key for key ─────────
+# Reopening a front mid-flight must not silently reset what the closing measures against.
+SWB="$TMP/swbase"; mkdir -p "$SWB"
+git -C "$SWB" init -q; git -C "$SWB" config user.email t@t; git -C "$SWB" config user.name t
+printf 'a\n' > "$SWB/f.txt"; git -C "$SWB" add -A; git -C "$SWB" -c commit.gpgsign=false commit -qm one
+SWB_FIRST="$(git -C "$SWB" rev-parse HEAD)"
+printf 'b\n' > "$SWB/f.txt"; git -C "$SWB" add -A; git -C "$SWB" -c commit.gpgsign=false commit -qm two
+cat > "$SWB/p.md" <<'SWBP'
+# p
+## Scope
+```
+f.txt
+```
+## Verification
+```
+true
+```
+SWBP
+bash skills/plan/scripts/scope-write.sh "$SWB/p.md" --root "$SWB" >/dev/null 2>&1
+[ "$(python3 -c 'import json;print(json.load(open("'"$SWB"'/.roadworthy/plan.snapshot"))["base_head"])')" = "$(git -C "$SWB" rev-parse HEAD)" ] \
+  && ok "with no --base the front opens on HEAD, as it always did" || fail "the default base changed"
+bash skills/plan/scripts/scope-write.sh "$SWB/p.md" --root "$SWB" --base "$SWB_FIRST" >/dev/null 2>&1
+[ "$(python3 -c 'import json;print(json.load(open("'"$SWB"'/.roadworthy/plan.snapshot"))["base_head"])')" = "$SWB_FIRST" ] \
+  && ok "--base keeps the front's real base when it is reopened" || fail "--base ignored"
+bash skills/plan/scripts/scope-write.sh "$SWB/p.md" --root "$SWB" --base no-such-ref >"$TMP/swb.out" 2>&1 \
+  && fail "a base that does not resolve was accepted" \
+  || { grep -q "does not resolve" "$TMP/swb.out" && ok "a base that does not resolve refuses to open the front" || fail "wrong refusal: $(cat "$TMP/swb.out")"; }
+
 section "goldens"
 # Until now the suite only ever asked whether a fragment appeared in the output. That accepts a
 # malformed answer containing the right characters and rejects a correct one formatted otherwise,

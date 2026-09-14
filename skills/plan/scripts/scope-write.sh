@@ -19,13 +19,21 @@
 # with `bash -c`, and `- \`cmd\` → expected result` is not a command. One grammar, and it is the one
 # the machine can run.
 #
-# Usage: scope-write.sh <plan.md> [--root <repository>]
+# REOPENING a front keeps its base. The base HEAD is what close.sh measures the front's diff
+# against, so taking it from the current HEAD is right when a front OPENS and wrong when one is
+# reopened mid-flight -- which happens whenever an execution decision changes the plan's
+# Verification block. Measured on 2026-09-14: reopening after 23 commits would have set the base
+# to the tip and left the out-of-scope check with an empty diff to look at, silently. `--base`
+# carries the real one; without it the base is HEAD, which stays the common case.
+#
+# Usage: scope-write.sh <plan.md> [--root <repository>] [--base <ref>]
 set -euo pipefail
-plan="${1:?usage: scope-write.sh <plan.md> [--root <repository>]}"; shift || true
-root=""
+plan="${1:?usage: scope-write.sh <plan.md> [--root <repository>] [--base <ref>]}"; shift || true
+root=""; base=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --root) root="$2"; shift 2 ;;
+    --base) base="$2"; shift 2 ;;
     *) echo "scope-write: unknown argument $1" >&2; exit 1 ;;
   esac
 done
@@ -34,10 +42,11 @@ done
   echo "scope-write: not a git repository; give --root" >&2; exit 1; }
 cd "$root"
 
-python3 - "$plan" <<'PY'
+python3 - "$plan" "$base" <<'PY'
 import hashlib, json, os, re, subprocess, sys, time
 
 plan = sys.argv[1]
+base_arg = sys.argv[2] if len(sys.argv) > 2 else ""
 text = open(plan, encoding="utf-8").read()
 
 def fenced(*titles):
@@ -87,7 +96,12 @@ with open(".roadworthy/gates", "w", encoding="utf-8") as fh:
 def sha(path):
     return hashlib.sha256(open(path, "rb").read()).hexdigest()
 
-head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+ref = base_arg or "HEAD"
+r = subprocess.run(["git", "rev-parse", "--verify", "--quiet", ref + "^{commit}"],
+                   capture_output=True, text=True)
+if r.returncode != 0:
+    sys.stderr.write("scope-write: base %s does not resolve to a commit here.\n" % ref); sys.exit(1)
+head = r.stdout.strip()
 snap = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "plan": os.path.abspath(plan), "plan_name": name,
         "base_head": head, "scope_globs": globs, "gates": gates}
