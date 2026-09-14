@@ -1,6 +1,6 @@
 # README em duas línguas, com TL;DR e divulgação progressiva
 
-project: /Users/alessandro/Development/roadworthy
+project: ~/Development/roadworthy
 status: accepted
 
 ## Contexto

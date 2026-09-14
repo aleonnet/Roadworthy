@@ -72,8 +72,15 @@ Entregue:
 | Mais duas frases caídas, achadas pela minha varredura depois do leitor | comparei cada frase de `git show HEAD:README.md` com o novo, espaço normalizado: faltavam "a tabela de bancada que o usuário preenche" (overnight) e "o que o usuário aprovou é o que conta" (`plan_review_required`); restauradas nos dois idiomas; o resto das 30 ausências era frase reescrita com o mesmo conteúdo ou artefato da divisão por tabela | `README.md`, `README.pt-BR.md` |
 | Garantia condicional promovida a manchete (leitor frio, não verificado) | o TL;DR dizia "sem bump de versão à noite"; `overnight-guard` nega push, merge, tag e `gh pr merge`, e versão só congela por `freeze:` do projeto; o TL;DR passou a dizer isso | `README.md`, `README.pt-BR.md` |
 | Posição afirmada sem medir (leitor frio, bloqueio menor) | o CHANGELOG dizia "na primeira linha"; a troca de idioma está sob o título (linha 3); corrigido | `CHANGELOG.md` |
-| Comando lido como link | o portão de paridade grepava `](README.md)`, e `docs-check.sh` leu esse literal dentro do plano como um link relativo quebrado; o portão passou a grepar `(README.md)`, a frente foi reaberta e refutada de novo | `docs-check.sh` |
+| Comando lido como link | o portão de paridade grepava colchete-fecha seguido de `(README.md)`, e `docs-check.sh` leu esse literal dentro do plano (e depois deste placar, na primeira redação) como um link relativo quebrado; o portão passou a grepar `(README.md)`, a frente foi reaberta e refutada de novo | `docs-check.sh` |
+| Caminho absoluto de home num plano guardado no repositório | o molde do plano pede `project:` absoluto; ao mover o plano para `docs/plans/done/`, a varredura de privacidade da suíte ficou vermelha (`/Users/…`); o portão expande `~` (`hooks/plan-review-gate`, função `same`), então o plano declara `project: ~/Development/roadworthy`. O molde em `skills/plan/templates/plan.md` ainda diz "absolute path": fora do escopo desta frente, anotado abaixo | `tests/meta/privacy.sh` |
 | Pré-voo lendo a base errada | sem `base:` no plano, o pré-voo pegou o `plan.snapshot` da frente anterior (`50a81a6`) e acusou o handoff `1750` como inexistente; a base desta frente é a árvore, passada com `--base HEAD` | `plan-preflight.sh` |
+
+## Limite ainda aberto
+
+- `skills/plan/templates/plan.md` pede `project:` como caminho absoluto; um plano guardado dentro
+  do repositório e commitado reprova a varredura de privacidade da suíte com esse caminho. O portão
+  aceita `~` (medido nesta frente). Corrigir o molde e a skill é uma frente própria, em `skills/`.
 
 ## Próximo passo concreto
 
