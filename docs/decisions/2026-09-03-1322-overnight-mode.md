@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superado por 2026-09-14-0239-four-accepted-claims-refuted.md
 ---
 
 # Overnight mode: unattended execution of an approved plan, as a mechanism

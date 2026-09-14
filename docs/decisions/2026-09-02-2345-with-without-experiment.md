@@ -1,4 +1,4 @@
-status: accepted
+status: superado por 2026-09-14-0239-four-accepted-claims-refuted.md
 
 # With-and-without experiment: Roadworthy, a frozen house-hooks plugin, and nothing
 

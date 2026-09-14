@@ -1,4 +1,4 @@
-status: accepted
+status: superado por 2026-09-14-0239-four-accepted-claims-refuted.md
 
 # Documentation tree by role, not by name
 

@@ -5,16 +5,128 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Known — 2026-09-07, measured on the first full overnight → close → merge cycle
-- `overnight-close.sh` writes `status: accepted` in the hand-off it generates, ignoring the project's `status` vocabulary in `.roadworthy/docs.json`; on a project declaring Portuguese words `docs-check` rejects the file the plugin itself wrote (fixed by hand on the project; to fix here: read the vocabulary like `docs-check.sh` does).
-- `resume-pick.sh` follows only the English `status: superseded by <file>` line; on a project that declares its own words in `.roadworthy/docs.json` (`"superseded by": "superado por"`) it returns the SUPERSEDED hand-off (measured 2026-09-07: the newest file by name was `…-1215-handoff-overnight-…`, marked `superado por …-0056-…`, and the script printed the 1215 file). To fix here: read the vocabulary the way `docs-check.sh` does before matching the status line.
-- `overnight-guard` finds the marker by walking up from the session's cwd, not from the repository the command targets: `cd <other-repo> && git push` run from inside a project in overnight mode was denied although the other repository had no marker (workaround: run from a directory outside the marked project; to fix here: resolve the marker from the `-C`/`cd` target the way `guard-commit` already does).
+## [0.6.0] - 2026-09-14
 
-The first two are the same class of defect that 0.5.0 fixed in `plan-review-gate`: read the
-project's state vocabulary from `.roadworthy/docs.json`, one dictionary for the whole house.
-`resume-pick.sh` and the hand-off writer were outside the approved scope of that front, so they
-stay reported here rather than changed in passing.
+**The rite stops being optional.** Measured on this repository on 2026-09-13, against the session
+that was repairing the plugin: 60 edits, 117 shell commands, **zero** rite invocations, with the
+plugin installed and active, and nothing noticed by anyone. Every fence was working; the front was
+simply never opened, and a fence that only guards a front nobody opens guards nothing. `rite-gate`
+is the wall for that, on the edit tools **and on Bash**, which is where 117 of those 177 acts went.
 
+**What guards a plan changes.** Five rounds of cold review on one plan never converged here, and
+the measured cause was not the reviewer: every round was spending its attention on things a machine
+can check. `plan-preflight.sh` checks them — citations by content, scope paths, acceptance
+numbering, declared corrections, impact-sweep commands, and whole-file reading proved from the
+session transcript — and the cold reader goes back to the **diff**, which is what principle 4 of
+this plugin always said. The option is `plan_gate` (`preflight` | `review` | `both`), born in
+`preflight`.
+
+**Behaviour changes to know about before upgrading.** Five, each taken deliberately:
+1. A glob in the scope is anchored at the root. `README.md` no longer also matches
+   `docs/README.md` — the old behaviour came from stripping the anchor and re-anchoring at any
+   slash, and it was a defect, not a contract.
+2. The scope lock and the protected list now resolve the repository root, so they apply in
+   subdirectories. They used to be **inert** outside the root.
+3. `rite-gate` **denies** where the roadmap had planned to fail open. Failing open was measured as
+   equivalent to not existing. The `rite_gate` option is there for anyone who disagrees.
+4. Submitting a plan depends on the pre-flight, not on a verdict (`plan_gate`, above).
+5. `hooks/run-hook.cmd` no longer exits 0 when it cannot find bash on Windows. It prints a warning
+   and refuses. Anyone on Windows without bash has been running with **no guardrails at all**
+   while believing otherwise; discovering that through a refusal is better than not discovering it.
+
+### Added — 2026-09-13, the mechanisms this release is made of
+- `hooks/rite-gate` (Edit/Write **and Bash**): while the project has no usable `.roadworthy/scope`,
+  every edit and every shell write is denied, naming the rite that opens a front. An **empty** scope
+  file no longer counts: one `touch` used to satisfy every check while switching the lock off. The
+  ten files only a script may write (scope, gates snapshot, state, the ledgers, the stop latch) are
+  denied by hand through both doors, front or no front. A front recorded `gaps_found` or
+  `needs_human` blocks the next one; no state at all is a new project and passes. The command
+  reader is best effort and says so in the denial: what it does not recognise, it allows.
+- `hooks/stop-gate` (Stop): a turn that says the work is finished is blocked while `close.sh
+  --check` does not report every declared gate FRESH. Never blocks a project with no gates file,
+  never blocks the same tree twice — the latch is keyed on the tree's content, so a changed tree is
+  judged again — and fails open on anything it cannot read or write.
+- `skills/plan/scripts/scope-write.sh`: the first act of execution writes the scope, the gates and
+  `plan.snapshot` in one act, reading the plan's **Scope** and **Verification** as fenced blocks,
+  never as prose bullets — `close.sh` runs each gate line with `bash -c`.
+- `skills/plan/scripts/plan-preflight.sh` and the `plan_gate` option, above. It reads through the
+  plan's `base:`, because checking a plan against a tree that has moved turns every finished
+  correction into a false alarm and invites editing the plan to match the code.
+- `tests/attack.sh`: the cheating suite. Every attack declares whether it must be refused or is a
+  declared limit; an attack that passes and is not declared fails the gate.
+- `tests/goldens/`: the deny and context envelopes compared key for key, replacing fragment
+  matching that accepted output which was not JSON at all.
+- Every denial is recorded in `.roadworthy/denials.jsonl` with the fence, the reason and the front.
+  When the same fence has denied **three times** in the open front, that count comes back as a line
+  in the next prompt: an agent does not remember, but it reads.
+- `hooks/principles` pins the principles file by digest and announces a change at every prompt until
+  it is agreed again. The file lives outside every repository, so what this gives is announcement,
+  not prevention — said plainly rather than implied.
+
+### Fixed — 2026-09-13, fences that were not watching what they claimed
+- `scope-lock` looked for the scope file in the session's `cwd`: **inert in any subdirectory**. It
+  resolves the repository root now, and so does the project's protected list in `protect-paths`.
+- `scope-lock` treated an empty scope file as no front and stood down. An empty scope is now a
+  malformed front and denies, naming it.
+- `scope-lock` exempted all of `.roadworthy/`, which put human configuration and the foundation the
+  rite writes in one basket. The exemption is now the three human-configuration files by name.
+- `rw_glob_match` stripped the anchor and re-anchored at any slash, so `README.md` in the scope also
+  matched `docs/README.md`. Anchored at the root now, always.
+- `overnight-guard` resolved the marker from the session's `cwd`, not from the repository the
+  command targets: `cd <other-repo> && git push` was denied although the other repository had no
+  marker. It follows `git -C` and a leading `cd` the way `guard-commit` already did. **This closes
+  one of the three Known items of 0.5.0.**
+- `lib.sh` declared `trap … ERR` without `set -o errtrace`, so the trap did not inherit into
+  functions, subshells or command substitutions — and failing closed is exactly what depends on it.
+  A guard that declared itself fail-closed was failing **open** in every helper.
+- `hooks/run-hook.cmd` on Windows without bash: warns and refuses instead of exiting 0 in silence.
+
+### Fixed — 2026-09-13, proof that was decoration
+- `refute.sh` printed its result and recorded nothing. It writes `refutations.jsonl` with both
+  hashes, both exit codes, the injection, the expectation and the check command. **The script
+  writes the record; the agent never does.**
+- `refute-ledger.sh` could not see this repository at all — measured `0 fence(s)` over `hooks/`,
+  because it filtered by test-file names. `--sources` declares the fences by name.
+- `close.sh` re-read `.roadworthy/gates` at closing time, so editing the Verification section after
+  approval silently changed what "the gates passed" proved. It measures against `plan.snapshot` and
+  refuses when a digest disagrees, and refuses when the front's diff touches a file outside the
+  declared globs — which is where a write made through the shell, invisible to the lock, surfaces.
+- A gate that is trivially green (`true`) is now a WARN instead of silent success.
+- `overnight-entry.sh` accepted any non-empty `--source`. It requires a path that exists, an
+  `http(s)` URL or a git ref that resolves.
+- `overnight-close.sh` never read the `plan_sha256` that `overnight-start.sh` writes. A plan changed
+  during the night now refuses the closing, naming the file.
+
+### Fixed — 2026-09-13, one dictionary for the whole house
+- `docs-init.sh` generated a `docs.json` with no `status` key, so every new project was pinned to
+  English in `plan-review-gate`. It is generated present and empty (`"status": {}`), never
+  commented: the file is read with `json.load` by two consumers and a `//` would break the
+  documentation gate in every new project.
+- `resume-pick.sh` followed only the English `status: superseded by`, and returned the **superseded**
+  hand-off on a project declaring its own words. It reads the project's vocabulary.
+  **This closes the second Known item of 0.5.0.**
+- Five templates hard-coded an English status word, not three.
+- `.roadworthy/overnight` was neither ignored nor excluded from the tree fingerprint, so the night
+  could only close by committing the marker. **This closes the third Known item of 0.5.0.**
+- The front's state is written in both the plugin's data directory and the project, and read
+  project first: a resume could otherwise read another project's state.
+
+### Fixed — 2026-09-13, documentation that described a plugin that did not exist
+- `hooks/hooks.json` said every hook fails open and that exit 2 is reserved for denials; `lib.sh`
+  does the opposite on both counts.
+- `agents/cold-reviewer.md` still offered plan reviews "bound to a hash".
+- `skills/overnight/SKILL.md` carried a sentence broken by the hash-to-name change.
+- `skills/close/SKILL.md` and its `argument-hint` promised gates given as arguments, which
+  `close.sh` rejects.
+- `docs/reference/roadmap.md` said six eval cases; there are seven in round 1 and six in round 2.
+- `evals-round2/README.md` did not say anywhere that it was round 2, or what changes in it.
+- Dead imports in `hooks/lib.sh` and `bin/rw-metrics`, and a compiled `.pyc` that was tracked. The
+  suite now compiles every Python script in the plugin and fails naming any import nobody uses —
+  `shellcheck` only reads shell, so nothing caught these.
+- Four claims inside **accepted** decision records did not survive a whole reading, one of them
+  refuted by this front's own submission. They are corrected by a new dated record, and the four
+  are marked superseded rather than edited in place:
+  `docs/decisions/2026-09-14-0239-four-accepted-claims-refuted.md`.
 
 ## [0.5.0] - 2026-09-13
 

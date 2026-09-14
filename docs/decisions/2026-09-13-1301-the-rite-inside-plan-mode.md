@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superado por 2026-09-14-0239-four-accepted-claims-refuted.md
 ---
 
 # The plan rite must fit inside plan mode

@@ -18,6 +18,14 @@ status: accepted
 ## Next concrete step
 ...
 
+## Scoreboard — what this front got wrong on the way
+<!-- One line per class of failure the front exposed, each naming the defect number it came from.
+     A class with no number is a story; a number with no class is a ticket. Both are needed, and
+     an empty table means nobody looked. -->
+| class | what it was | defect |
+|---|---|---|
+| | | |
+
 ## Prompt to paste
 ```
 ...
