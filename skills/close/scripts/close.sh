@@ -117,6 +117,71 @@ if [ -n "$(rw_dirty)" ]; then
   echo "close: the tree is dirty; commit first — a gate measured before the last commit is not a gate of this closing"
   record_state gaps_found; exit 1
 fi
+# Measured against the SNAPSHOT taken when the front opened, never against whatever the files
+# say now. Re-reading .roadworthy/gates at closing time meant editing the Verification section
+# after approval silently changed what "the gates passed" proves. Projects with no snapshot
+# keep the old behaviour, so nobody is blocked on upgrade.
+snapshot=".roadworthy/plan.snapshot"
+if [ -f "$snapshot" ]; then
+  python3 - "$snapshot" "$gates" ".roadworthy/scope" <<'PY' || exit 1
+import hashlib, json, os, subprocess, sys
+snap_path, gates_path, scope_path = sys.argv[1:4]
+snap = json.load(open(snap_path, encoding="utf-8"))
+declared = snap.get("digests") or {}
+
+def sha(path):
+    return hashlib.sha256(open(path, "rb").read()).hexdigest() if os.path.exists(path) else ""
+
+bare = {k: v for k, v in snap.items() if k != "digests"}
+canonical = json.dumps(bare, sort_keys=True, separators=(",", ":"))
+now = {"scope": sha(scope_path), "gates": sha(gates_path),
+       "snapshot_canonical": hashlib.sha256(canonical.encode()).hexdigest()}
+for k in ("scope", "gates", "snapshot_canonical"):
+    if declared.get(k) and declared[k] != now[k]:
+        what = {"scope": scope_path, "gates": gates_path, "snapshot_canonical": snap_path}[k]
+        sys.stderr.write(f"close: {what} changed since the front opened.\n"
+                         f"  approved {declared[k][:16]}\n  now      {now[k][:16]}\n"
+                         "The closing is measured against what was approved. Reopen the front from the\n"
+                         "plan (scope-write.sh) instead of editing the foundation by hand.\n")
+        sys.exit(1)
+
+# Every file the front touched has to be inside the declared globs. A write through the shell
+# never passes the scope lock -- this is where that gets caught, after the fact but before the
+# front can call itself closed. The plugin's own transient state is excluded: it is written BY
+# the closing, so requiring it to be in scope would stop every front from ever closing. The
+# whole of .roadworthy/ is excluded, not just the transient part: the rite writes `gates` when
+# the front opens, and demanding that every plan declare the plugin's own bookkeeping in its
+# scope would put housekeeping in every Scope section. A front whose SUBJECT is one of those
+# files still declares it -- the exclusion only stops the closing from refusing over them.
+import re
+def to_regex(g):
+    g = os.path.normpath(g); out = ""; i = 0
+    while i < len(g):
+        if g.startswith("**/", i): out += "(?:.*/)?"; i += 3
+        elif g.startswith("**", i): out += ".*"; i += 2
+        elif g[i] == "*": out += "[^/]*"; i += 1
+        elif g[i] == "?": out += "[^/]"; i += 1
+        else: out += re.escape(g[i]); i += 1
+    return "^" + out + "$"
+globs = [re.compile(to_regex(g)) for g in snap.get("scope_globs", [])]
+base = snap.get("base_head") or ""
+touched = set()
+if base:
+    d = subprocess.run(["git", "diff", "--name-only", base + "..HEAD"], capture_output=True, text=True)
+    touched |= {l for l in d.stdout.splitlines() if l}
+u = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"], capture_output=True, text=True)
+touched |= {l for l in u.stdout.splitlines() if l}
+def local(p):
+    return p.startswith(".roadworthy/")
+outside = sorted(p for p in touched if not local(p) and not any(g.match(os.path.normpath(p)) for g in globs))
+if outside:
+    sys.stderr.write("close: the front touched %d file(s) outside its declared scope:\n" % len(outside))
+    for p in outside[:20]:
+        sys.stderr.write("  " + p + "\n")
+    sys.stderr.write("Widen the scope in the plan and reopen the front, or leave those files alone.\n")
+    sys.exit(1)
+PY
+fi
 read -r head wtree _ <<< "$(fp)"
 echo "close: HEAD $head · tree $wtree"
 failed=0; ran=0

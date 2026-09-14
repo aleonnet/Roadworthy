@@ -34,6 +34,8 @@ from the mood of the day.
 - `path/to/file` — what changes and why. Reuse: `existing_function()` in `path`.
 
 ## Scope
+The globs `scope-lock` will enforce, read from this fenced block by
+`skills/plan/scripts/scope-write.sh` when the front opens.
 ```
 path/to/file
 dir/**
@@ -45,7 +47,14 @@ dir/**
 | 1 | `<condition>` | `<behaviour>` | `<command>` | `<output that means failure>` |
 
 ## Verification (after the last commit)
-- `<gate command>` → expected result
+Every line of the block below becomes one line of `.roadworthy/gates`, and `close.sh` runs each
+with `bash -c`. So each line is a COMMAND -- never a bullet, never prose, never a placeholder.
+Write what you expect underneath, outside the block.
+```
+<gate command>
+<gate command>
+```
+Expected: `<what each one prints when it is green>`.
 
 ## Refutation
 - `<check>` fails when `<defect>` — injection and expected failure text.

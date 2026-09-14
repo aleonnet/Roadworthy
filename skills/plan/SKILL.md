@@ -48,8 +48,17 @@ returns the delta to the user.
 
 ## 3. Scope lock — the first act of execution, not of planning
 
-Write the plan's globs to `.roadworthy/scope` in the project root (one per line). From that
-moment `scope-lock` denies edits outside them. Widen only with a written reason in the plan.
+**One command does it, and nothing else may:** `scripts/scope-write.sh <plan.md>`. It reads the
+plan's **Scope** and **Verification** fenced blocks and writes, in one act, `.roadworthy/scope`,
+`.roadworthy/gates` and `.roadworthy/plan.snapshot` -- what was approved: the plan, the base
+HEAD, the globs, the gates, and the digests of all three. From that moment `scope-lock` denies
+edits outside the globs. Widen only with a written reason in the plan, by reopening the front.
+
+**Why a snapshot.** `close.sh` used to re-read `.roadworthy/gates` at closing time, so editing
+the Verification section after approval silently changed what "the gates passed" proves. The
+closing now compares against the snapshot and refuses when a digest disagrees, and it refuses
+when the front's diff (`base_head..HEAD` plus untracked) touches a file outside the declared
+globs -- which is where a write made through the shell, invisible to the lock, finally surfaces.
 
 **When to write it.** Plan mode lets you write exactly one file, the plan, so the scope file
 cannot be written there — and it should not be: nothing is being edited yet. Write it as the
