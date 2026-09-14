@@ -26,10 +26,18 @@ principles="$(rw_option PRINCIPLES_FILE "")"
 
 project_rules="$(rw_option PROJECT_RULES true)"
 transcript="$(rw_field transcript_path)"
+cwd="$(rw_realpath "$(rw_field cwd)")"
+root="$(rw_root "$cwd")"
+# Where the plugin keeps what is not content. The principles file lives OUTSIDE any repository
+# and is shared by every project, so its digest cannot live in one of them; it is keyed on the
+# absolute path of the file it pins.
+data="${ROADWORTHY_DATA:-${CLAUDE_PLUGIN_DATA:-$HOME/.roadworthy}}"
 
-python3 - "$principles" "$project_rules" "$transcript" <<'PY'
-import json, os, re, sys
+python3 - "$principles" "$project_rules" "$transcript" "$data" "$root" <<'PY'
+import hashlib, json, os, re, sys, time
 principles, project_rules, transcript = sys.argv[1], sys.argv[2], sys.argv[3]
+data = sys.argv[4] if len(sys.argv) > 4 else ""
+root = sys.argv[5] if len(sys.argv) > 5 else ""
 numbered = re.compile(r"^[0-9]+[a-z]*\. ")
 
 def rules(path):
@@ -50,6 +58,71 @@ if project_rules.lower() in ("1", "true", "yes", "on") and transcript:
             absolute = lambda m: f"]({memdir}/{m.group(1)})"
             project = [re.sub(r"\]\((?!/)([^)]+\.md)\)", absolute, l) for l in project]
             text += f"\n\nPROJECT RULES ({memdir}):\n" + "\n".join(project)
+
+# --- the principles file itself, pinned -------------------------------------------------------
+# Nothing can STOP the file being edited: it lives outside every repository, out of reach of
+# protect-paths and of the entry gate. What a mechanism can do is refuse to let the change pass
+# unannounced. The notice repeats at every prompt while the digest disagrees; accepting the new
+# text is a human act -- update the pin -- and that is the point.
+notices = []
+if data:
+    try:
+        os.makedirs(data, exist_ok=True)
+        key = hashlib.sha256(os.path.abspath(principles).encode()).hexdigest()[:16]
+        pin_path = os.path.join(data, "principles." + key + ".json")
+        now = hashlib.sha256(open(principles, "rb").read()).hexdigest()
+        if os.path.exists(pin_path):
+            pin = json.load(open(pin_path, encoding="utf-8"))
+            if pin.get("sha256") != now:
+                notices.append(
+                    "THE PRINCIPLES FILE CHANGED SINCE IT WAS LAST AGREED.\n"
+                    "  file:   %s\n  agreed: %s (%s)\n  now:    %s\n"
+                    "Nothing here can prevent that edit -- the file lives outside every repository. What it\n"
+                    "can do is say so out loud, every prompt, until the owner agrees to the new text by\n"
+                    "updating the pin at %s." % (principles, pin.get("sha256", "")[:16],
+                                                 pin.get("pinned_at", "unknown date"), now[:16], pin_path))
+        else:
+            json.dump({"sha256": now, "pinned_at": time.strftime("%Y-%m-%d"), "file": os.path.abspath(principles)},
+                      open(pin_path, "w", encoding="utf-8"), indent=1)
+    except Exception:
+        pass
+
+# --- a fence that keeps denying becomes a rule --------------------------------------------------
+# An agent does not remember, but it reads. A denial that happened three times in this front is a
+# fact about how this session is behaving, and putting it back into the prompt is the only kind of
+# consequence that reaches the next turn. It is NOT a numbered line: those are the principles, and
+# the suite counts them.
+if root:
+    try:
+        ledger = os.path.join(os.environ.get("ROADWORTHY_DATA") or os.path.join(root, ".roadworthy"),
+                              "denials.jsonl")
+        snap = os.path.join(root, ".roadworthy", "plan.snapshot")
+        front = ""
+        if os.path.exists(snap):
+            front = (json.load(open(snap, encoding="utf-8")) or {}).get("plan_name", "")
+        counts = {}
+        if os.path.exists(ledger):
+            for line in open(ledger, encoding="utf-8"):
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                if front and r.get("front") != front:
+                    continue
+                counts[r.get("hook", "?")] = counts.get(r.get("hook", "?"), 0) + 1
+        repeated = sorted((n, h) for h, n in counts.items() if n >= 3)
+        if repeated:
+            lines = ["A FENCE HAS DENIED THE SAME WAY MORE THAN TWICE IN THIS FRONT:"]
+            for n, h in reversed(repeated):
+                lines.append("  %s: %d denials" % (h, n))
+            lines.append("Three refusals are not an obstacle to route around; they are the front telling you")
+            lines.append("that what you are trying to do is not what was approved. Say so, or reopen the front.")
+            notices.append("\n".join(lines))
+    except Exception:
+        pass
+
+if notices:
+    text += "\n\n" + "\n\n".join(notices)
 
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
                                           "additionalContext": text}}, ensure_ascii=False))

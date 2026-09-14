@@ -84,6 +84,43 @@ CLAUDE_PLUGIN_OPTION_PRINCIPLES_FILE="$TMP/missing.md" run_hook principles '{"tr
 [ "$RC" -eq 1 ] && [ -z "$OUT" ] && [ -n "$ERR" ] && ok "missing principles file → exit 1 + notice, never 2" || fail "missing file rc=$RC"
 run_hook principles 'not json'
 [ "$RC" -eq 1 ] && [ -n "$ERR" ] && ok "malformed stdin → exit 1 + notice" || fail "malformed stdin rc=$RC"
+# The principles file lives OUTSIDE every repository and is shared by every project, so nothing
+# here can stop it being edited -- not protect-paths, which only builds a path inside the session
+# directory, not the entry gate, which only denies inside a repository. What a mechanism CAN do is
+# refuse to let the change pass unannounced, at every prompt, until the owner agrees to it.
+PIND="$TMP/pindata"; PINF="$TMP/pinned-principles.md"; mkdir -p "$PIND"
+printf '1. One.\n2. Two.\n' > "$PINF"
+CLAUDE_PLUGIN_OPTION_PRINCIPLES_FILE="$PINF" ROADWORTHY_DATA="$PIND" run_hook principles '{"transcript_path":"","cwd":"/tmp"}'
+CTX1="$(context)"
+printf '%s' "$CTX1" | grep -q 'CHANGED SINCE' && fail "warned on the first sight of a file" || ok "the first sight of a principles file pins it, silently"
+printf '1. One.\n2. Two, edited.\n' > "$PINF"
+CLAUDE_PLUGIN_OPTION_PRINCIPLES_FILE="$PINF" ROADWORTHY_DATA="$PIND" run_hook principles '{"transcript_path":"","cwd":"/tmp"}'
+CTX2="$(context)"
+printf '%s' "$CTX2" | grep -q 'THE PRINCIPLES FILE CHANGED' && ok "an edit to the principles file is announced in the prompt" || fail "a silent edit to the principles file"
+printf '%s' "$CTX2" | grep -q 'agreed:' && ok "and the notice names the digest and the date last agreed" || fail "the notice does not say what was agreed: $CTX2"
+CLAUDE_PLUGIN_OPTION_PRINCIPLES_FILE="$PINF" ROADWORTHY_DATA="$PIND" run_hook principles '{"transcript_path":"","cwd":"/tmp"}'
+printf '%s' "$(context)" | grep -q 'THE PRINCIPLES FILE CHANGED' && ok "and it repeats every prompt: it is not a one-off that scrolls away" || fail "the notice appeared once and vanished"
+# A fence that keeps denying the same way becomes a line in the next prompt. An agent does not
+# remember, but it reads -- this is the only kind of consequence that reaches the following turn.
+DENR="$TMP/denyrepo"; DEND="$TMP/denydata"; mkdir -p "$DENR/.roadworthy" "$DEND"; git -C "$DENR" init -q
+printf 'src/**\n' > "$DENR/.roadworthy/scope"
+for i in 1 2; do
+  ROADWORTHY_DATA="$DEND" run_hook scope-lock "{\"tool_name\":\"Edit\",\"session_id\":\"d1\",\"cwd\":\"$DENR\",\"tool_input\":{\"file_path\":\"$DENR/out$i.md\"}}"
+done
+ROADWORTHY_DATA="$DEND" run_hook principles "{\"transcript_path\":\"\",\"cwd\":\"$DENR\"}"
+printf '%s' "$(context)" | grep -q 'HAS DENIED THE SAME WAY' && fail "two denials already counted as a pattern" || ok "two denials are not yet a pattern"
+ROADWORTHY_DATA="$DEND" run_hook scope-lock "{\"tool_name\":\"Edit\",\"session_id\":\"d1\",\"cwd\":\"$DENR\",\"tool_input\":{\"file_path\":\"$DENR/out3.md\"}}"
+ROADWORTHY_DATA="$DEND" run_hook principles "{\"transcript_path\":\"\",\"cwd\":\"$DENR\"}"
+CTX3="$(context)"
+printf '%s' "$CTX3" | grep -q 'HAS DENIED THE SAME WAY' && ok "the third denial by the same fence comes back as a line in the prompt" || fail "three denials did not become a rule"
+printf '%s' "$CTX3" | grep -q 'scope-lock: 3 denials' && ok "and it names the fence and the count" || fail "the injected line does not name the fence: $CTX3"
+# It must not be a numbered line: those are the principles, and the suite counts them.
+n_after="$(printf '%s' "$CTX3" | awk '/^ROADWORTHY PRINCIPLES/{s=1;next} /^PROJECT RULES|^A FENCE/{s=0} s' | grep -c -E '^[0-9]+[a-z]*\. ' || true)"
+[ "$n_after" = "8" ] && ok "the injected line is not a numbered principle (still eight)" || fail "the count line became a principle: $n_after"
+[ -f "$DEND/denials.jsonl" ] && python3 -c 'import json,sys
+r = json.loads(open(sys.argv[1]).read().strip().splitlines()[-1])
+sys.exit(0 if {"ts","hook","reason","cwd","front"} <= set(r) and r["hook"] == "scope-lock" else 1)' "$DEND/denials.jsonl" \
+  && ok "every denial is recorded with the fence, the reason and the front" || fail "no usable denial record"
 
 # ── crash policy: guards fail closed, context injection fails open ──────────
 section "crash policy"
@@ -870,6 +907,19 @@ for f in scope gates plan.snapshot state evidence.jsonl denials.jsonl refutation
   denied || fail "the foundation file $f is editable by hand"
 done
 ok "no foundation file is editable by hand, front or no front"
+# The same door, through the shell. Guarding only the edit tools left the exact hole the roadmap
+# recorded from the field -- appending a glob to .roadworthy/scope with a justification quoted
+# from the chat -- open one `>>` away, and only while a front WAS open, which is when it matters.
+printf 'src/**\n' > "$RG/.roadworthy/scope"
+rg Bash "{\"command\":\"echo docs/** >> $RG/.roadworthy/scope\"}"
+denied && ok "the scope cannot be widened through the shell either, front open or not" || fail "the shell widened the scope"
+rg Bash "{\"command\":\"cp /dev/null $RG/.roadworthy/plan.snapshot\"}"
+denied || fail "the shell rewrote the snapshot"
+rg Bash "{\"command\":\"tee $RG/.roadworthy/evidence.jsonl\"}"
+denied || fail "the shell rewrote the evidence ledger"
+ok "nor can the snapshot or the evidence ledger"
+rg Bash "{\"command\":\"echo x > $RG/.roadworthy/protected\"}"
+! denied && ok "and human configuration is still writable through the shell" || fail "the shell was denied human configuration"
 for f in docs.json protected overnight-rules; do
   rg Edit "{\"file_path\":\"$RG/.roadworthy/$f\"}"
   ! denied || fail "human configuration $f denied by the rite gate"

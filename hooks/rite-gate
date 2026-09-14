@@ -150,6 +150,18 @@ print("\n".join(t.strip(Q) for t in targets if t.strip(Q)))
 PY
 )"
     [ -n "$target" ] || exit 0
+    # The foundation is protected through THIS door too. Guarding only the edit tools left the
+    # exact hole the roadmap recorded from the field -- appending a glob to .roadworthy/scope
+    # with a justification quoted from the chat -- open, one `>>` away, whenever a front was open.
+    while IFS= read -r one; do
+      [ -n "$one" ] || continue
+      abs="$one"
+      case "$one" in /*) ;; *) abs="$cwd/$one" ;; esac
+      abs="$(rw_realpath "$abs")"
+      rel="$abs"
+      case "$abs" in "$root"/*) rel="${abs#"$root"/}" ;; esac
+      if foundation "$rel"; then deny_foundation "$rel"; fi
+    done <<< "$target"
     scope_usable && exit 0
     state="$(front_state)"
     case "$state" in gaps_found|needs_human) deny_bad_state "$state" ;; esac

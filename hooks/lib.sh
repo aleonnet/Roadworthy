@@ -94,7 +94,43 @@ rw_bool() { # rw_bool <value> — 0 when truthy
 }
 
 # deny <event-name> <reason> — deliberate denial for PreToolUse.
+#
+# Every denial is also RECORDED. A guardrail that fires and leaves no trace is invisible to the
+# next session and to the closing: the count of denials was only ever readable from an eval
+# trace, which no real project has. The record carries the front it happened in, so "this fence
+# denied three times while THIS front was open" becomes a fact instead of a memory.
+#
+# Recording never gets in the way of denying: any failure here is swallowed, and the denial
+# goes out regardless. A ledger that could block a guard would be worse than no ledger.
+rw_record_denial() {
+  local reason="$1" cwd root data front
+  cwd="$(rw_field cwd 2>/dev/null)" || return 0
+  [ -n "$cwd" ] || return 0
+  root="$(rw_root "$cwd" 2>/dev/null)" || return 0
+  [ -n "$root" ] || return 0
+  data="${ROADWORTHY_DATA:-${CLAUDE_PLUGIN_DATA:-$root/.roadworthy}}"
+  mkdir -p "$data" 2>/dev/null || return 0
+  front="$(python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("plan_name", ""))
+except Exception:
+    print("")' "$root/.roadworthy/plan.snapshot" 2>/dev/null)" || front=""
+  [ -n "$front" ] || front="$(rw_field session_id 2>/dev/null)"
+  RW_R="$reason" RW_H="${RW_HOOK:-hook}" RW_C="$cwd" RW_F="$front" \
+    python3 - "$data/denials.jsonl" <<'PY' 2>/dev/null || true
+import json, os, sys, time
+with open(sys.argv[1], "a", encoding="utf-8") as fh:
+    fh.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                         "hook": os.environ.get("RW_H", ""),
+                         "reason": os.environ.get("RW_R", "")[:400],
+                         "cwd": os.environ.get("RW_C", ""),
+                         "front": os.environ.get("RW_F", "")}) + "\n")
+PY
+  return 0
+}
+
 deny() {
+  rw_record_denial "$2" || true
   python3 - "$1" "$2" <<'PY'
 import json, sys
 print(json.dumps({"hookSpecificOutput": {

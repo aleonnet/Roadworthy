@@ -25,7 +25,7 @@ idempotent; `claude plugin update roadworthy@roadworthy` picks up new versions.
 
 | Hook | Event | Guarantee |
 |---|---|---|
-| `principles` | every prompt | Injects your numbered principles (bundled set or your own file) plus the numbered rules of the current project's memory, so they never lose salience in a long session. |
+| `principles` | every prompt | Injects your numbered principles (bundled set or your own file) plus the numbered rules of the current project's memory, so they never lose salience in a long session. It also **pins the principles file by digest**: the file lives outside every repository, so nothing can stop it being edited — what this does is announce the change at every prompt, naming the digest and the date last agreed, until you agree to the new text. And when the same fence has denied **three times** in the open front, that count comes back as a line in the next prompt: an agent does not remember, but it reads. |
 | `rite-gate` | Edit/Write **and Bash** | While the project has no usable `.roadworthy/scope`, every edit and every shell write is denied, naming the rite that opens a front. An **empty** scope file does not count: one `touch` used to satisfy every check while switching the lock off. Files only a script may write (scope, gates, snapshot, state, ledgers) are denied by hand with or without a front, and a front recorded as `gaps_found` or `needs_human` blocks the next one. Measured on this repository on 2026-09-13: 60 edits and 117 shell commands in one day, zero rite invocations, nothing noticed. |
 | `scope-lock` | Edit/Write | While `.roadworthy/scope` exists in the project, any edit outside the listed globs is denied. The plan file itself (in `plans_dir`) is exempt: it is the rite's own artefact. **The guard watches the edit tools, not the shell** — a `cat >` or `sed -i` run through Bash is not seen; see [Declared limits](docs/reference/roadmap.md). |
 | `protect-paths` | Edit/Write | Paths matching `protected_paths` are never edited, whatever the model decides. |
@@ -37,7 +37,10 @@ idempotent; `claude plugin update roadworthy@roadworthy` picks up new versions.
 Every hook declares its crash policy. The four guards **fail closed**: an internal error denies
 the action, because a boundary that fails open is not a boundary. The `principles` hook fails
 open with a visible notice, because an error on prompt submission must never erase the prompt.
-Denials are structured JSON decisions, never a bare exit 2.
+Denials are structured JSON decisions, never a bare exit 2 — except `stop-gate`, where exit 2 is
+the Stop event's own way of blocking a turn. **Every denial is recorded** in
+`.roadworthy/denials.jsonl` with the fence, the reason and the front it happened in, so a
+guardrail that fires leaves a trace instead of being visible only in an eval trace nobody has.
 
 Measured with `claude plugin details`: about 468 tokens always on, 220 to 530 per skill or agent
 invocation.
