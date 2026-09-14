@@ -1,4 +1,4 @@
-status: accepted
+status: superado por 2026-09-14-0331-handoff-the-rite-stops-being-optional.md
 
 # Handoff — the rite inside plan mode — 2026-09-13 13:15
 
