@@ -1,6 +1,7 @@
 .DS_Store
 *.refute-bak
 evals/results/
+evals-round2/results/
 
 # Local Roadworthy state, never content: close.sh writes the evidence ledger and the recorded
 # state here, and a gate's output carries absolute paths of the machine that ran it. The scope

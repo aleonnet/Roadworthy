@@ -100,10 +100,12 @@ fi
 
 # A NAMED enumeration of what counts as claiming the work is finished. Named, because a guard that
 # guesses at meaning blocks honest turns; short, because the cost of a false positive here is a
-# session that cannot end.
+# session that cannot end. The Portuguese words agree in gender and number: "metade do conserto
+# está pronta" is a finished claim about half a fix, and the masculine singular alone let it
+# through (field, 2026-09-14, another project: a fix left half done and declared "pronta").
 claims_done() {
   printf '%s' "$1" | tail -c 2000 | grep -q -i -E \
-    '(^|[^a-z])(done|finished|complete[d]?|shipped|delivered|all set|ready to (ship|merge))([^a-z]|$)|STATUS: passed|(^|[^a-zç])(pronto|conclu[ií]do|finalizado|entregue)([^a-zç]|$)'
+    '(^|[^a-z])(done|finished|complete[d]?|shipped|delivered|all set|ready to (ship|merge))([^a-z]|$)|STATUS: passed|(^|[^a-zç])(pront[oa]s?|conclu[ií]d[oa]s?|finalizad[oa]s?|entregues?)([^a-zç]|$)'
 }
 claims_done "$final" || exit 0
 

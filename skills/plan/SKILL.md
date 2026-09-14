@@ -154,6 +154,15 @@ answers. Record the user's decision as an `owner:` line in the review with `VERD
 and then submit. A missing precondition of any kind is reported to the user, never satisfied
 by adding policy, fences, tools or sections to the plan.
 
+**What escalation is not.** It is the reviewer's verdict about a plan that needs the user's
+decision: a policy, an appetite for risk, a destructive act. It is not the author's exit from a
+fix. A defect in your own survey — a consumer you did not count, a second call site left as it
+was — is yours to finish in the same turn; ending the turn with the fix half done and a question
+("want me to do the other half now?") is unfinished work dressed as a decision, and a turn that
+calls that half "done" is blocked by `stop-gate` while the gates are not fresh. Measured in the
+field on 2026-09-14, in another project: five consumers of one value, two counted, the one that
+mattered left as it was, and the turn ended with "half of the fix is ready".
+
 ## 6. Closing
 
 `/roadworthy:close` removes the scope file after the gates pass.

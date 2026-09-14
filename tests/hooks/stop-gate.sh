@@ -72,6 +72,16 @@ sgh "{\"session_id\":\"h1\",\"cwd\":\"$SGH\",\"last_assistant_message\":\"All do
 echo z >> "$SGH/f"; git -C "$SGH" commit -qam changed-again
 sgh "{\"session_id\":\"h2\",\"cwd\":\"$SGH\",\"last_assistant_message\":\"All done.\",\"stop_hook_active\":true}"
 [ "$SGRC" -ne 2 ] && ok "stop_hook_active: true is honoured and the turn is never blocked" || fail "stop_hook_active ignored: $SGERR"
+# The Portuguese words agree in gender and number. "Metade do conserto está pronta e testada" is a
+# finished claim about half a fix; with only the masculine singular in the enumeration it was never
+# judged (field, 2026-09-14, another project).
+for claim in "Metade do conserto está pronta e testada." "As duas partes estão concluídas." "Tarefas finalizadas." "Entregues as três frentes."; do
+  sgh "{\"session_id\":\"h3-$RANDOM\",\"cwd\":\"$SGH\",\"last_assistant_message\":\"$claim\"}"
+  [ "$SGRC" -eq 2 ] || fail "a Portuguese claim with feminine or plural agreement was not judged: $claim"
+done
+ok "pronta, concluídas, finalizadas and entregues are finished claims too"
+sgh "{\"session_id\":\"h4-$RANDOM\",\"cwd\":\"$SGH\",\"last_assistant_message\":\"O prontuário e o entregador estão na lista.\"}"
+[ "$SGRC" -ne 2 ] && ok "and words that merely start the same way (prontuário, entregador) are not" || fail "the agreement forms over-matched: $SGERR"
 # Fails open, by declaration: no repository, no message, no transcript.
 NOGIT2="$TMP/nogit-stop"; mkdir -p "$NOGIT2"
 set +e

@@ -152,6 +152,11 @@ pf "$PF/plan.md" "$PF/t.jsonl" --closing
 printf 'beta line one\nbeta DONE\n' > "$PF/b.txt"
 pf "$PF/plan.md" "$PF/t.jsonl" --closing
 [ "$RC" -eq 0 ] && ok "at the close, the correction actually made passes" || fail "done correction rejected: $OUT"
+# With a base, the closing still reads the TREE for corrections: the base is where the old text
+# lives by definition, and reading it there reported every correction NOT DONE, forever (measured
+# 2026-09-14 on the plan of 0.6.1 itself: 42 of 42).
+pf "$PF/plan.md" "$PF/t.jsonl" --closing --base "$PF_HEAD"
+[ "$RC" -eq 0 ] && ok "at the close with a base, the correction is read in the tree, where it was made" || fail "the closing read the base: $OUT"
 git -C "$PF" checkout -q -- b.txt
 
 # An impact sweep command that was never run is a sweep that was narrated.

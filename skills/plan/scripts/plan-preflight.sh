@@ -121,12 +121,17 @@ def fenced(sec):
     return block
 
 _cache = {}
-def read_file(rel):
-    """The file as the plan saw it: at the base when there is one, in the tree when there is not."""
-    if rel in _cache:
-        return _cache[rel]
+def read_file(rel, tree=False):
+    """The file as the plan saw it: at the base when there is one, in the tree when there is not.
+    `tree=True` reads the working tree whatever the base: the closing checks that a correction was
+    MADE, and what shows it made is the tree, never the base the plan was written against. Until
+    0.6.1 the closing read the base too, so a plan with a `base:` line reported every one of its
+    corrections NOT DONE forever (measured 2026-09-14: 42 of 42 on the plan of that release)."""
+    key = (rel, tree)
+    if key in _cache:
+        return _cache[key]
     out = None
-    if base:
+    if base and not tree:
         r = subprocess.run(["git", "-C", root, "show", "%s:%s" % (base, rel)],
                            capture_output=True, text=True)
         if r.returncode == 0:
@@ -138,7 +143,7 @@ def read_file(rel):
                 out = open(p, encoding="utf-8", errors="replace").read().splitlines()
             except Exception:
                 out = None
-    _cache[rel] = out
+    _cache[key] = out
     return out
 
 # --- 1 and 2: citations and references ----------------------------------------------------------
@@ -264,7 +269,7 @@ for l in section("declared corrections", "correções declaradas", "correcoes de
     if not path_cell or not old_cell:
         continue
     rel, old = path_cell[0], old_cell[0]
-    body = read_file(rel)
+    body = read_file(rel, tree=closing)
     if body is None:
         problems.append("correction: %s does not exist" % rel); continue
     bump("declared corrections")

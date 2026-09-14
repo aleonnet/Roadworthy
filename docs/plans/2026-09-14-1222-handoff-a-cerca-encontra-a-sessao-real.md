@@ -1,4 +1,4 @@
-status: accepted
+status: superado por 2026-09-14-1750-handoff-0-6-1.md
 
 # Handoff — a cerca encontra a sessão real — 2026-09-14 12:22
 

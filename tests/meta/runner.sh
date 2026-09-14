@@ -31,16 +31,28 @@ bash "$TMP/case-die.sh" >/dev/null 2>&1 \
   && fail "a case that died before the end reported success" \
   || ok "a case that dies before its last assertion is red"
 
-# The discriminator: the same shape WITHOUT the flag returns 0, so the assertion above measures the
-# mechanism and not the weather.
+# The discriminator: the same shape WITHOUT the flag. On bash 3.2 (macOS) it returns 0 -- the trap
+# that shipped in 0.6.0 -- so the assertion above measures the mechanism and not the weather. On
+# bash 4 and later the EXIT trap sees the abort's own status and the plain form is already red;
+# the flag is what makes the case red on every shell. Written as a universal "returns 0" this
+# assertion kept the CI red on ubuntu for three pushes (measured 2026-09-14 with
+# `gh run view --log-failed`): the shell's behaviour is measured here, never assumed.
 cat > "$TMP/plain-die.sh" <<'EOF'
 set -euo pipefail
 D="$(mktemp -d)"; trap 'rm -rf "$D"' EXIT
 echo "$RW_NOT_A_VARIABLE"
 EOF
-bash "$TMP/plain-die.sh" >/dev/null 2>&1 \
-  && ok "and the same abort without the flag returns 0 (the check discriminates)" \
-  || fail "the plain form did not return 0; the discriminator is not measuring what it claims"
+plain_rc=0; bash "$TMP/plain-die.sh" >/dev/null 2>&1 || plain_rc=$?
+plain_major="$(bash -c 'echo "${BASH_VERSINFO[0]}"')"
+if [ "$plain_major" -le 3 ]; then
+  [ "$plain_rc" -eq 0 ] \
+    && ok "and on bash $plain_major the same abort without the flag returns 0 (the check discriminates)" \
+    || fail "on bash $plain_major the plain form returned $plain_rc, not 0; the discriminator is not measuring what it claims"
+else
+  [ "$plain_rc" -ne 0 ] \
+    && ok "on bash $plain_major the same abort without the flag already returns $plain_rc; the flag is what makes it red on bash 3 too" \
+    || fail "on bash $plain_major the plain form returned 0; the shell changed under the discriminator"
+fi
 
 # THE MANIFEST IS THE FENCE. A runner that globs a directory loses a case the day the file is
 # deleted, and says nothing.

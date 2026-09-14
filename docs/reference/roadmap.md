@@ -54,10 +54,16 @@ Living document (undated name by design). One line per item, with the measured r
   the field case below (a widening justified by quoting the owner's angry message) is
   prevented by the same three mechanisms rather than recorded by a fourth. If the denial
   proves too strict in the field, the ledger comes back with it.
+- **The three-strikes line reaches the next PROMPT, never the same turn.** It is injected by the
+  `principles` hook on `UserPromptSubmit`; in a single-prompt session (an eval, a `claude -p`) it
+  never appears, and what bounds a model insisting on a denied write is the harness's turn cap and
+  the stop gate's latch. Measured 2026-09-14 with haiku: 3 of 36 runs with the plugin hit the
+  25-turn cap after dozens of denials, none of them touching a file. Candidate: a `PostToolUse`
+  hook that injects the same line into the turn where the third denial happened.
 - Prune graders that pass in both arms once three runs with the target model are in hand
   (agentskills.io guidance: such assertions inflate the with-plugin pass rate). The 2026-09-14
   run with haiku is the first set of three; the numbers are in
-  `docs/decisions/2026-09-14-1610-evals-com-modelo-menor.md`.
+  `docs/decisions/2026-09-14-1750-evals-com-modelo-menor.md`.
 - **Twelve eval scaffolds repeat the same 79 lines** -- six in round 1, six in round 2; only
   the overnight one has a body of its own, at 15 lines. Changing the toy project means twelve
   edits. It is test-asset refactoring, not a guarantee, and it is written here with the cost
@@ -68,15 +74,15 @@ Living document (undated name by design). One line per item, with the measured r
   repository would need lines retired by plan). Not a defect: no project has needed two live fronts,
   and building for it unmeasured is the shape this plugin exists to refuse. It comes back the day a
   project asks for it, with that project's measurement.
-- ~~**Two canonical homes for a plan, and no reconciliation.**~~ Done in 0.6.1: the gate, the
-  entry gate and the scope lock read `plans_dir` and the `plans` directory of `.roadworthy/docs.json`.
-- ~~**Three independent glob matchers.**~~ Done in 0.6.1, and the line was wrong: it named
-  `skills/document/scripts/docs-check.sh` as one of the three; read whole, that script has no glob
-  matcher. The three were `hooks/lib.sh`, `skills/close/scripts/close.sh` and `bin/rw-metrics`, and
+- ~~**The plan's second home, unread by the gate.**~~ Done in 0.6.1: the gate, the entry gate and
+  the scope lock read `plans_dir` and the `plans` directory of `.roadworthy/docs.json`.
+- ~~**One glob grammar in three copies.**~~ Done in 0.6.1, and the old line was wrong: it named
+  `skills/document/scripts/docs-check.sh` as one of the copies; read whole, that script has no glob
+  matcher. The copies were `hooks/lib.sh`, `skills/close/scripts/close.sh` and `bin/rw-metrics`, and
   they read `hooks/globmatch.py` now.
 - ~~**The eval graders, four of them.**~~ Done in 0.6.1: twelve graders, not four, judged the
   attempt or accepted every outcome; all judge file bytes or the final `STATUS:` line now.
-- ~~**`stop-gate` blocked a turn whose gates were FRESH.**~~ Done in 0.6.1; the cause was measured
+- ~~**The stop gate reporting fresh gates as MISSING.**~~ Done in 0.6.1; the cause was measured
   before it was fixed (see the 0.6.1 line under Done).
 - ~~**Stale reviews poison the gate through plan-mode's reused file names.**~~ Answered by the
   election order of 0.6.1: text match, then the plan this session wrote, then the date announced.

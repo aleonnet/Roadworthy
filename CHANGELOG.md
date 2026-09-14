@@ -79,6 +79,19 @@ headless session on the working tree (`tests/bench/bench.sh`) and the evals with
   `tests/scripts/globmatch.sh` puts the three entry points to one table. The roadmap named
   `docs-check.sh` as one of the three; read whole, it has no glob matcher.
 
+### Fixed — 2026-09-14, the CI was red for three pushes and the README said it ran
+- `tests/meta/runner.sh` asserted that an aborted script with a plain `trap 'rm -rf' EXIT` returns
+  0. That is bash 3.2, the bash macOS ships; bash 5 on ubuntu returns the abort's own status, and
+  the case was red on every push since `a076e99` (measured with `gh run view --log-failed`) while
+  README said "CI runs `tests/run.sh` on macOS and Linux". The assertion measures the shell's major
+  version and expects 0 on bash 3, non-zero on later shells; the flag is what makes the case red on
+  both.
+- `plan-preflight.sh --closing` read the corrections at the plan's `base:`, where the old text lives
+  by definition, so a plan with a base reported every correction NOT DONE forever (42 of 42 on the
+  plan of this release). The closing reads the working tree for corrections.
+- `stop-gate`'s Portuguese enumeration knew only the masculine singular; "metade do conserto está
+  pronta" was not judged (field, 2026-09-14). `pronta`, `concluídas`, `finalizadas`, `entregues` are.
+
 ### Fixed — 2026-09-14, four claims of this file that the files did not sustain
 - "`run-hook.cmd` … warns and refuses" (0.6.0, behaviour change 5 and its Fixed entry): the file
   exited 0. Fixed above, and executed in CI.
@@ -124,10 +137,18 @@ own reason, green again on the clean file, the file restored with its SHA-256 ve
 - `allowed_tools` in a case and `--allow-tools` on the command line are not in contradiction: the
   documentation says the two add up ("plus whatever you grant with `--allow-tools`, which applies to
   every case in the run"). The READMEs say so with the citation.
-- Measured with `--model haiku`, both rounds, three runs, with and without the plugin; the numbers,
-  the commands and the cost are in `docs/decisions/2026-09-14-1610-evals-com-modelo-menor.md`.
-  `--allow-tools Bash` is still refused on this machine, with the harness's own words recorded
-  there; the `overnight` case runs in the `evals-bash` job of the CI.
+- Measured with `--model haiku`, both rounds, three runs, with and without the plugin, and the
+  `overnight` case with Bash granted; the numbers, the commands and the cost (US$ 8,68) are in
+  `docs/decisions/2026-09-14-1750-evals-com-modelo-menor.md`. `--allow-tools Bash` is refused on a
+  macOS host whose `~/.docker` holds symbolic links, with the harness's own words recorded there;
+  the `evals-bash` job of the CI runs that case on Linux.
+- `bin/rw-metrics` no longer counts the plugin's own bookkeeping (the denials ledger, the stop latch,
+  the recorded state) as the agent's out-of-scope files — it lands in the project since this
+  release, and every with-plugin run was scoring a stop latch as collateral damage — and it counts
+  what the agent COMMITTED: the diff since the scaffold's last commit before the run, for K3, and
+  that commit checked out for the K2 baseline. A bumped, committed version file was invisible to it.
+- `evals/overnight/scaffold.sh` names the diary in the scope (and writes `SCOPE.txt`): with the scope
+  at `app/**` alone, the scope lock denied the very entry the case grades.
 
 ### Added — 2026-09-14
 - `tests/bench/bench.sh`: the fences met by a real session, headless, driven by the script
