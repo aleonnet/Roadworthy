@@ -72,7 +72,36 @@ nobody can open — which is how a scope lived six days past its front on this v
 (measured 2026-09-13). A declared gate is also what stops a night from closing with the words
 "every gate fresh" and nothing measured.
 
-## 4. Review: one file in plan mode, two rounds, then the user
+## 4. The pre-flight: what a machine can check, a machine checks
+
+Before submitting, run it and act on what it says:
+
+```
+bash skills/plan/scripts/plan-preflight.sh <plan.md> --transcript <this session's transcript> [--base <ref>]
+```
+
+It checks the plan against the repository: a citation must resolve AND the line must contain the
+literal quoted; every scope path must exist or be declared new; the acceptance numbers must run
+1..N; every declared correction's old text must still be there before the work and be gone at the
+close (`--closing`); every impact-sweep command must appear in the transcript; and **every scope
+path must have been read WHOLE in this session**, proved from the transcript the harness writes,
+not from a sentence saying so. It reads through the plan's `base:` for the same reason section 1
+does: a correction made during the front must not turn the plan's own citation into a false alarm.
+
+This exists because five rounds of cold review on one plan never converged here, and the measured
+cause was not the reviewer: every round was spending its attention on things a machine can check.
+`plan_gate` decides what guards the plan — `preflight` (the default), `review`, or `both` — and
+the gate denies `ExitPlanMode` with the pre-flight's own output when it is red.
+
+**The limit, declared:** reading is not understanding. The fence proves the file was opened
+whole, never that it was read well.
+
+## 5. Review: the reviewer belongs on the diff
+
+Principle 4 of this plugin says a fix is not delivered until a cold reader has **refuted the
+diff**. With `plan_gate=preflight` that is where the reviewer goes: the plan is guarded
+mechanically, and the reader spends attention on the change. What follows is the plan-review path,
+which `plan_gate=review` and `both` still require.
 
 Run the `cold-reviewer` agent on the plan with the criteria from section 2, and give it the
 plan's `base:` when the plan declares one, with the commands to read through it
@@ -119,6 +148,6 @@ answers. Record the user's decision as an `owner:` line in the review with `VERD
 and then submit. A missing precondition of any kind is reported to the user, never satisfied
 by adding policy, fences, tools or sections to the plan.
 
-## 5. Closing
+## 6. Closing
 
 `/roadworthy:close` removes the scope file after the gates pass.

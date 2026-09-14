@@ -1,8 +1,8 @@
-# Portoes desta frente. close.sh executa cada linha com bash -c: nenhuma pode ser prosa.
-# Comeca com os quatro que EXISTEM hoje; tests/attack.sh e o --sources do catalogo entram
-# quando forem construidos, nos entregaveis que os criam.
+# Written by scope-write.sh from leia-as-diretrizes-do-quiet-hopcroft.md. Do not edit by hand: the closing is measured
+# against .roadworthy/plan.snapshot, and a hand edit here only makes the digests disagree.
 bash tests/run.sh
+bash tests/attack.sh
 bash skills/document/scripts/docs-check.sh docs
+bash skills/refute/scripts/refute-ledger.sh hooks --sources principles,protect-paths,scope-lock,guard-commit,overnight-guard,plan-review-gate,rite-gate,stop-gate,scope-ledger
 bash skills/document/scripts/pointers-check.sh README.md --root .
-bash skills/refute/scripts/refute-ledger.sh hooks --sources principles,protect-paths,scope-lock,guard-commit,overnight-guard,plan-review-gate
 claude plugin validate . --strict

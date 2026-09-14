@@ -32,6 +32,11 @@
 # instead of producing a cryptic "no review for the current plan".
 # Symlinks and names containing '/' are refused (path traversal).
 #
+# WHAT guards the plan is `plan_gate` (preflight | review | both), new in 0.6.0 and born in
+# `preflight`: five rounds of cold review on one plan never converged here, and the measured
+# cause was that every round spent its attention on things a machine can check. The reviewer
+# goes back to the DIFF, which is what principle 4 of this plugin always said.
+#
 # Refuted 2026-09-13: injected -- removed the REJECTED branch;
 # tests/run.sh went red with `rejected review passed`, green again on the clean file, and the file was
 # restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
@@ -42,6 +47,15 @@ rw_read_event
 
 rw_bool "$(rw_option PLAN_REVIEW_REQUIRED true)" || exit 0
 
+# WHAT guards the plan, as opposed to WHETHER it is guarded. PLAN_REVIEW_REQUIRED stays the
+# boolean on/off switch and is read above with rw_bool: giving it a word like "preflight"
+# would make rw_bool false and the whole gate would exit 0 in silence -- the fence dying
+# quietly inside the change meant to strengthen it. So the criterion lives in its own option.
+mode="$(rw_option PLAN_GATE preflight)"
+case "$mode" in
+  preflight|review|both) : ;;
+  *) deny PreToolUse "plan_gate is '$mode'; it must be preflight, review or both." ;;
+esac
 plans="$(rw_option PLANS_DIR "")"
 [ -n "$plans" ] || plans="$HOME/.claude/plans"
 suffix="$(rw_option REVIEW_SUFFIX ".review.md")"
@@ -57,10 +71,11 @@ submitted="$(rw_field tool_input.plan)"
 # NOTE: bash counts quotes while scanning this $( ... ), heredoc body included. An apostrophe
 # with no pair ("the project's") desynchronises the scan and breaks the `case` below with a
 # syntax error far from the cause. Keep every ' paired inside the block; `bash -n` catches it.
-verdict="$(RW_SUBMITTED="$submitted" python3 - "$plans" "$suffix" "$max_rounds" "$root" <<'PY'
+verdict="$(RW_SUBMITTED="$submitted" python3 - "$plans" "$suffix" "$max_rounds" "$root" "$mode" <<'PY'
 import json, os, re, subprocess, sys
 d, suffix, max_rounds = sys.argv[1], sys.argv[2], int(sys.argv[3])
 root = sys.argv[4] if len(sys.argv) > 4 else ""
+mode = sys.argv[5] if len(sys.argv) > 5 else "preflight"
 submitted = os.environ.get("RW_SUBMITTED", "").strip()
 
 def out(kind, msg=""):
@@ -159,6 +174,12 @@ if base:
                       capture_output=True).returncode != 0:
         out("DENY", f"{name} declares base '{base}', which does not resolve to a commit in {root}. Fetch the ref or fix the line: every reading of the plan and of its review is made through it (git show {base}:<path>).")
 
+# In preflight mode the plan is guarded by the mechanical check the shell runs below, and no
+# reviewer is consulted. The election above is unchanged: which plan this call submits is the
+# same question in every mode.
+if mode == "preflight":
+    out("ALLOW", plan + "\t" + base)
+
 reviews = []
 for f in os.listdir(d):
     if not f.endswith(suffix): continue
@@ -216,11 +237,31 @@ if snap and not owner:
     grown = [s for s in now if s not in round1]
     if grown:
         out("DENY", f"the plan grew {len(grown)} section(s) after round 1 ({'; '.join(grown)}): a plan that grows to satisfy the reviewer is the failure mode this gate exists for. Stop and report to the user; only an 'owner:' decision in the review unlocks it.")
-out("ALLOW")
+out("ALLOW", plan + "\t" + base)
 PY
 )"
-case "$verdict" in
-  ALLOW*) exit 0 ;;
-  DENY*) deny PreToolUse "${verdict#DENY	}" ;;
+kind="${verdict%%	*}"
+rest="${verdict#*	}"; [ "$rest" = "$verdict" ] && rest=""
+case "$kind" in
+  ALLOW)
+    [ "$mode" = "review" ] && exit 0
+    plan_file="${rest%%	*}"
+    plan_base="${rest#*	}"; [ "$plan_base" = "$rest" ] && plan_base=""
+    pf="$(dirname "$0")/../skills/plan/scripts/plan-preflight.sh"
+    [ -f "$pf" ] || deny PreToolUse "plan_gate is '$mode' but the pre-flight script is missing ($pf)."
+    tp="$(rw_field transcript_path)"
+    # errtrace is lifted around the call for the same reason stop-gate lifts it: a non-zero
+    # exit from the checked command is the ANSWER, not an internal error, and the ERR trap
+    # fires inside the command substitution subshell where the condition context cannot
+    # protect it. Restored immediately, on both paths.
+    set +o errtrace
+    if pfout="$(bash "$pf" "$plan_file" ${root:+--root "$root"} ${tp:+--transcript "$tp"} ${plan_base:+--base "$plan_base"} 2>&1)"; then
+      set -o errtrace
+      exit 0
+    fi
+    set -o errtrace
+    deny PreToolUse "the pre-flight is red on $(basename "$plan_file"): the plan claims something the repository does not show. $pfout"
+    ;;
+  DENY) deny PreToolUse "$rest" ;;
   *) deny PreToolUse "plan-review-gate could not evaluate the review ($verdict)." ;;
 esac

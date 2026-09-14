@@ -74,6 +74,12 @@
       "description": "Deny ExitPlanMode unless the plan's review file (by name) records VERDICT: APPROVED; REJECTED and ESCALATE deny, and a round beyond the ceiling needs the user's owner: decision.",
       "default": true
     },
+    "plan_gate": {
+      "type": "string",
+      "title": "What guards a plan",
+      "description": "One of preflight, review, both. preflight: the plan is checked mechanically (citations by content, whole-file reading proved from the transcript, scope paths, acceptance numbering, declared corrections). review: an adversarial reviewer's APPROVED verdict, the pre-0.6.0 behaviour. both: the two. The cold reviewer's own principle says a fix is refuted on the DIFF, so a machine guards the plan and the reader guards the change.",
+      "default": "preflight"
+    },
     "max_review_rounds": {
       "type": "number",
       "title": "Review rounds ceiling",
