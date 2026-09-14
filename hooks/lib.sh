@@ -147,13 +147,26 @@ PY
 # glob matcher used to paper over that by matching a bare name at any depth; now that it is
 # anchored, both sides have to be resolved before they are compared.
 rw_realpath() {
-  local p="$1" d b
+  # Resolve the DEEPEST EXISTING ancestor and re-append what does not exist yet. Resolving only
+  # dirname was not enough, measured by tests/attack.sh on 2026-09-14: `.roadworthy/stop-latch/s1`
+  # escaped the foundation check entirely, because `stop-latch/` is created lazily and a `cd` into
+  # a directory that does not exist fails -- so the path kept its unresolved form (`/var/...` on
+  # macOS, where the root had resolved to `/private/var/...`), landed outside the root, and matched
+  # nothing. The normal case for that directory is NOT existing, so the latch was unprotected
+  # exactly when it mattered. The final component is deliberately NOT followed through a symlink;
+  # see the declared limit in docs/reference/roadmap.md.
+  local p="$1" d rest="" b
   [ -n "$p" ] || return 0
   d="$(dirname "$p")"; b="$(basename "$p")"
+  rest="$b"
+  while [ "$d" != "/" ] && [ "$d" != "." ] && [ ! -d "$d" ]; do
+    rest="$(basename "$d")/$rest"
+    d="$(dirname "$d")"
+  done
   d="$(cd "$d" 2>/dev/null && pwd -P || printf '%s' "$d")"
   case "$d" in
-    */) printf '%s%s' "$d" "$b" ;;
-    *)  printf '%s/%s' "$d" "$b" ;;
+    */) printf '%s%s' "$d" "$rest" ;;
+    *)  printf '%s/%s' "$d" "$rest" ;;
   esac
 }
 

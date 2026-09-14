@@ -36,6 +36,17 @@
 # What it does NOT check: whether the plan is a good idea. That is what a reader is for, and it is
 # the only thing a reader should be spending attention on.
 #
+# Refuted 2026-09-14, six times, each injection restored and its SHA-256 verified
+# (skills/refute/scripts/refute.sh, records in .roadworthy/refutations.jsonl):
+#   the content comparison removed  -> tests/run.sh red with `false citation passed`
+#   the whole-reading check removed -> red with `unread file not named`
+#   the closing check removed       -> red with `undone correction passed`
+#   the base ignored, tree read     -> red with `the base was ignored`
+#   `head -N` counted as a reading  -> red with `a window passed as a reading`
+#   newline dropped as a separator  -> red with `green plan rejected`
+# Each went green again on the clean file, which is the half that proves the check measures
+# the defect and not the weather.
+#
 # Usage: plan-preflight.sh <plan.md> [--root <repo>] [--transcript <file>] [--base <ref>]
 #                          [--closing] [--quiet]
 set -euo pipefail

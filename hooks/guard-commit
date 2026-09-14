@@ -33,8 +33,14 @@ done
 
 # Only plain `git commit` (not commit-tree, not -a/--all/--allow-empty) is
 # subject to the empty-staging check.
+#
+# `git -C <dir> commit` has to be in this pattern, not only in the directory extraction below.
+# Measured by tests/attack.sh on 2026-09-14: the trigger demanded `git` and `commit` adjacent, so
+# a `-C` commit never reached the check at all -- and the careful `-C` handling twelve lines down,
+# written for 0.3.0, was unreachable code. `git commit` with nothing staged was denied; the same
+# commit written with `-C` went through.
 if rw_bool "$(rw_option BLOCK_EMPTY_COMMITS true)" \
-   && printf '%s' "$command" | grep -q -E '(^|[;&|[:space:]])git[[:space:]]+commit([[:space:]]|$)' \
+   && printf '%s' "$command" | grep -q -E '(^|[;&|[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+commit([[:space:]]|$)' \
    && ! printf '%s' "$command" | grep -q -E -- '(^|[[:space:]])(-a|--all|--allow-empty|--amend)([[:space:]]|$)'; then
   # A command that stages on the same line (`git add … && git commit`) is judged by git
   # itself: at hook time the index is still empty and the check would lie.
