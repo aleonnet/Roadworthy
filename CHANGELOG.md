@@ -5,6 +5,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — 2026-09-14, the README in two languages, essentials first
+- `README.md` is rewritten for progressive disclosure: a language switch under the title, a
+  TL;DR of four guarantees, install, the first front in four steps, then one line per hook and
+  per skill, with the fine print folded into `<details>` blocks. Nothing measured was dropped;
+  it moved into the folds.
+- `README.pt-BR.md` is the same document in Brazilian Portuguese, section for section and fold for
+  fold, cross-linked under the title of each file — the switch GitHub can render, since a
+  README runs no script. A gate keeps the two in step: the count of `## ` headings and of
+  `<details>` blocks must agree, and each file must link the other.
+- Two README claims the tree did not sustain, both measured on 2026-09-14: "the four guards fail
+  closed" (six hooks declare `RW_ON_CRASH=deny`: `rite-gate`, `scope-lock`, `protect-paths`,
+  `guard-commit`, `overnight-guard`, `plan-review-gate`) and "about 468 tokens always on, 220 to
+  530 per skill" (`claude plugin details`: about 772 always on, 310 to 3,700 per invocation).
+- `hooks/hooks.json` said in its description that exit 2 is never used; `stop-gate` exits 2 by the
+  Stop event's own contract, which the README already declared. The description says so.
+
 ## [0.6.1] - 2026-09-14
 
 **The plugin, complete, measured against its own claims.** Every one of the 172 tracked files was read

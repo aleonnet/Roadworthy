@@ -1,5 +1,5 @@
 {
-  "description": "Roadworthy guardrails. The guards fail CLOSED: an internal error denies the action, because a boundary that fails open is not a boundary. Context injection (principles) fails open with a visible notice, because an error there would erase the prompt. A denial is a structured JSON decision with exit 0; exit 2 is never used.",
+  "description": "Roadworthy guardrails. The guards fail CLOSED: an internal error denies the action, because a boundary that fails open is not a boundary. Context injection (principles) fails open with a visible notice, because an error there would erase the prompt. A denial is a structured JSON decision with exit 0; the one exit 2 is stop-gate's, because blocking a turn is what exit 2 means on the Stop event.",
   "hooks": {
     "UserPromptSubmit": [
       {
