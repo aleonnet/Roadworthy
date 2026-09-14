@@ -22,7 +22,16 @@ export CLAUDE_PLUGIN_ROOT="$ROOT"
 
 FAIL=0; DECLARED=0; GREW=0
 section() { printf '\n== %s\n' "$1"; }
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# The status has to leave with the handler, or an abort reports success -- measured on the
+# suite itself on 2026-09-14, where a plain `trap 'rm -rf' EXIT` turned a dead script green.
+TMP="$(mktemp -d)"
+rw_exit() { local rc=$?; rm -rf "$TMP"; exit "$rc"; }
+trap rw_exit EXIT
+# The toy repositories come from the same builders the suite uses. This file keeps its own
+# ASSERTION helpers on purpose: an attack suite that shared `denied()` with the suite it is
+# attacking would inherit that suite's blind spots along with its conveniences.
+# shellcheck source=/dev/null
+for _fx in "$ROOT"/tests/fixtures/*.sh; do [ -f "$_fx" ] && . "$_fx"; done
 jq_s() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1"; }
 
 # fire <hook> <event json> → sets DENIED=1 when the hook returned a deny decision.
@@ -56,8 +65,7 @@ attack() {
   fi
 }
 
-A="$TMP/target"; mkdir -p "$A/.roadworthy" "$A/src" "$A/outside"
-git -C "$A" init -q
+A="$TMP/target"; fx_repo "$A"; mkdir -p "$A/.roadworthy" "$A/src" "$A/outside"
 printf 'x\n' > "$A/src/a.py"; printf 'x\n' > "$A/outside/b.py"
 sh() { printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":%s}}' "$A" "$(jq_s "$1")"; }
 ed() { printf '{"tool_name":"Edit","cwd":"%s","tool_input":{"file_path":"%s"}}' "$A" "$1"; }
@@ -137,7 +145,7 @@ attack declared "the same words typed into the message body (the flag is the fen
 Made-with: X"')"
 # Nothing staged, in a repository of its own so the staging above cannot mask it. The `-C` form
 # is the one that used to slip through: the trigger demanded `git` and `commit` adjacent.
-E="$TMP/empty"; mkdir -p "$E"; git -C "$E" init -q
+E="$TMP/empty"; fx_repo "$E"
 attack refused  "an empty commit"                         guard-commit "$(printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":%s}}' "$E" "$(jq_s "git commit -m x")")"
 attack refused  "an empty commit written with git -C"     guard-commit "$(printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":%s}}' "$TMP" "$(jq_s "git -C $E commit -m x")")"
 
@@ -155,8 +163,8 @@ rm -f "$A/.roadworthy/overnight"
 
 # ── the plan ─────────────────────────────────────────────────────────────────
 section "the plan"
-P="$TMP/plans"; R2="$TMP/repo2"; mkdir -p "$P" "$R2"
-git -C "$R2" init -q; printf 'one\ntwo\n' > "$R2/src.txt"
+P="$TMP/plans"; R2="$TMP/repo2"; mkdir -p "$P"
+fx_repo "$R2"; printf 'one\ntwo\n' > "$R2/src.txt"
 R2R="$(cd "$R2" && pwd -P)"
 cat > "$P/p.md" <<PEOF
 # P
@@ -179,7 +187,7 @@ src.txt
 |---|---|---|
 | 1 | a | b |
 PEOF
-python3 -c 'import json;print(json.dumps({"message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"cat src.txt"}}]}}))' > "$TMP/tr.jsonl"
+fx_transcript "$TMP/tr.jsonl" "cat src.txt"
 pe() { printf '{"tool_name":"ExitPlanMode","cwd":"%s","transcript_path":"%s","tool_input":{}}' "$R2" "$1"; }
 export CLAUDE_PLUGIN_OPTION_PLANS_DIR="$P"
 

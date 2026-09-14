@@ -1,4 +1,4 @@
-status: accepted
+status: superado por 2026-09-14-1129-handoff-suite-em-casos-e-fixtures.md
 
 # Handoff — 0.6.0, the rite stops being optional — 2026-09-14 03:31
 

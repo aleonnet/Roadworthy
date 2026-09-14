@@ -110,12 +110,34 @@ Keep them, or point `principles_file` at your own.
 ## Testing
 
 ```bash
-bash tests/run.sh
+bash tests/run.sh              # the whole gate: 29 cases, ~3 min
+bash tests/hooks/scope-lock.sh # one fence, alone, in seconds
+bash tests/attack.sh           # the cheating suite
 ```
 
 Every hook is exercised with real stdin JSON in both directions, every script is refuted
 with a toy check, the manifests are validated with `claude plugin validate --strict`, and a
-privacy scan fails on any absolute home path. CI runs the same script on macOS and Linux.
+privacy scan fails on any absolute home path. CI runs `tests/run.sh` on macOS and Linux.
+
+| Where | What |
+|---|---|
+| `tests/run.sh` | the runner: reads `tests/cases.txt`, runs each case (four at a time), folds in the attack suite |
+| `tests/cases.txt` | **the manifest, and the fence.** A runner that globs a directory loses a case the day the file is deleted and says nothing; this one refuses to run when the list and the directory disagree, in either direction |
+| `tests/lib.sh` | `ok`/`fail`, `run_hook`, `denied`, `golden`, the temp root, and `rw_end` |
+| `tests/hooks/`, `tests/scripts/`, `tests/meta/` | one case per fence, per script, and for the suite's own hygiene |
+| `tests/fixtures/` | the toy repositories, documentation trees, plans and transcripts, built by name |
+| `tests/goldens/` | the deny and context envelopes, compared key for key |
+
+**A case is a file you can run alone, and that is the point.** A refutation proves a fence can go
+red by injecting the defect and running the check twice. Against a 1407-line monolith that cost two
+full suite runs; measured on this repository, the six refutations of `plan-preflight.sh` took 32
+minutes of wall clock. Against one case: 5.3 seconds.
+
+**A case that dies before its last assertion is red, by construction.** `rw_end` sets a flag and the
+exit handler refuses to report success without it. This is not belt and braces: measured on bash
+3.2, an unbound variable under `set -u` aborts the script and the `EXIT` trap sees `$?=0`, so the
+case exits **0** with half its assertions never run — which is what `tests/run.sh` shipped with
+before this was found, by the suite, on itself.
 
 **This suite is what you run on every change; refutation is not.** A refutation exists to prove a
 new fence can go red for its own reason, so it belongs to the moment that fence is written — once,

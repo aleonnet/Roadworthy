@@ -34,6 +34,49 @@ this plugin always said. The option is `plan_gate` (`preflight` | `review` | `bo
    and refuses. Anyone on Windows without bash has been running with **no guardrails at all**
    while believing otherwise; discovering that through a refusal is better than not discovering it.
 
+### Fixed — 2026-09-14, the suite reported success on a suite that had died
+
+Found by the suite, on itself, while it was being reorganised — and it is the worst class of defect
+this project can have, because it is the instrument that proves everything else.
+
+- **An aborted run exited 0.** `tests/run.sh` ended with `trap 'rm -rf "$TMP"' EXIT`. The handler's
+  last command is the `rm`, and its status becomes the script's, so any abort that was not an
+  assertion — an unbound variable, a `set -e` failure outside a `||` — left the gate **green** with
+  half of it never run. Reproduced in three lines. Carrying `$?` out of the handler is not enough
+  either: measured on bash 3.2, an unbound variable under `set -u` makes the `EXIT` trap see
+  `$?=0`, while an ordinary `set -e` failure correctly shows 1. What fixes it is a flag — `rw_end`
+  is the only thing that sets it and it is the last line of every case, so a case that did not
+  reach the end is red whatever the shell decided the status was. `tests/meta/runner.sh` measures
+  that in both directions, including the discriminator that the same abort without the flag does
+  return 0.
+
+### Changed — 2026-09-14, the suite becomes cases and fixtures
+
+`tests/run.sh` was 1407 lines and 36 sections in one shell, and `tests/fixtures/` and `tests/hooks/`
+had been empty since 2 September — untracked, since git does not version an empty directory, so
+nobody who cloned the repository ever received them.
+
+- **One case per fence and per script**, in `tests/hooks/`, `tests/scripts/` and `tests/meta/`, each
+  runnable alone: `bash tests/hooks/scope-lock.sh`. The measured reason is not tidiness. A
+  refutation runs its check twice, so against the monolith every refutation cost two full suite
+  runs — the six refutations of `plan-preflight.sh` took 32 minutes of wall clock. Against one
+  case: **5.3 seconds**.
+- **`tests/cases.txt` is the manifest, and it is a fence.** A runner that globs a directory loses a
+  case in silence the day someone deletes the file. This one refuses to run when the list and the
+  directory disagree, in either direction, and names what is missing on which side.
+- **Eight variables crossed section boundaries** and are now fixtures: `PROJ`, `G`, `P`, `DI`, `CF`,
+  `ON`, `SUB`, and `ROADWORTHY_DATA` — that last one exported in one section and still live six
+  hundred lines later, which is environment leaking rather than state shared. `tests/fixtures/`
+  holds the builders they became.
+- **Four cases at a time**, output buffered and printed in manifest order. Measured on this
+  machine: 235 s serial, 183 s at four, 251 s at eight — past four it oversubscribes and gets
+  slower. `RW_JOBS=1` puts it back in order for a bisect.
+- Assertions went from 318 to **359**, and no assertion name was lost in the move: the two lists
+  were compared name by name before and after.
+- The `wait -n` the parallel runner was first written with does not exist in bash 3.2, the bash
+  macOS ships, so the limiter it belonged to was not limiting anything. A broken limiter under a
+  confident comment is worse than none; it is a polling loop now.
+
 ### Added — 2026-09-13, the mechanisms this release is made of
 - `hooks/rite-gate` (Edit/Write **and Bash**): while the project has no usable `.roadworthy/scope`,
   every edit and every shell write is denied, naming the rite that opens a front. An **empty** scope
