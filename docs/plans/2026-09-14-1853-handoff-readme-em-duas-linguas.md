@@ -40,12 +40,12 @@ handoff anterior. Desatualizado, medido:
 O resto (CHANGELOG, roteiro, skills, evals, mapa, princípios) está coerente com a árvore.
 
 Entregue:
-- `README.md` — divulgação progressiva: troca de idioma na primeira linha, TL;DR de quatro
+- `README.md` — divulgação progressiva: troca de idioma sob o título, TL;DR de quatro
   garantias, instalação, a primeira frente em quatro passos, uma linha por hook e por skill, e a
   letra miúda dobrada em quatro blocos `<details>`. As duas frases falsas corrigidas; nada medido
   foi apagado, migrou para as dobras.
 - `README.pt-BR.md` — a mesma página em português do Brasil, seção por seção e dobra por dobra;
-  as duas se apontam na primeira linha (o chaveamento que o GitHub renderiza: README não roda script).
+  as duas se apontam sob o título (o chaveamento que o GitHub renderiza: README não roda script).
 - Portão novo em `.roadworthy/gates`: as duas páginas têm o mesmo número de seções `## ` e de
   `<details>` e apontam uma para a outra. Refutado ao nascer, duas vezes (seção removida do PT-BR;
   link cruzado trocado no EN): vermelho com `readme-parity: README.md and README.pt-BR.md
@@ -94,3 +94,39 @@ Roadworthy: leia docs/plans/2026-09-14-1853-handoff-readme-em-duas-linguas.md AN
 [Unreleased] do CHANGELOG e o roteiro. Confira no ato: git status, close.sh --check, gh run list --limit 3.
 Aberto: nada nesta frente; próximo é o primeiro uso real da 0.6.1 noutro projeto.
 ```
+
+## Painel de fechamento — 2026-09-14 19:15 (hora do `close.sh`)
+
+1. **O que mudou para o dono:** o README abre pelo essencial em inglês ou em português do Brasil,
+   com a letra miúda dobrada e um portão que impede as duas páginas de divergirem; as três frases
+   que a árvore não sustentava estão corrigidas e o handoff da 0.6.1 está superado por este.
+2. **Entregue, por caminho:** `README.md`, `README.pt-BR.md`, `hooks/hooks.json` (só a
+   `description`), `CHANGELOG.md` (`[Unreleased]`), `.roadworthy/gates` (sétimo portão, paridade),
+   `docs/plans/done/2026-09-14-1841-readme-em-duas-linguas.md` e sua linha em
+   `docs/plans/done/README.md`, `docs/plans/2026-09-14-1750-handoff-0-6-1.md` (status), este handoff.
+3. **Próximo a entregar e o que consome deste:** o push (ordenado pelo dono) consome os commits
+   `78a653a`, `67e3467` e o deste painel; a CI consome `tests/run.sh`; nenhum código novo.
+4. **Prova, comando rodado no ato → saída:** `bash skills/close/scripts/close.sh` → `close: passed`,
+   7 portões OK em `67e3467` (árvore `b291471eab154795`); `bash tests/run.sh` → `30 case(s) run`,
+   `RESULT: gate clean`; `bash tests/attack.sh` → `RESULT: every cheat refused, every pass declared`
+   (50 recusados, 14 declarados); `docs-check: OK`; `pointers-check: OK` nos dois READMEs; o portão
+   de paridade sai 0; `claude plugin validate . --strict` → `Validation passed`;
+   `plan-preflight.sh --closing` → verde (4 correções declaradas feitas). **Contraprovas que
+   refutam:** 4 registros em `.roadworthy/refutations.jsonl` (seção `## Licença` apagada do PT-BR;
+   link cruzado trocado no EN; as duas repetidas após o portão ganhar texto de falha), cada um
+   vermelho com `readme-parity: README.md and README.pt-BR.md disagree`, verde no arquivo limpo,
+   hash conferido. Leitor frio sobre o diff: rodada 1 REJECTED com 2 bloqueios e 1 não verificado,
+   todos mecânicos e aplicados sem rodada nova (placar acima); a minha varredura frase a frase
+   contra `git show HEAD:README.md` achou e restaurou mais duas.
+5. **Dentro da tolerância?** Sim. A primeira rodada do `close.sh` ficou vermelha em dois portões
+   (caminho de home no plano commitado; literal de link no placar), corrigidos em `67e3467`.
+6. **Números antes → depois:** `README.md` 179 → 304 linhas, com o essencial nas primeiras ~50 e o
+   resto em 4 dobras; READMEs 1 → 2; portões declarados 6 → 7; refutações desta frente 0 → 4;
+   afirmações do README que a árvore não sustentava 2 → 0 (mais 1 promovida a manchete, reescrita
+   como condicional).
+7. **Acervo tocado:** 9 arquivos, +771/−82 em dois commits; criados: `README.pt-BR.md`, este
+   handoff, o plano em `done/`; movidos: o plano de `docs/plans/` para `docs/plans/done/` (mesmo
+   conteúdo salvo `status:` e `project:`); apagados: nada.
+8. **Limite ainda aberto:** o molde do plano pede caminho absoluto e a varredura de privacidade o
+   recusa quando o plano é commitado (seção acima); CI deste push só se mede depois dele.
+9. **Decisão do dono:** nada; o push está ordenado e sai nesta sessão.
