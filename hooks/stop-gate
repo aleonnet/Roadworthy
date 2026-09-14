@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# stop-gate — Stop hook. "Done" does not pass while a declared gate is not fresh.
+#
+# The failure it exists for: a turn ends with the word "done" and the gates were never run on the
+# tree that is about to be shipped, or were run before the last commit. The plugin already knows
+# the answer -- close.sh --check says FRESH, STALE or MISSING for the tree in front of you -- and
+# nobody was asking it at the one moment it matters.
+#
+# Blocks only when ALL of these hold:
+#   * the session is in a git repository;
+#   * the project declares gates (.roadworthy/gates exists). WITHOUT A GATES FILE IT NEVER BLOCKS:
+#     close.sh --check fails there by design since 0.5.0, and blocking on that would be a false
+#     positive in nearly every project on earth;
+#   * the final message of the turn claims the work is finished;
+#   * close.sh --check does not report every gate FRESH.
+#
+# Exit 2 is what blocks a turn, and the reason goes to stderr. That is the opposite of every other
+# hook here, which denies with structured JSON and exit 0 -- the Stop event has its own contract.
+#
+# The latch, and why it is keyed on the TREE. A blocked turn that keeps being blocked is a loop, so
+# the block is recorded per session. Recording it per session ALONE would make the gate a single
+# shot: block once, then let every later claim through. So the latch stores the content
+# fingerprint of the tree, and the same tree is not blocked twice while a changed tree is. A latch
+# that cannot be written does not block at all: a full disk must not trap a session.
+#
+# `stop_hook_active` is deliberately not used: it does not appear in the readable part of the
+# official documentation, and a fence does not rest on an undocumented field.
+#
+# Fails open, always and by declaration (RW_ON_CRASH=warn): no transcript, an unreadable or
+# lagging one (the official documentation warns the transcript is written asynchronously), no
+# repository, any internal error. A guard that decides whether work may END must never trap a
+# session in a wall it cannot argue with.
+#
+# Refuted 2026-09-13: injected -- made the gate block even with no gates file declared;
+# tests/run.sh went red with `blocked a project with no gates declared`, green again on the clean
+# file, and the file was restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+export RW_HOOK="stop-gate"
+export RW_ON_CRASH=warn
+source "$(dirname "$0")/lib.sh"
+rw_read_event
+
+rw_bool "$(rw_option STOP_GATE true)" || exit 0
+
+cwd="$(rw_realpath "$(rw_field cwd)")"
+[ -n "$cwd" ] || exit 0
+root="$(rw_root "$cwd")"
+git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+[ -f "$root/.roadworthy/gates" ] || exit 0
+
+final="$(rw_field last_assistant_message)"
+if [ -z "$final" ]; then
+  transcript="$(rw_field transcript_path)"
+  [ -n "$transcript" ] && [ -f "$transcript" ] || exit 0
+  final="$(RW_T="$transcript" python3 - <<'PY'
+import json, os
+last = ""
+try:
+    with open(os.environ["RW_T"], encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            msg = rec.get("message") or {}
+            if rec.get("type") == "assistant" or msg.get("role") == "assistant":
+                content = msg.get("content")
+                if isinstance(content, list):
+                    parts = [c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"]
+                    if any(parts):
+                        last = "\n".join(parts)
+                elif isinstance(content, str) and content:
+                    last = content
+except Exception:
+    last = ""
+print(last)
+PY
+)"
+fi
+[ -n "$final" ] || exit 0
+
+# A NAMED enumeration of what counts as claiming the work is finished. Named, because a guard that
+# guesses at meaning blocks honest turns; short, because the cost of a false positive here is a
+# session that cannot end.
+claims_done() {
+  printf '%s' "$1" | tail -c 2000 | grep -q -i -E \
+    '(^|[^a-z])(done|finished|complete[d]?|shipped|delivered|all set|ready to (ship|merge))([^a-z]|$)|STATUS: passed|(^|[^a-zç])(pronto|conclu[ií]do|finalizado|entregue)([^a-zç]|$)'
+}
+claims_done "$final" || exit 0
+
+here="$(cd "$(dirname "$0")" && pwd)"
+# A non-zero --check is the NORMAL answer here, not an error, so the ERR trap must not fire on
+# it. errtrace makes the trap inherit into this command substitution, so it is lifted for the
+# call and restored straight after -- the guard keeps failing closed everywhere else.
+# The assignment goes INSIDE the `if`: a command substitution that returns non-zero trips the
+# ERR trap at the top level even with errtrace off, and here a non-zero answer is the normal
+# one. In a condition context nothing trips, and errtrace is lifted only for the call so the
+# trap does not fire inside the subshell either.
+set +o errtrace
+if check="$(cd "$root" && bash "$here/../skills/close/scripts/close.sh" --check 2>&1)"; then
+  set -o errtrace
+  exit 0
+fi
+set -o errtrace
+
+# Not fresh. Record the tree we are blocking on, so the next turn on the SAME tree is not blocked
+# again and the session cannot loop. A latch we cannot write means we do not block.
+data="${ROADWORTHY_DATA:-${CLAUDE_PLUGIN_DATA:-$root/.roadworthy}}"
+latch_dir="$data/stop-latch"
+session="$(rw_field session_id)"
+[ -n "$session" ] || session="nosession"
+latch="$latch_dir/$(printf '%s' "$session" | tr -c 'A-Za-z0-9_.-' '_')"
+read -r _ wtree _ <<< "$(cd "$root" && bash "$here/../skills/close/scripts/tree-fingerprint.sh" "$root" 2>/dev/null || echo "x x x")"
+if [ -f "$latch" ] && [ "$(cat "$latch" 2>/dev/null)" = "$wtree" ]; then
+  exit 0
+fi
+mkdir -p "$latch_dir" 2>/dev/null || exit 0
+printf '%s\n' "$wtree" > "$latch" 2>/dev/null || exit 0
+
+{
+  echo "Roadworthy/stop-gate: the turn says the work is finished, and the declared gates are not."
+  echo
+  printf '%s\n' "$check"
+  echo
+  echo "FRESH means the gate ran on THIS tree and passed. Run the gates after the last commit"
+  echo "(/roadworthy:close), or say plainly what is left instead of calling it done."
+  echo "This tree is now latched: the same claim on the same tree will not be blocked again."
+} >&2
+exit 2

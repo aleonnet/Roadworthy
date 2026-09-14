@@ -50,6 +50,12 @@
       "description": "Deny edits and shell writes while the project has no usable .roadworthy/scope, and deny writes to the files only a script may write. Turning this off restores the behaviour measured on 2026-09-13: 60 edits and 117 commands in a day with no rite invoked and nothing noticing.",
       "default": true
     },
+    "stop_gate": {
+      "type": "boolean",
+      "title": "Block a finished claim on stale gates",
+      "description": "When a turn says the work is finished and the project declares gates, block it while close.sh --check does not report every gate FRESH. Never blocks a project with no gates file, never blocks twice on the same tree, and fails open on any error.",
+      "default": true
+    },
     "forbidden_commit_flags": {
       "type": "string",
       "title": "Forbidden commit flags",

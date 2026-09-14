@@ -14,6 +14,8 @@ set -u
 #           fails open is not a boundary);
 #   allow — context injection (UserPromptSubmit): on internal error a notice
 #           is shown and the prompt proceeds (exit 2 there would erase it).
+#   warn  — Stop: on internal error the turn is NOT blocked. Exit 2 blocks a turn,
+#           and a guard that decides whether work may end must never trap a session.
 # No default: a hook without a policy is itself an internal error.
 rw_crash() {
   local where="$1"
@@ -28,6 +30,11 @@ PY
       exit 0 ;;
     allow)
       echo "roadworthy/${RW_HOOK:-hook}: internal error at $where; guardrail skipped for this call" >&2
+      exit 1 ;;
+    warn)
+      # Stop: exit 2 BLOCKS the turn, so an internal error there would trap the session in a
+      # wall it cannot argue with. A hook that decides whether work may END fails open, loudly.
+      echo "roadworthy/${RW_HOOK:-hook}: internal error at $where; not blocking the turn" >&2
       exit 1 ;;
     *)
       echo "roadworthy/${RW_HOOK:-hook}: no crash policy declared (RW_ON_CRASH)" >&2

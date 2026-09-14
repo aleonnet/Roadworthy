@@ -31,6 +31,7 @@ idempotent; `claude plugin update roadworthy@roadworthy` picks up new versions.
 | `protect-paths` | Edit/Write | Paths matching `protected_paths` are never edited, whatever the model decides. |
 | `guard-commit` | Bash | `git commit` with a forbidden flag (default `--trailer`) or with nothing staged is denied. |
 | `plan-review-gate` | ExitPlanMode | A plan can only be submitted with a review that says `VERDICT: APPROVED` — either next to it as `<plan><review_suffix>`, or, in plan mode where only one file may be written, as a `## Review` section of the plan itself. REJECTED and ESCALATE deny, round 3 needs the user's `owner:` decision, and a section added after round 1 denies (growth guard). The plans directory is shared by every project, so the plan declares `project:` and the gate elects by that, names a plan that belongs elsewhere, skips one marked superseded, and refuses two live plans of one project instead of choosing by date. A plan may declare `base:`; the ref must resolve and the review must name the same one. |
+| `stop-gate` | Stop | A turn that says the work is finished is blocked while `close.sh --check` does not report every declared gate FRESH, and the block shows the state of each one. **Never blocks a project with no gates file** (that check fails there by design), never blocks the same tree twice — the latch is keyed on the tree's content, so a changed tree is judged again — and fails open on anything it cannot read. Exit 2 is what blocks a turn; the Stop event has its own contract. |
 | `overnight-guard` | Bash | While `.roadworthy/overnight` exists (set by `/roadworthy:overnight` on the user's order), `git push`, `git merge`, `git tag`, `gh pr merge` and every `deny:` rule of `.roadworthy/overnight-rules` are denied; `protect-paths` also freezes the file's `freeze:` globs. |
 
 Every hook declares its crash policy. The four guards **fail closed**: an internal error denies
@@ -80,6 +81,7 @@ Set on enable, or later with `/plugin` → Roadworthy → Configure. Values reac
 | `principles_file` | bundled `principles/PRINCIPLES.md` | Markdown file whose numbered lines are injected at every prompt. |
 | `project_rules` | `true` | Also inject numbered lines from the project's auto-memory `MEMORY.md`. |
 | `protected_paths` | empty | Comma-separated globs Edit/Write may never touch; the project may add its own in `.roadworthy/protected`. |
+| `stop_gate` | `true` | Block a finished claim while a declared gate is not FRESH. |
 | `rite_gate` | `true` | Deny edits and shell writes while no front is open, and deny writes to the files only a script may write. |
 | `scope_lock` | `true` | Honour `.roadworthy/scope`. |
 | `forbidden_commit_flags` | `--trailer` | Comma-separated flags denied in commit commands. |
