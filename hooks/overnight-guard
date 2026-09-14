@@ -9,6 +9,10 @@
 # project adds its own frozen commands in `.roadworthy/overnight-rules`, one
 # extended regular expression per `deny:` line (firmware upload, device
 # install, sudo, ssh to a named host). Without the marker the hook is inert.
+#
+# Refuted 2026-09-13: injected -- resolved the root from the session cwd instead of the command's target;
+# tests/run.sh went red with `the night missed the repository the command attacks`, green again on the clean file, and the file was
+# restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
 export RW_HOOK="overnight-guard"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"

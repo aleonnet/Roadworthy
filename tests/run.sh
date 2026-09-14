@@ -23,7 +23,18 @@ run_hook() {
   set -e
   ERR="$(cat "$TMP/err")"
 }
-denied()  { printf '%s' "$OUT" | grep -q '"permissionDecision": "deny"'; }
+# A denial is judged by its SHAPE, not by a substring. `grep -q '"permissionDecision": "deny"'`
+# accepted any line that merely contained those characters -- including output that is not JSON
+# at all -- and rejected valid JSON formatted with different spacing. Both directions measured.
+denied()  { printf '%s' "$OUT" | python3 -c 'import json,sys
+try: d = json.load(sys.stdin)
+except Exception: sys.exit(1)
+o = d.get("hookSpecificOutput") or {}
+sys.exit(0 if o.get("permissionDecision") == "deny" else 1)'; }
+# And once per guard, the WHOLE envelope is compared against the golden, key for key.
+golden()  { printf '%s' "$OUT" | python3 "$ROOT/tests/goldens/check.py" "$ROOT/tests/goldens/$1" 2>"$TMP/golden.err"; }
+# why() prints the divergence the golden found, for the assertions that expect one.
+why()     { sed "s/^/          /" "$TMP/golden.err"; }
 context() { printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])'; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -151,8 +162,12 @@ run_hook scope-lock "{\"tool_name\":\"Edit\",\"cwd\":\"$REPO\",\"tool_input\":{\
 section "guard-commit"
 G="$TMP/git"; mkdir -p "$G"; git -C "$G" init -q; git -C "$G" config user.email t@t; git -C "$G" config user.name t
 TR='--tr'; TR="${TR}ailer"
+# The REASON has to name the flag. Asking only "did it deny?" passes with the flag check broken,
+# because the empty-staging check denies the same command for its own reason -- measured with a
+# planted defect, which is the whole point of refuting an assertion before trusting it.
 run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$G\",\"tool_input\":{\"command\":\"git commit $TR x -m m\"}}"
-denied && ok "forbidden flag denied" || fail "forbidden flag passed"
+denied && printf '%s' "$OUT" | grep -q 'is forbidden in commits' \
+  && ok "forbidden flag denied, and the reason names the flag" || fail "forbidden flag passed"
 run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$G\",\"tool_input\":{\"command\":\"git commit -m m\"}}"
 denied && ok "empty staging denied" || fail "empty staging passed"
 echo x > "$G/f"; git -C "$G" add f
@@ -188,7 +203,11 @@ run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
 ! denied && ok "editing the plan keeps the approval (what the user approved is what counts, no hash)" || fail "edit voided the approval"
 printf 'plan: my-plan.md\nround: 2\nVERDICT: REJECTED\n' > "$P/my-plan.review.md"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
-denied && ok "rejected review → denied" || fail "rejected review passed"
+# The reason has to name the rejection. Asking only "did it deny?" passes with the REJECTED
+# branch removed, because the verdict then falls through to "has no verdict" and denies anyway
+# -- measured with a planted defect.
+denied && printf '%s' "$OUT" | grep -q 'rejected the plan' \
+  && ok "rejected review → denied, and the reason says it was rejected" || fail "rejected review passed"
 printf 'plan: my-plan.md\nround: 3\nVERDICT: ESCALATE\n## Recomendações\n- x\n## Alternativas\n- y — fonte: RFC 0000\n' > "$P/my-plan.review.md"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
 denied && printf '%s' "$OUT" | grep -q "escalated" && ok "ESCALATE → denied until the user answers" || fail "ESCALATE passed"
@@ -538,6 +557,25 @@ printf '// FENCE: x\n// checks y\n// refuted 2026-01-01: injected z → Actual: 
 printf '// FENCE: without record\n// checks y\n' > "$RL/b_test.dart"
 printf '// plain test\n' > "$RL/c_test.dart"
 ! bash skills/refute/scripts/refute-ledger.sh "$RL" >/dev/null 2>&1 && ok "fence without a refutation record fails" || fail "unrecorded fence passed"
+# A project whose fences are not named like tests declares them by name. Held to a DATED record,
+# because the loose default is satisfied by prose: hooks/principles contains the word "Injects"
+# in its description and passed the ledger with no refutation at all -- measured.
+RLD="$TMP/rl-declared"; mkdir -p "$RLD"
+printf 'not a fence by name\n' > "$RLD/plain-guard"
+! bash skills/refute/scripts/refute-ledger.sh "$RLD" --sources plain-guard >/dev/null 2>&1 \
+  && ok "a declared fence with no dated record fails" || fail "declared fence without a record passed"
+printf 'guard\n# Refuted 2026-09-13: injected x; went red with y\n' > "$RLD/plain-guard"
+bash skills/refute/scripts/refute-ledger.sh "$RLD" --sources plain-guard --legacy /dev/null | grep -q '1 fence(s)' \
+  && ok "and passes once it carries one" || fail "declared fence with a record still failed"
+! bash skills/refute/scripts/refute-ledger.sh "$RLD" --sources nao-existe >/dev/null 2>&1 \
+  && ok "a declared fence that does not exist is a hole, not an absence of obligation" || fail "missing declared fence passed"
+printf 'guard\n# this text merely contains the word inject, which is not a record\n' > "$RLD/plain-guard"
+! bash skills/refute/scripts/refute-ledger.sh "$RLD" --sources plain-guard >/dev/null 2>&1 \
+  && ok "prose containing 'inject' does not count as a record for a declared fence" || fail "prose accepted as a refutation record"
+rm -f "$RLD/plain-guard"
+# The plugin's own guards are in the ledger, and the gates file runs it.
+bash skills/refute/scripts/refute-ledger.sh hooks --sources principles,protect-paths,scope-lock,guard-commit,overnight-guard,plan-review-gate | grep -q '6 fence(s), 0 legacy, 0 without' \
+  && ok "the plugin's own six guards are declared fences and all carry a dated record" || fail "the plugin does not hold its own guards to the ledger"
 printf '%s\n' "$RL/b_test.dart" > "$RL/legacy.txt"
 bash skills/refute/scripts/refute-ledger.sh "$RL" --legacy "$RL/legacy.txt" | grep -q '2 fence(s), 1 legacy, 0 without' && ok "legacy list tolerates declared debt and counts it" || fail "legacy handling"
 printf '// FENCE: spike\n// DUMP — not a guarantee\n' > "$RL/d_test.dart"
@@ -676,6 +714,53 @@ fi
 section "plan template"
 grep -q '## Risk band' skills/plan/templates/plan.md && [ "$(grep -o -E '\*\*(protected|critical|standard|minimal)\*\*' skills/plan/templates/plan.md | sort -u | wc -l | tr -d ' ')" = "4" ] && ok "risk band with the four bands" || fail "risk band missing"
 grep -q '^## Overnight policy' skills/plan/templates/plan.md && grep -q 'Reserved for the user' skills/plan/templates/plan.md && ok "overnight policy section with the two lists" || fail "overnight policy section missing"
+
+# ── goldens: the envelope every guard returns, compared key for key ─────────
+section "goldens"
+# Until now the suite only ever asked whether a fragment appeared in the output. That accepts a
+# malformed answer containing the right characters and rejects a correct one formatted otherwise,
+# so the SHAPE of what a guard returns -- the contract Claude Code actually consumes -- was never
+# pinned by anything. tests/goldens/ holds it, and every guard is measured against it.
+GD="$TMP/gold"; mkdir -p "$GD/.roadworthy"; git -C "$GD" init -q
+
+CLAUDE_PLUGIN_OPTION_PROTECTED_PATHS='secret.txt' run_hook protect-paths "{\"tool_name\":\"Edit\",\"cwd\":\"$GD\",\"tool_input\":{\"file_path\":\"$GD/secret.txt\"}}"
+golden deny-envelope.json && ok "protect-paths denies in the golden envelope" || fail "protect-paths envelope: $OUT"
+
+printf 'src/**\n' > "$GD/.roadworthy/scope"
+run_hook scope-lock "{\"tool_name\":\"Edit\",\"cwd\":\"$GD\",\"tool_input\":{\"file_path\":\"$GD/nope.md\"}}"
+golden deny-envelope.json && ok "scope-lock denies in the golden envelope" || fail "scope-lock envelope: $OUT"
+rm -f "$GD/.roadworthy/scope"
+
+GTR='--tr'; GTR="${GTR}ailer"
+run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$GD\",\"tool_input\":{\"command\":\"git commit $GTR x -m m\"}}"
+golden deny-envelope.json && ok "guard-commit denies in the golden envelope" || fail "guard-commit envelope: $OUT"
+
+echo '{"topic":"g"}' > "$GD/.roadworthy/overnight"
+run_hook overnight-guard "{\"tool_name\":\"Bash\",\"cwd\":\"$GD\",\"tool_input\":{\"command\":\"git push origin main\"}}"
+golden deny-envelope.json && ok "overnight-guard denies in the golden envelope" || fail "overnight-guard envelope: $OUT"
+rm -f "$GD/.roadworthy/overnight"
+
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$TMP/goldplans" ; mkdir -p "$TMP/goldplans"
+printf '# unreviewed\n' > "$TMP/goldplans/g.md"
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$TMP/goldplans" run_hook plan-review-gate "{\"tool_name\":\"ExitPlanMode\",\"cwd\":\"$GD\",\"tool_input\":{}}"
+golden deny-envelope.json && ok "plan-review-gate denies in the golden envelope" || fail "plan-review-gate envelope: $OUT"
+
+# The fail-closed path returns the same envelope: a crash must be indistinguishable, to the
+# harness, from a deliberate denial.
+CLAUDE_PLUGIN_OPTION_PROTECTED_PATHS='x' run_hook protect-paths 'not json'
+golden deny-envelope.json && ok "an internal error denies in the same golden envelope" || fail "crash envelope: $OUT"
+
+# Context injection has its own contract and its own golden.
+run_hook principles "{\"transcript_path\":\"$PROJ/s.jsonl\",\"cwd\":\"$GD\",\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"hi\"}"
+golden context-envelope.json && ok "principles injects in the golden envelope" || fail "principles envelope: $OUT"
+
+# And the golden has to be able to say no: a shape that is almost right must be rejected.
+OUT='{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny"}}'
+! golden deny-envelope.json && { ok "a denial missing the reason is rejected by the golden"; why; } || fail "golden accepted an envelope with no reason"
+OUT='{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "no prefix"}}'
+! golden deny-envelope.json && { ok "a reason that does not name Roadworthy is rejected"; why; } || fail "golden accepted an unattributed reason"
+OUT='garbage "permissionDecision": "deny" garbage'
+! golden deny-envelope.json && { ok "output that is not JSON is rejected (the old grep accepted it)"; why; } || fail "golden accepted non-JSON"
 
 # ── privacy: the plugin must carry no personal data ──────────────────────────
 section "privacy scan"

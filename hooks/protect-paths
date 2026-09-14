@@ -4,6 +4,10 @@
 # Denies any edit whose target path matches one of the `protected_paths`
 # globs. This is the mechanical form of "this area is off limits": the model
 # cannot talk itself past it. Empty option → the guard is inactive.
+#
+# Refuted 2026-09-13: injected -- read the project list at `$cwd` instead of the repository root;
+# tests/run.sh went red with `project protected list inert from a subdirectory`, green again on the clean file, and the file was
+# restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
 export RW_HOOK="protect-paths"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"

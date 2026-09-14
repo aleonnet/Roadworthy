@@ -6,6 +6,10 @@
 # approved), every edit outside the listed paths is denied until the scope
 # file is removed by /roadworthy:close. Lines in the scope file are globs
 # relative to the project root; `#` starts a comment.
+#
+# Refuted 2026-09-13: injected -- read the scope at `$cwd` instead of the repository root;
+# tests/run.sh went red with `lock inert from a subdirectory`, green again on the clean file, and the file was
+# restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
 export RW_HOOK="scope-lock"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"

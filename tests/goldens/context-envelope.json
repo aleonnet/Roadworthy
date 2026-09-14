@@ -1,0 +1,7 @@
+{
+  "_what": "The exact envelope the context-injection hook returns on a normal prompt. `{{text}}` means: a non-empty string.",
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "{{text}}"
+  }
+}

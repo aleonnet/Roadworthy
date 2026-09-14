@@ -9,6 +9,10 @@
 #   * with `block_empty_commits`, a commit with nothing staged is denied
 #     (`git commit -a`, `--all` and `--allow-empty` are left to git).
 # Commands that are not a git commit pass untouched.
+#
+# Refuted 2026-09-13: injected -- made the forbidden-flag match look for a string that cannot occur;
+# tests/run.sh went red with `forbidden flag passed`, green again on the clean file, and the file was
+# restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
 export RW_HOOK="guard-commit"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"

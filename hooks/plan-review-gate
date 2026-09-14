@@ -31,6 +31,10 @@
 # plan of another project, and an elected plan that belongs elsewhere is NAMED in the denial
 # instead of producing a cryptic "no review for the current plan".
 # Symlinks and names containing '/' are refused (path traversal).
+#
+# Refuted 2026-09-13: injected -- removed the REJECTED branch;
+# tests/run.sh went red with `rejected review passed`, green again on the clean file, and the file was
+# restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
 export RW_HOOK="plan-review-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"

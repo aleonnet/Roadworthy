@@ -1,0 +1,8 @@
+{
+  "_what": "The exact envelope a Roadworthy guard returns when it denies. Compared key for key, not by substring: a `grep -q` for a fragment accepts garbage that merely contains it and rejects valid JSON formatted differently. `{{reason}}` means: a non-empty string that starts with `Roadworthy`.",
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "{{reason}}"
+  }
+}
