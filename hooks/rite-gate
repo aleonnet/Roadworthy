@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# rite-gate — PreToolUse hook for Edit|Write|MultiEdit|NotebookEdit and for Bash.
+#
+# The rite was optional, so it did not happen. Measured on this repository on 2026-09-13, over a
+# full day of work with the plugin installed and active: 60 edits, 117 shell commands, ZERO rite
+# invocations. Nothing noticed. This is the wall that makes the first act of a front be the front.
+#
+# Denies when all of these hold:
+#   * the session is inside a git repository;
+#   * the repository has NO USABLE SCOPE -- .roadworthy/scope absent, empty, or only comments.
+#     "Usable" is the whole point: `touch .roadworthy/scope` used to satisfy every check while
+#     hooks/scope-lock exits early on an empty glob list, so one empty file switched off both
+#     fences at once;
+#   * the target is not an artefact of the rite itself (the plan, in plans_dir) nor human
+#     configuration of the project (docs.json, protected, overnight-rules).
+#
+# The decision is taken on the ABSENCE OF THE ARTEFACT, never on whether the skill was invoked.
+# A transcript records that a skill was called, not that a front was opened; deciding on the call
+# would leave a permanent hole -- invoke, write nothing, edit freely.
+#
+# It also denies, with or without a front open, any write to the files only a script may write
+# (the scope, the gates, the snapshot, the state, the ledgers, the latch). Those are the
+# foundation a closing is measured against; a hand that edits them is editing the evidence.
+#
+# And a front that ended badly blocks the next one: with `gaps_found` or `needs_human` recorded,
+# the first write of a new front is denied. No state at all means a new project, and passes --
+# refusing there would deny the first write of every repository on earth.
+#
+# Shell writes are parsed on a best-effort basis and WHAT IT DOES NOT RECOGNISE, IT ALLOWS. That
+# is a declared limit, not an oversight: deciding whether an arbitrary command writes has no exact
+# answer, and a guard that fails closed on what it cannot parse denies nearly every command. What
+# compensates is close.sh, which refuses to close a front whose diff touched anything undeclared.
+#
+# Refuted 2026-09-13: injected -- treated an empty scope file as an open front;
+# tests/run.sh went red with `an empty scope file opens a front`, green again on the clean file,
+# and the file was restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+export RW_HOOK="rite-gate"
+export RW_ON_CRASH=deny
+source "$(dirname "$0")/lib.sh"
+rw_read_event
+
+rw_bool "$(rw_option RITE_GATE true)" || exit 0
+
+cwd="$(rw_realpath "$(rw_field cwd)")"
+[ -n "$cwd" ] || exit 0
+root="$(rw_root "$cwd")"
+git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+
+# The files only a script may write. Denied by hand whether or not a front is open.
+foundation() {
+  case "$1" in
+    .roadworthy/scope|.roadworthy/gates|.roadworthy/plan.snapshot|.roadworthy/state) return 0 ;;
+    .roadworthy/overnight|.roadworthy/evidence.jsonl|.roadworthy/denials.jsonl) return 0 ;;
+    .roadworthy/refutations.jsonl|.roadworthy/preflight.jsonl|.roadworthy/readings.jsonl) return 0 ;;
+    .roadworthy/stop-latch|.roadworthy/stop-latch/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# A scope file that declares nothing is not a scope. This is the same test scope-lock applies
+# before it decides it has anything to enforce, so the two cannot disagree.
+scope_usable() {
+  [ -f "$root/.roadworthy/scope" ] || return 1
+  grep -q -v -E '^[[:space:]]*(#|$)' "$root/.roadworthy/scope" 2>/dev/null
+}
+
+front_state() {
+  if [ -f "$root/.roadworthy/state" ]; then cat "$root/.roadworthy/state"; else echo "none"; fi
+}
+
+deny_no_front() {  # deny_no_front <what>
+  deny PreToolUse "no front is open in $root, so $1 has nothing to belong to. Open one from the approved plan: skills/plan/scripts/scope-write.sh <plan.md> writes .roadworthy/scope, .roadworthy/gates and .roadworthy/plan.snapshot in one act, and from then on every edit is measured against what was approved. (rite_gate)"
+}
+
+deny_foundation() {  # deny_foundation <relative path>
+  deny PreToolUse "'$1' is written by a script, never by hand: it is the foundation the closing is measured against, and editing it by hand only makes the digests disagree. Use skills/plan/scripts/scope-write.sh to open a front, /roadworthy:close to close one. (rite_gate)"
+}
+
+deny_bad_state() {  # deny_bad_state <state>
+  deny PreToolUse "the last front in $root ended as '$1' and nothing has been done about it. A front that ended badly blocks the next one: read .roadworthy/state, finish or record what was left, then open the new front. (rite_gate)"
+}
+
+tool="$(rw_field tool_name)"
+case "$tool" in
+  Bash)
+    command="$(rw_field tool_input.command)"
+    [ -n "$command" ] || exit 0
+    # Everything below is a best-effort read of the command line; see the note above.
+    target="$(RW_CMD="$command" python3 - <<'PY'
+import os, sys
+Q = chr(39) + chr(34)
+cmd = os.environ.get("RW_CMD", "")
+# Scan once, tracking quotes and $( ) depth: an operator only counts when it is bare.
+tokens, ops, cur, quote, depth = [], [], "", None, 0
+i = 0
+while i < len(cmd):
+    c = cmd[i]
+    if quote:
+        if c == quote:
+            quote = None
+        cur += c
+    elif c in Q:
+        quote = c; cur += c
+    elif c == chr(36) and i + 1 < len(cmd) and cmd[i + 1] == chr(40):
+        depth += 1; cur += cmd[i:i + 2]; i += 2; continue
+    elif c == ")" and depth:
+        depth -= 1; cur += c
+    elif depth:
+        cur += c
+    elif c.isspace():
+        if cur: tokens.append(cur); ops.append(False); cur = ""
+    elif c in ">|&;<":
+        if cur: tokens.append(cur); ops.append(False); cur = ""
+        op = c
+        while i + 1 < len(cmd) and cmd[i + 1] in ">|&;<":
+            i += 1; op += cmd[i]
+        tokens.append(op); ops.append(True)
+    else:
+        cur += c
+    i += 1
+if cur: tokens.append(cur); ops.append(False)
+
+VERBS = ("tee", "cp", "mv", "install", "truncate", "dd")
+targets, start = [], 0
+plain_after = lambda n: [x for x, o in zip(tokens[n + 1:], ops[n + 1:]) if not o]
+for n, t in enumerate(tokens):
+    if ops[n] and t in (">", ">>"):
+        if n + 1 < len(tokens) and not ops[n + 1]:
+            targets.append(tokens[n + 1])
+    if ops[n] and t in (";", "&&", "||", "|", "&"):
+        start = n + 1
+        continue
+    if n == start and not ops[n]:
+        word = os.path.basename(t.strip(Q))
+        rest = plain_after(n)
+        if word == "dd":
+            targets += [r[3:] for r in rest if r.startswith("of=")]
+        elif word == "tee":
+            targets += [r for r in rest if not r.startswith("-")]
+        elif word in ("cp", "mv", "install"):
+            p = [r for r in rest if not r.startswith("-")]
+            if len(p) >= 2: targets.append(p[-1])
+        elif word == "truncate":
+            p = [r for r in rest if not r.startswith("-")]
+            if p: targets.append(p[-1])
+        elif word == "sed" and "-i" in rest:
+            p = [r for r in rest if not r.startswith("-")]
+            if p: targets.append(p[-1])
+print("\n".join(t.strip(Q) for t in targets if t.strip(Q)))
+PY
+)"
+    [ -n "$target" ] || exit 0
+    scope_usable && exit 0
+    state="$(front_state)"
+    case "$state" in gaps_found|needs_human) deny_bad_state "$state" ;; esac
+    first="$(printf '%s' "$target" | head -1)"
+    deny_no_front "the shell write to '$first'"
+    ;;
+  *)
+    target="$(rw_field tool_input.file_path)"
+    [ -n "$target" ] || target="$(rw_field tool_input.notebook_path)"
+    [ -n "$target" ] || exit 0
+    target="$(rw_realpath "$target")"
+    relative="$target"
+    case "$target" in "$root"/*) relative="${target#"$root"/}" ;; esac
+
+    foundation "$relative" && deny_foundation "$relative"
+
+    # The plan is the artefact of the rite itself and lives outside the project, in plans_dir.
+    plans="$(rw_option PLANS_DIR "")"
+    [ -n "$plans" ] || plans="$HOME/.claude/plans"
+    plans="$(rw_realpath "${plans%/}")"
+    tdir="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P || dirname "$target")"
+    case "$tdir" in "$plans"|"$plans"/*) exit 0 ;; esac
+
+    case "$relative" in
+      .roadworthy/docs.json|.roadworthy/protected|.roadworthy/overnight-rules) exit 0 ;;
+    esac
+
+    scope_usable && exit 0
+    state="$(front_state)"
+    case "$state" in gaps_found|needs_human) deny_bad_state "$state" ;; esac
+    deny_no_front "the edit of '$relative'"
+    ;;
+esac
+exit 0

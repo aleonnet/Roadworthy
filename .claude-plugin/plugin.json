@@ -44,6 +44,12 @@
       "description": "While a plan scope file exists in the project (`.roadworthy/scope`), deny edits to files outside the declared scope.",
       "default": true
     },
+    "rite_gate": {
+      "type": "boolean",
+      "title": "Require a front before any write",
+      "description": "Deny edits and shell writes while the project has no usable .roadworthy/scope, and deny writes to the files only a script may write. Turning this off restores the behaviour measured on 2026-09-13: 60 edits and 117 commands in a day with no rite invoked and nothing noticing.",
+      "default": true
+    },
     "forbidden_commit_flags": {
       "type": "string",
       "title": "Forbidden commit flags",

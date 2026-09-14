@@ -58,7 +58,12 @@ case "$tdir" in
 esac
 
 globs="$(grep -v -E '^[[:space:]]*(#|$)' "$scope_file" | tr '\n' ',' | sed 's/,$//')"
-[ -n "$globs" ] || exit 0
+# A scope file that exists and declares nothing is not "no lock": it is a malformed front. The
+# old `exit 0` here is what made `touch .roadworthy/scope` switch the guard off entirely while
+# still looking, to everything else, like an open front.
+if [ -z "$globs" ]; then
+  deny PreToolUse "$scope_file exists and declares no glob, so nothing is in scope and nothing can be edited. Either open the front properly (skills/plan/scripts/scope-write.sh <plan.md>) or remove the file."
+fi
 
 if ! rw_glob_match "$relative" "$globs"; then
   deny PreToolUse "'$relative' is outside the approved scope ($scope_file). Widen the scope deliberately, with a reason, or leave the file alone. If this scope belongs to a front that is already finished, close it (/roadworthy:close) instead of widening it: a scope stays until the gates pass, and a scope nobody released is what makes the next front reach for the file by hand."

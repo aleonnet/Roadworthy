@@ -26,6 +26,7 @@ idempotent; `claude plugin update roadworthy@roadworthy` picks up new versions.
 | Hook | Event | Guarantee |
 |---|---|---|
 | `principles` | every prompt | Injects your numbered principles (bundled set or your own file) plus the numbered rules of the current project's memory, so they never lose salience in a long session. |
+| `rite-gate` | Edit/Write **and Bash** | While the project has no usable `.roadworthy/scope`, every edit and every shell write is denied, naming the rite that opens a front. An **empty** scope file does not count: one `touch` used to satisfy every check while switching the lock off. Files only a script may write (scope, gates, snapshot, state, ledgers) are denied by hand with or without a front, and a front recorded as `gaps_found` or `needs_human` blocks the next one. Measured on this repository on 2026-09-13: 60 edits and 117 shell commands in one day, zero rite invocations, nothing noticed. |
 | `scope-lock` | Edit/Write | While `.roadworthy/scope` exists in the project, any edit outside the listed globs is denied. The plan file itself (in `plans_dir`) is exempt: it is the rite's own artefact. **The guard watches the edit tools, not the shell** — a `cat >` or `sed -i` run through Bash is not seen; see [Declared limits](docs/reference/roadmap.md). |
 | `protect-paths` | Edit/Write | Paths matching `protected_paths` are never edited, whatever the model decides. |
 | `guard-commit` | Bash | `git commit` with a forbidden flag (default `--trailer`) or with nothing staged is denied. |
@@ -79,6 +80,7 @@ Set on enable, or later with `/plugin` → Roadworthy → Configure. Values reac
 | `principles_file` | bundled `principles/PRINCIPLES.md` | Markdown file whose numbered lines are injected at every prompt. |
 | `project_rules` | `true` | Also inject numbered lines from the project's auto-memory `MEMORY.md`. |
 | `protected_paths` | empty | Comma-separated globs Edit/Write may never touch; the project may add its own in `.roadworthy/protected`. |
+| `rite_gate` | `true` | Deny edits and shell writes while no front is open, and deny writes to the files only a script may write. |
 | `scope_lock` | `true` | Honour `.roadworthy/scope`. |
 | `forbidden_commit_flags` | `--trailer` | Comma-separated flags denied in commit commands. |
 | `block_empty_commits` | `true` | Deny `git commit` with nothing staged. |
