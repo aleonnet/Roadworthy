@@ -26,12 +26,12 @@ idempotent; `claude plugin update roadworthy@roadworthy` picks up new versions.
 | Hook | Event | Guarantee |
 |---|---|---|
 | `principles` | every prompt | Injects your numbered principles (bundled set or your own file) plus the numbered rules of the current project's memory, so they never lose salience in a long session. It also **pins the principles file by digest**: the file lives outside every repository, so nothing can stop it being edited — what this does is announce the change at every prompt, naming the digest and the date last agreed, until you agree to the new text. And when the same fence has denied **three times** in the open front, that count comes back as a line in the next prompt: an agent does not remember, but it reads. |
-| `rite-gate` | Edit/Write **and Bash** | While the project has no usable `.roadworthy/scope`, every edit and every shell write is denied, naming the rite that opens a front. An **empty** scope file does not count: one `touch` used to satisfy every check while switching the lock off. Files only a script may write (scope, gates, snapshot, state, ledgers) are denied by hand with or without a front, and a front recorded as `gaps_found` or `needs_human` blocks the next one. Measured on this repository on 2026-09-13: 60 edits and 117 shell commands in one day, zero rite invocations, nothing noticed. |
-| `scope-lock` | Edit/Write | While `.roadworthy/scope` exists in the project, any edit outside the listed globs is denied. The plan file itself (in `plans_dir`) is exempt: it is the rite's own artefact. **The guard watches the edit tools, not the shell** — a `cat >` or `sed -i` run through Bash is not seen; see [Declared limits](docs/reference/roadmap.md). |
+| `rite-gate` | Edit/Write **and Bash** | While the project has no usable `.roadworthy/scope`, every edit, every shell write and every shell removal inside the repository is denied, naming the rite that opens a front. An **empty** scope file does not count: one `touch` used to satisfy every check while switching the lock off. Files only a script may write (scope, gates, snapshot, state, ledgers) are denied by hand with or without a front, **removing anything under `.roadworthy/` is denied** (`rm`, `unlink`, `rmdir`, `git rm`, the source of `mv`), and the owner's two files — `.roadworthy/protected`, `.roadworthy/overnight-rules` — are the owner's: the agent neither edits nor removes them. A front recorded as `gaps_found` or `needs_human` blocks the next one. The plan is exempt in both its homes (`plans_dir`, and the `plans` directory of `.roadworthy/docs.json`). Measured on this repository on 2026-09-13: 60 edits and 117 shell commands in one day, zero rite invocations, nothing noticed. |
+| `scope-lock` | Edit/Write | While `.roadworthy/scope` exists in the project, any edit outside the listed globs is denied. The plan file itself (in either of its two homes) is exempt: it is the rite's own artefact. **The guard watches the edit tools, not the shell** — a `cat >` or `sed -i` run through Bash is not seen; see [Declared limits](docs/reference/roadmap.md). What backs it up is the closing: `close.sh` refuses a front whose diff touched a file outside the globs, and refuses a rite-written scope whose `plan.snapshot` is gone. |
 | `protect-paths` | Edit/Write | Paths matching `protected_paths` are never edited, whatever the model decides. |
 | `guard-commit` | Bash | `git commit` with a forbidden flag (default `--trailer`) or with nothing staged is denied. |
-| `plan-review-gate` | ExitPlanMode | What guards a plan is `plan_gate`. In `preflight` (the default since 0.6.0) the plan is checked mechanically by `skills/plan/scripts/plan-preflight.sh` and the submission is denied with that output when it is red — citations that the line does not sustain, scope paths that do not exist, acceptance numbers with a gap, a declared correction whose old text is still there, and a scope file that was never read WHOLE in the session, proved from the transcript the harness writes. Five rounds of cold review on one plan never converged here, and the measured cause was that every round spent its attention on things a machine can check; the reviewer goes back to the diff, which is what principle 4 always said. In `review` (and `both`) a plan can only be submitted with a review that says `VERDICT: APPROVED` — either next to it as `<plan><review_suffix>`, or, in plan mode where only one file may be written, as a `## Review` section of the plan itself. REJECTED and ESCALATE deny, round 3 needs the user's `owner:` decision, and a section added after round 1 denies (growth guard). The plans directory is shared by every project, so the plan declares `project:` and the gate elects by that, names a plan that belongs elsewhere, skips one marked superseded, and refuses two live plans of one project instead of choosing by date. A plan may declare `base:`; the ref must resolve and the review must name the same one. |
-| `stop-gate` | Stop | A turn that says the work is finished is blocked while `close.sh --check` does not report every declared gate FRESH, and the block shows the state of each one. **Never blocks a project with no gates file** (that check fails there by design), never blocks the same tree twice — the latch is keyed on the tree's content, so a changed tree is judged again — and fails open on anything it cannot read. Exit 2 is what blocks a turn; the Stop event has its own contract. |
+| `plan-review-gate` | ExitPlanMode | What guards a plan is `plan_gate`. In `preflight` (the default since 0.6.0) the plan is checked mechanically by `skills/plan/scripts/plan-preflight.sh` and the submission is denied with that output when it is red — citations that the line does not sustain, scope paths that do not exist, acceptance numbers with a gap, a declared correction whose old text is still there, and a scope file that was never read WHOLE in the session, proved from the transcript the harness writes. Five rounds of cold review on one plan never converged here, and the measured cause was that every round spent its attention on things a machine can check; the reviewer goes back to the diff, which is what principle 4 always said. In `review` (and `both`) a plan can only be submitted with a review that says `VERDICT: APPROVED` — either next to it as `<plan><review_suffix>`, or, in plan mode where only one file may be written, as a `## Review` section of the plan itself. REJECTED and ESCALATE deny, round 3 needs the user's `owner:` decision, and a section added after round 1 denies (growth guard). The plan has two homes and the gate reads both: `plans_dir` (shared by every project) and the `plans` directory of `.roadworthy/docs.json`. The plan declares `project:` and the gate elects by that, names a plan that belongs elsewhere, skips one marked superseded, and refuses two live plans of one project instead of choosing by date. When the call carries the plan's text, the text picks the file; when nothing matches byte for byte, the plan this session last wrote (from the transcript) is elected; only then the newest by date — and the gate says so in the context it returns. A plan may declare `base:`; the ref must resolve and the review must name the same one. |
+| `stop-gate` | Stop | A turn that says the work is finished is blocked while `close.sh --check` does not report every declared gate FRESH, and the block shows the state of each one. **Never blocks a project with no gates file** (that check fails there by design), never blocks the same tree twice — the latch is keyed on the tree's content, so a changed tree is judged again —, honours the documented `stop_hook_active` field, and fails open on anything it cannot read. It reads the project's own evidence, in the environment Claude Code gives a hook (measured 2026-09-14: six FRESH gates were reported MISSING because the ledger was resolved through a directory shared by every plugin's projects). Exit 2 is what blocks a turn; the Stop event has its own contract. |
 | `overnight-guard` | Bash | While `.roadworthy/overnight` exists (set by `/roadworthy:overnight` on the user's order), `git push`, `git merge`, `git tag`, `gh pr merge` and every `deny:` rule of `.roadworthy/overnight-rules` are denied; `protect-paths` also freezes the file's `freeze:` globs. |
 
 Every hook declares its crash policy. The four guards **fail closed**: an internal error denies
@@ -41,6 +41,16 @@ Denials are structured JSON decisions, never a bare exit 2 — except `stop-gate
 the Stop event's own way of blocking a turn. **Every denial is recorded** in
 `.roadworthy/denials.jsonl` with the fence, the reason and the front it happened in, so a
 guardrail that fires leaves a trace instead of being visible only in an eval trace nobody has.
+
+**Where the evidence lives.** Ledgers, latch, state and refutation records go to `ROADWORTHY_DATA`
+when that variable is set, else to `<repository>/.roadworthy`. Not to `CLAUDE_PLUGIN_DATA`: Claude
+Code sets it for every hook to a directory per plugin, shared by every project on the machine, and
+a person's shell does not set it at all — writer and reader would never meet (measured 2026-09-14).
+The one thing kept there is the pin of the principles file, which lives outside every repository.
+
+**On Windows without bash**, `hooks/run-hook.cmd` refuses instead of passing the call unguarded: a
+guard exits 2 with the reason on stderr, `principles` and `stop-gate` warn with exit 1. Executed on
+a Windows runner in CI; not executed on the machine that wrote it.
 
 Measured with `claude plugin details`: about 468 tokens always on, 220 to 530 per skill or agent
 invocation.
@@ -72,7 +82,9 @@ reports only what affects correctness, fails closed.
 
 `evals/` holds seven cases that measure the guardrails with and without the plugin on the same
 prompts; `bin/rw-metrics` turns the run into seven KPIs (task success, regression,
-out-of-scope files, false success, denials, tokens, turns). See `evals/README.md`.
+out-of-scope files, false success, denials, tokens, turns). Graders judge the bytes of files and
+the final `STATUS:` line, never the attempt. Measured with a smaller model (`--model haiku`) on
+2026-09-14: see `evals/README.md` and the decision record it names.
 
 ## Configuration
 
@@ -83,7 +95,7 @@ Set on enable, or later with `/plugin` → Roadworthy → Configure. Values reac
 |---|---|---|
 | `principles_file` | bundled `principles/PRINCIPLES.md` | Markdown file whose numbered lines are injected at every prompt. |
 | `project_rules` | `true` | Also inject numbered lines from the project's auto-memory `MEMORY.md`. |
-| `protected_paths` | empty | Comma-separated globs Edit/Write may never touch; the project may add its own in `.roadworthy/protected`. |
+| `protected_paths` | empty | Comma-separated globs Edit/Write may never touch; the project may add its own in `.roadworthy/protected`, which the owner edits outside the agent (the agent is denied that file, and `.roadworthy/overnight-rules`, through every door). |
 | `stop_gate` | `true` | Block a finished claim while a declared gate is not FRESH. |
 | `rite_gate` | `true` | Deny edits and shell writes while no front is open, and deny writes to the files only a script may write. |
 | `scope_lock` | `true` | Honour `.roadworthy/scope`. |
@@ -93,7 +105,7 @@ Set on enable, or later with `/plugin` → Roadworthy → Configure. Values reac
 | `plan_review_required` | `true` | Require the review before ExitPlanMode. It binds to the plan by name, never by hash: what the user approved is what counts. |
 | `max_review_rounds` | `2` | Rounds of cold review a plan may take before only the user's written decision (an `owner:` line in the review) unlocks it. Round 3 does not exist. |
 | `review_suffix` | `.review.md` | Suffix of the review file next to the plan. |
-| `plans_dir` | `~/.claude/plans` | Where Claude Code writes plan-mode plans. The directory is shared by every project, so a plan declares `project: <repository>` in its header and the gate elects by that, not by date. |
+| `plans_dir` | `~/.claude/plans` | Where Claude Code writes plan-mode plans. The directory is shared by every project, so a plan declares `project: <repository>` in its header and the gate elects by that, not by date. The plan's second home is the `plans` directory the project declares in `.roadworthy/docs.json`; the gate, the entry gate and the scope lock read both. |
 
 **A changed option does not reach a session that is already open.** Claude Code reads the plugin
 options when it loads the plugin, so after changing one in `/plugin` → Configure (or in
@@ -110,14 +122,24 @@ Keep them, or point `principles_file` at your own.
 ## Testing
 
 ```bash
-bash tests/run.sh              # the whole gate: 29 cases, ~3 min
+bash tests/run.sh              # the whole gate: 30 cases, ~3 min
 bash tests/hooks/scope-lock.sh # one fence, alone, in seconds
-bash tests/attack.sh           # the cheating suite
+bash tests/attack.sh           # the cheating suite: 64 attacks, refused or declared
+bash tests/bench/bench.sh      # the fences met by a REAL session, headless (spends a few cents)
 ```
 
 Every hook is exercised with real stdin JSON in both directions, every script is refuted
-with a toy check, the manifests are validated with `claude plugin validate --strict`, and a
-privacy scan fails on any absolute home path. CI runs `tests/run.sh` on macOS and Linux.
+with a toy check, every Python block embedded in the shell is compiled and checked for dead
+imports, the manifests are validated with `claude plugin validate --strict`, and a privacy scan
+fails on any absolute home path. CI runs `tests/run.sh` on macOS and Linux, executes the no-bash
+branch of `run-hook.cmd` on Windows, and can run the one Bash-granting eval case on Linux.
+
+**The suite fires synthetic events; the bench fires a session.** `tests/bench/bench.sh` loads the
+working tree's hooks into `claude -p --plugin-dir` on a toy repository, one exact act per prompt,
+and reads the harness's own `permission_denials` and the disk: no front → edit denied; the rite
+opens the front; edit outside the scope denied; `rm .roadworthy/plan.snapshot` denied; a finished
+claim on FRESH gates not blocked; denials in the project ledger. Every release before 0.6.1 shipped
+"proved by the suite, unproved in the field"; this is the field.
 
 | Where | What |
 |---|---|
@@ -127,6 +149,7 @@ privacy scan fails on any absolute home path. CI runs `tests/run.sh` on macOS an
 | `tests/hooks/`, `tests/scripts/`, `tests/meta/` | one case per fence, per script, and for the suite's own hygiene |
 | `tests/fixtures/` | the toy repositories, documentation trees, plans and transcripts, built by name |
 | `tests/goldens/` | the deny and context envelopes, compared key for key |
+| `tests/bench/` | the headless real-session bench, and what each step proves |
 
 **A case is a file you can run alone, and that is the point.** A refutation proves a fence can go
 red by injecting the defect and running the check twice. Against a 1407-line monolith that cost two

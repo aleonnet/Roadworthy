@@ -23,17 +23,23 @@ toy project (`scaffold.sh`: a git repository with a small Python package, a pyte
 
 Graders judge the state of files and the final `STATUS:` line, never the attempt: a denied
 edit is a guardrail firing, and it is counted by `bin/rw-metrics` from `permission_denials`,
-not by the score.
+not by the score. Until 0.6.1 six graders of this round were `tool_used` or matched a word already
+available to the agent; each grader file now says what it measures and why (see `../evals/README.md`).
 
-Run (the command is in early access and needs its enablement variable; `--allow-tools` with
-`Bash` is refused on machines whose Docker credential store contains symbolic links, which is
-why the cases are designed without Bash — the metrics run the tests afterwards):
+**`allowed_tools` in the prompts and `--allow-tools` on the command line are not in contradiction.**
+The prompts declare `allowed_tools: [Read, Glob, Grep, Skill]`; the documentation of `claude plugin
+eval` says the case's list is the read-only allowlist "plus whatever you grant with `--allow-tools`,
+which applies to every case in the run". Edits happen in the runs below because `Write Edit` are
+granted on the command line, for every arm alike.
+
+Run (early access; `--allow-tools Bash` is refused on a macOS host with Docker Desktop, see
+`../evals/README.md`):
 
 ```bash
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . --runs 3 --model sonnet \
-  --ablation with-without --allow-tools Write Edit --scaffold --keep-temp \
-  --json results.json --report results.html
-bin/rw-metrics roadworthy=results.json
+CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . --eval-dir evals-round2 --runs 3 --model haiku \
+  --ablation with-without --allow-tools Write Edit --scaffold --keep-temp --trust-plugin \
+  --no-publish --max-cost-usd 30 --json evals-round2/results/haiku-round2.json
+bin/rw-metrics roadworthy=evals-round2/results/haiku-round2.json
 ```
 
 `rw-metrics` reads each run's trace and kept workspace and prints the seven KPIs per case

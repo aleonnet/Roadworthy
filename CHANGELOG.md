@@ -5,6 +5,140 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-09-14
+
+**The plugin, complete, measured against its own claims.** Every one of the 172 tracked files was read
+whole before this release was planned, and what the reading found was measured in the act: a chain
+that let a front close `passed` after a write outside its scope, a hook environment that sent the
+evidence of a project to a directory shared by every project, an accepted decision record promising
+a mechanism the code did not have, and four claims in this very file (0.6.0) that the files did not
+sustain. Each is closed below, each refuted with the defect planted (28 refutation records written
+by `refute.sh` in this front), and the two things the suite cannot fake are measured for real: a
+headless session on the working tree (`tests/bench/bench.sh`) and the evals with a smaller model.
+
+**Behaviour changes to know about before upgrading.** Four, each taken deliberately:
+1. **`.roadworthy/protected` and `.roadworthy/overnight-rules` are the owner's.** The agent cannot
+   edit or remove them through the edit tools or the shell. They are what `protect-paths` and the
+   night read to guard against the agent; a fence whose input the guarded party edits is not a
+   fence. Acceptance 7 of the 0.6.0 plan allowed it and is reversed. `docs.json` stays editable.
+2. **Removing is writing.** `rm`, `unlink`, `rmdir`, `git rm` and the SOURCE of `mv` are targets of
+   the entry gate: nothing under `.roadworthy/` may be removed by hand, and removing an ordinary
+   file inside the repository needs an open front like writing one does.
+3. **Project evidence lives in the project.** The denials ledger, the evidence ledger, the stop
+   latch, the refutation and pre-flight records resolve to `ROADWORTHY_DATA` when it is set and to
+   `<repository>/.roadworthy` otherwise. `CLAUDE_PLUGIN_DATA` is out of that chain: Claude Code sets
+   it for every hook to a directory per plugin, shared by every project (`~/.claude/plugins/data/<id>/`),
+   and a person's shell does not set it at all. Measured on 2026-09-14 at 13:33: six FRESH gates
+   reported MISSING by the stop gate, the denials of the day in the shared directory, the line
+   "a fence has denied three times" never once reaching a prompt. Anyone who relied on the shared
+   directory should point `ROADWORTHY_DATA` at it. The pin of the principles file stays there on
+   purpose: it is global by construction.
+4. **`hooks/run-hook.cmd` on Windows without bash refuses.** 0.6.0 said it did; the file exited 0
+   in silence. Now a guard fails closed (exit 2, reason on stderr) and `principles` / `stop-gate`
+   warn with exit 1, because exit 2 there erases the prompt or traps the session. The WSL launcher
+   in `System32` is not treated as a bash. Executed on a Windows runner in CI (`windows-no-bash`).
+
+### Fixed — 2026-09-14, the chain that closed a front `passed` around its own scope
+- **`rite-gate`** reads removals (`rm`, `unlink`, `rmdir`, `git rm`, the source of `mv`), denies them
+  anywhere under `.roadworthy/`, and denies the owner's two files through both doors. `find -delete`,
+  `xargs rm` and interpreters that unlink are declared in `tests/attack.sh` like the interpreters
+  that write; what backs them up is the closing.
+- **`close.sh`** refuses, in the closing and in `--check`, a scope the rite wrote whose
+  `plan.snapshot` is gone: the snapshot is what the closing measures against, and its removal used
+  to send the closing down the pre-0.6.0 path that skips the digests and the out-of-scope check. A
+  scope written by hand (toy repositories, evaluation scaffolds, older projects) has no banner and
+  keeps the old path, so no agent meets a wall it cannot resolve.
+- **`close.sh`** no longer counts the front's own plan as a stray file when the plan lives inside
+  the repository (the `plans` directory of `docs.json`): it is written before the front exists and
+  cannot be in its own scope.
+- **`tests/attack.sh`** grew from 37 attacks (32 refused, 5 declared) to 64 (50 refused, 14
+  declared), with its first attacks on scripts and on the Stop hook, and every contour known on
+  2026-09-14 is in it as refused or declared with the reason.
+
+### Fixed — 2026-09-14, evidence looked for in the wrong directory
+- One resolver, `rw_data_dir` in `hooks/lib.sh`, for the denials ledger (writer and reader), the
+  stop gate (which now passes it to `close.sh --check` explicitly), `close.sh`, `plan-preflight.sh`
+  and `refute.sh`. Reproducers in the suite run the hooks the way the harness runs them, with only
+  `CLAUDE_PLUGIN_DATA` set; both were red before the fix.
+- **`stop-gate`** honours `stop_hook_active`. The hooks guide documents it ("Claude Code overrides a
+  Stop hook after it blocks eight times in a row without progress … Parse the `stop_hook_active`
+  field"); a comment in the hook said the field was undocumented, and it was not.
+
+### Fixed — 2026-09-14, what a plan is, and where
+- **`plan-review-gate`** elects, when the call carries no plan text that matches a file byte for
+  byte, the plan this session last wrote in a plans directory (from the transcript the harness
+  keeps), and only then the newest by date — saying so in the `additionalContext` it returns
+  instead of choosing in silence. Acceptance 16 and 17 of the 0.6.0 plan, promised by
+  `docs/decisions/2026-09-14-0239-four-accepted-claims-refuted.md` and measured absent.
+- **The plan has two homes**, and the gate, the entry gate and the scope lock read both: `plans_dir`
+  (plan mode) and the `plans` directory the project declares in `.roadworthy/docs.json` (the house
+  norm). A plan written in the second got "no plan found" in the field on 2026-09-08.
+- **One glob grammar**, `hooks/globmatch.py`, read by `lib.sh`, `close.sh` and `bin/rw-metrics`.
+  `rw-metrics` answered through `fnmatch` first, where `*` crosses a `/`, so `app/*.py` meant one
+  thing to the lock that denied an edit and another to the instrument counting it out of scope;
+  `tests/scripts/globmatch.sh` puts the three entry points to one table. The roadmap named
+  `docs-check.sh` as one of the three; read whole, it has no glob matcher.
+
+### Fixed — 2026-09-14, four claims of this file that the files did not sustain
+- "`run-hook.cmd` … warns and refuses" (0.6.0, behaviour change 5 and its Fixed entry): the file
+  exited 0. Fixed above, and executed in CI.
+- "The suite now compiles every Python script in the plugin and fails naming any import nobody
+  uses" (0.6.0): nothing in the suite did either. `tests/meta/hygiene.sh` now compiles every
+  `python3 - <<'PY'` block in the fences and scripts plus the standalone files, and names every
+  dead import — and found two on its first run (`sys` in `hooks/rite-gate`, `re` in
+  `scope-write.sh`), both removed.
+- The suite described itself as 0.6.1 in `tests/lib.sh` and `tests/run.sh` while the reorganisation
+  it describes shipped in 0.6.0 (`a076e99`); the two comments say 0.6.0.
+- The section "the entry gate met a real session and was unusable" was written under `[0.6.0]`
+  after 0.6.0 had been published (`f51ad92`). It belongs here and is moved here.
+
+### Fixed — 2026-09-14, the entry gate met a real session and was unusable
+
+0.6.0 was installed and reloaded at 11:45. **That is the first time `rite-gate` ever ran outside a
+synthetic event in a toy repository** — the acceptance 0.5.0 left unproved. It fired, and the bench
+found two defects in two minutes, each with the command that produced it.
+
+- **A shell write outside the repository was denied.** `echo x > /tmp/f` from a project with no
+  front open came back refused, and so did every write into the session's scratchpad. The gate
+  exists to stop work on THIS repository without a rite; a write somewhere else is not that. The
+  same omission was in the edit branch. Both now ignore a target outside the repository root, and
+  the foundation is still matched by its path relative to that root, which is where it lives.
+  - This also answers `2>/dev/null`, the commonest idiom in shell, which was being read as a write
+    to `/dev/null` and denied. A list of device names was written first and then **removed**: the
+    refutation proved it was dead code, because /dev/null is not inside the repository either.
+- **The plan could not be written through the shell.** The edit tools were exempt in `plans_dir`;
+  the shell was not, so `cat > <plan>` was refused — and the plan is what OPENS a front, so the
+  first front of a project could only be opened with an edit tool. With the default plans_dir the
+  rule above already covers it; the exemption is what makes it hold for a project that keeps its
+  plans inside the repository, and that is the case the assertion measures.
+
+Each fix is refuted against `tests/hooks/rite-gate.sh`: the defect injected, the case red for its
+own reason, green again on the clean file, the file restored with its SHA-256 verified.
+
+### Changed — 2026-09-14, the evals judge state, never the attempt
+- Twelve graders across `evals/` and `evals-round2/` were `tool_used` (counting the ATTEMPT, so an
+  edit a fence denied scored against the arm that denied it), matched a word that was already in
+  the prompt, or accepted every outcome. All judge the bytes of a file or the final `STATUS:` line
+  now, which is the rule `evals/README.md` always stated. The `scope` case expects
+  `STATUS: needs_human`: without commands there is no verification of one's own.
+- `allowed_tools` in a case and `--allow-tools` on the command line are not in contradiction: the
+  documentation says the two add up ("plus whatever you grant with `--allow-tools`, which applies to
+  every case in the run"). The READMEs say so with the citation.
+- Measured with `--model haiku`, both rounds, three runs, with and without the plugin; the numbers,
+  the commands and the cost are in `docs/decisions/2026-09-14-1610-evals-com-modelo-menor.md`.
+  `--allow-tools Bash` is still refused on this machine, with the harness's own words recorded
+  there; the `overnight` case runs in the `evals-bash` job of the CI.
+
+### Added — 2026-09-14
+- `tests/bench/bench.sh`: the fences met by a real session, headless, driven by the script
+  (`claude -p --plugin-dir <this repository> --output-format stream-json`), one exact act per prompt,
+  judged on the harness's `permission_denials` and on the disk. The seven-step bench of 0.5.0 that
+  needed a person in plan mode never got filled; this one fills itself.
+- `.github/workflows/ci.yml`: `windows-no-bash` (executes the no-bash branch of `run-hook.cmd` on a
+  Windows runner with every bash hidden) and `evals-bash` (the `overnight` case on Linux, started
+  by hand, skipped without the secret).
+- `bin/rw-metrics` no longer returns a flag nobody read.
+
 ## [0.6.0] - 2026-09-14
 
 **The rite stops being optional.** Measured on this repository on 2026-09-13, against the session
@@ -33,29 +167,6 @@ this plugin always said. The option is `plan_gate` (`preflight` | `review` | `bo
 5. `hooks/run-hook.cmd` no longer exits 0 when it cannot find bash on Windows. It prints a warning
    and refuses. Anyone on Windows without bash has been running with **no guardrails at all**
    while believing otherwise; discovering that through a refusal is better than not discovering it.
-
-### Fixed — 2026-09-14, the entry gate met a real session and was unusable
-
-0.6.0 was installed and reloaded at 11:45. **That is the first time `rite-gate` ever ran outside a
-synthetic event in a toy repository** — the acceptance 0.5.0 left unproved. It fired, and the bench
-found two defects in two minutes, each with the command that produced it.
-
-- **A shell write outside the repository was denied.** `echo x > /tmp/f` from a project with no
-  front open came back refused, and so did every write into the session's scratchpad. The gate
-  exists to stop work on THIS repository without a rite; a write somewhere else is not that. The
-  same omission was in the edit branch. Both now ignore a target outside the repository root, and
-  the foundation is still matched by its path relative to that root, which is where it lives.
-  - This also answers `2>/dev/null`, the commonest idiom in shell, which was being read as a write
-    to `/dev/null` and denied. A list of device names was written first and then **removed**: the
-    refutation proved it was dead code, because /dev/null is not inside the repository either.
-- **The plan could not be written through the shell.** The edit tools were exempt in `plans_dir`;
-  the shell was not, so `cat > <plan>` was refused — and the plan is what OPENS a front, so the
-  first front of a project could only be opened with an edit tool. With the default plans_dir the
-  rule above already covers it; the exemption is what makes it hold for a project that keeps its
-  plans inside the repository, and that is the case the assertion measures.
-
-Each fix is refuted against `tests/hooks/rite-gate.sh`: the defect injected, the case red for its
-own reason, green again on the clean file, the file restored with its SHA-256 verified.
 
 ### Fixed — 2026-09-14, the suite reported success on a suite that had died
 

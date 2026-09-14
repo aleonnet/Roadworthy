@@ -1,4 +1,4 @@
-# Written by scope-write.sh from 2026-09-14-1220-registrar-o-que-so-existe-no-chat.md. Do not edit by hand: the closing is measured
+# Written by scope-write.sh from fable-5-bem-vindo-gentle-parrot.md. Do not edit by hand: the closing is measured
 # against .roadworthy/plan.snapshot, and a hand edit here only makes the digests disagree.
 bash tests/run.sh
 bash tests/attack.sh

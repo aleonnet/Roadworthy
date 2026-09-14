@@ -228,6 +228,40 @@ denied && printf '%s' "$OUT" | grep -q 'no review for the current plan' \
 # And in both modes together, a green pre-flight is not enough on its own.
 CLAUDE_PLUGIN_OPTION_PLAN_GATE=both run_hook plan-review-gate "$PG_EVENT"
 denied && ok "both: a green pre-flight does not replace the verdict" || fail "both mode passed without a review: $OUT"
+
+# ── the election: the transcript before the date, and the date said out loud ─
+# Acceptance 16 and 17 of the 0.6.0 plan, promised by an accepted decision record and never built
+# (measured 2026-09-14). With no plan text in the call and nothing to tell two live plans apart,
+# the plan this session WROTE -- a Write or Edit into a plans directory, in the transcript the
+# harness keeps -- is the one meant. Only with no such write does the newest by date decide, and
+# then the gate says so in the context it returns, instead of choosing in silence.
+sleep 1
+sed 's/^| 1 | a | b |$/| 3 | a | b |/' "$PGP/good.md" > "$PGP/stale-draft.md"   # newer by date, and red
+python3 - "$PG/t.jsonl" "$PG/t-wrote.jsonl" "$PGP/good.md" <<'PY'
+import json, shutil, sys
+shutil.copy(sys.argv[1], sys.argv[2])
+with open(sys.argv[2], "a") as fh:
+    fh.write(json.dumps({"message": {"content": [{"type": "tool_use", "name": "Write", "input": {"file_path": sys.argv[3], "content": "x"}}]}}) + "\n")
+PY
+run_hook plan-review-gate "{\"tool_name\":\"ExitPlanMode\",\"tool_input\":{},\"cwd\":\"$PGR\",\"transcript_path\":\"$PG/t-wrote.jsonl\"}"
+! denied && ok "two live plans, no text in the call: the plan this session wrote is elected (the stale, red draft is not)" || fail "the plan this session wrote was not elected: $OUT"
+run_hook plan-review-gate "$PG_EVENT"
+denied && printf '%s' "$OUT" | grep -q 'live plans' && ok "with no write in the transcript either, two live plans are still refused by name" || fail "ambiguity resolved in silence: $OUT"
+rm -f "$PGP/stale-draft.md"
+run_hook plan-review-gate "$PG_EVENT"
+! denied && printf '%s' "$OUT" | python3 -c 'import json,sys
+d = json.load(sys.stdin); ctx = (d.get("hookSpecificOutput") or {}).get("additionalContext", "")
+sys.exit(0 if "modification time" in ctx and "good.md" in ctx else 1)' \
+  && ok "one plan, no text, no write: elected by date, and the gate SAYS so in additionalContext, naming the file" || fail "the date decided in silence: $OUT"
+# The second home. The house norm keeps plans under docs/; a plan written there was invisible to
+# this gate ("no plan found", the field case of 2026-09-08). The `plans` directory of docs.json is
+# a candidate directory like plans_dir.
+PGP_EMPTY="$PG/plans-empty"; mkdir -p "$PGP_EMPTY" "$PGR/docs/plans" "$PGR/.roadworthy"
+printf '{"plans":"docs/plans"}\n' > "$PGR/.roadworthy/docs.json"
+cp "$PGP/good.md" "$PGR/docs/plans/2026-01-01-0900-good.md"
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$PGP_EMPTY" run_hook plan-review-gate "$PG_EVENT"
+! denied && ok "a plan in the project's own plans directory (docs.json) is found and passes its pre-flight" || fail "the plan in docs/plans was not found: $OUT"
+rm -rf "$PGR/docs" "$PGR/.roadworthy/docs.json"
 unset CLAUDE_PLUGIN_OPTION_PLANS_DIR
 
 rw_end

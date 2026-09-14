@@ -131,12 +131,18 @@ VERDICT: APPROVED | REJECTED | ESCALATE
 `sections-round1` comes from `grep '^## ' <plan>`. The review is bound to the plan by NAME:
 what the user approves is what counts, and editing the plan afterwards does not void it.
 
-**Which plan the gate calls the current one.** The plans directory is shared by every project,
-so the header matters: `project:` binds the plan to its repository and a plan of another project
-is named in the denial instead of being elected. A plan marked superseded in its header — in the
-words the project declares under `status` in `.roadworthy/docs.json`, the same vocabulary
-`docs-check.sh` reads — is not a candidate. Two live plans of the same project and nothing in the
-call to tell them apart is refused with both names, not resolved by date: mark the older one
+**Which plan the gate calls the current one.** The plan has two homes and the gate reads both:
+`plans_dir`, where plan mode writes it (shared by every project on the machine), and the `plans`
+directory the project declares in `.roadworthy/docs.json`, where the house documentation norm
+keeps it. A plan in either is a candidate, and the entry gate and the scope lock exempt both as
+the rite's own artefact. The header matters: `project:` binds the plan to its repository and a
+plan of another project is named in the denial instead of being elected. A plan marked superseded
+in its header — in the words the project declares under `status` in `.roadworthy/docs.json`, the
+same vocabulary `docs-check.sh` reads — is not a candidate. When the call carries the plan's text,
+that text picks the file; when it does not match any candidate byte for byte, the plan this
+session last wrote in one of the two homes (proved from the transcript) is elected; only then does
+the newest by date decide, and the gate says so in the context it returns. Two live plans of the
+same project and nothing to tell them apart is refused with both names: mark the older one
 superseded, or move it out of the directory. A directory of older drafts that declare no project
 is left alone, and the newest still wins there.
 

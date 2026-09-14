@@ -43,7 +43,7 @@ done
 cd "$root"
 
 python3 - "$plan" "$base" <<'PY'
-import hashlib, json, os, re, subprocess, sys, time
+import hashlib, json, os, subprocess, sys, time
 
 plan = sys.argv[1]
 base_arg = sys.argv[2] if len(sys.argv) > 2 else ""

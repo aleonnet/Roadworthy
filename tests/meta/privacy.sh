@@ -5,14 +5,22 @@
 
 # ── privacy: the plugin must carry no personal data ──────────────────────────
 section "privacy scan"
-# Local Roadworthy state is not a plugin source: close.sh writes a gate's own output there, which
-# carries the absolute paths of the machine that ran it, and the snapshot carries the plan's path.
-# The ten members are gitignored, and excluded here for the same reason tree-fingerprint.sh leaves
-# them out of the fingerprint. Everything else, `.roadworthy/gates` included, is scanned.
-LEDGERS='^\./\.roadworthy/(scope|state|plan\.snapshot|overnight|evidence\.jsonl|denials\.jsonl|refutations\.jsonl|preflight\.jsonl|readings\.jsonl|stop-latch/)'
-if grep -r -n -E '/Users/[a-z]+|/home/[a-z]+' --include='*' . --exclude-dir=.git --exclude-dir=tests | grep -v 'tests/' | grep -v -E "$LEDGERS" >/dev/null; then
-  fail "absolute home path found in plugin sources"
-else ok "no absolute home paths"; fi
+# A plugin source is what git tracks or would track: tracked files plus untracked files that are
+# not ignored. Everything ignored is local machine state -- the Roadworthy ledgers, whose gate
+# outputs carry the absolute paths of the machine that ran them, and evals/results/, which
+# `claude plugin eval` fills with the same paths. Until 0.6.1 this scan read every file on disk,
+# ignored or not, so it went red on any machine that had ever run an eval (measured 2026-09-14),
+# and a stray untracked artefact such as a __pycache__ is exactly what it should catch.
+# `.roadworthy/gates` is tracked and scanned like everything else.
+sources="$(git ls-files --cached --others --exclude-standard | grep -v -E '^tests/' || true)"
+if [ -n "$sources" ] && printf '%s\n' "$sources" | xargs grep -n -E '/Users/[a-z]+|/home/[a-z]+' -- 2>/dev/null | grep -q .; then
+  fail "absolute home path found in plugin sources: $(printf '%s\n' "$sources" | xargs grep -l -E '/Users/[a-z]+|/home/[a-z]+' -- 2>/dev/null | tr '\n' ' ')"
+else ok "no absolute home paths in what git tracks or would track"; fi
+# The scan has to be able to say no, on exactly the kind of file that bit: untracked and not ignored.
+printf '# %s\n' '/Users/someone/private' > planted-privacy-probe.txt
+probe="$(git ls-files --cached --others --exclude-standard | grep -v -E '^tests/' | xargs grep -l -E '/Users/[a-z]+' -- 2>/dev/null || true)"
+rm -f planted-privacy-probe.txt
+printf '%s' "$probe" | grep -q 'planted-privacy-probe.txt' && ok "an untracked file with a home path is caught" || fail "the scan missed an untracked file with a home path"
 # No member of the local-state list may be tracked: committing one publishes machine paths, and a
 # tracked member dirties the tree at every front, which is what close.sh refuses to run on. The
 # gates file is deliberately absent from this list: it is versioned like a test.

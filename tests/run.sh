@@ -3,7 +3,7 @@
 #
 # Every hook is exercised with real stdin JSON, in both directions: it must deny what it claims to
 # deny and pass what it claims to pass. Every script is refuted once. The manifest is validated
-# with the official CLI when present. What changed in 0.6.1 is only WHERE that lives: one case per
+# with the official CLI when present. What changed in 0.6.0 is only WHERE that lives: one case per
 # fence in tests/hooks/, one per script in tests/scripts/, the shared half in tests/lib.sh, and the
 # toy repositories in tests/fixtures/ instead of a heredoc in the middle of an assertion.
 #

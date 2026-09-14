@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   gate:
@@ -21,3 +22,69 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code
       - name: Gate
         run: bash tests/run.sh
+
+  # hooks/run-hook.cmd is a polyglot: cmd.exe runs the batch half on Windows and hands the hook to
+  # bash. Claude Code runs shell hooks through Git Bash on Windows, or PowerShell when Git Bash is
+  # not installed -- and then the batch half finds no bash at all. 0.6.0 said it "warns and refuses"
+  # in that case while the file exited 0 in silence (measured 2026-09-14); the macOS and Linux gate
+  # cannot execute cmd.exe, so the claim is measured here, on the one runner that can.
+  windows-no-bash:
+    name: run-hook.cmd without bash (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hide every bash the wrapper could reach
+        shell: pwsh
+        run: |
+          Rename-Item "C:\Program Files\Git\bin\bash.exe" "bash.exe.hidden"
+          Rename-Item "C:\Program Files\Git\usr\bin\bash.exe" "bash.exe.hidden"
+          $clean = ($env:PATH -split ';' | Where-Object { $_ -notlike '*\Git\*' }) -join ';'
+          "PATH=$clean" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: A guard refuses with exit 2 and a reason on stderr
+        shell: cmd
+        run: |
+          echo {} | hooks\run-hook.cmd rite-gate 2> err.txt
+          if not "%ERRORLEVEL%"=="2" ( type err.txt & exit /b 1 )
+          findstr /C:"no bash" err.txt
+      - name: principles and stop-gate warn with exit 1 and never block
+        shell: cmd
+        run: |
+          echo {} | hooks\run-hook.cmd principles 2> err1.txt
+          if not "%ERRORLEVEL%"=="1" ( type err1.txt & exit /b 1 )
+          echo {} | hooks\run-hook.cmd stop-gate 2> err2.txt
+          if not "%ERRORLEVEL%"=="1" ( type err2.txt & exit /b 1 )
+          findstr /C:"no bash" err1.txt
+          findstr /C:"no bash" err2.txt
+
+  # The one eval case that needs Bash (`overnight`) cannot run on a macOS host whose Docker
+  # credential store holds symbolic links (Docker Desktop keeps its CLI plugins that way), where
+  # `claude plugin eval --allow-tools Bash` is refused. A Linux runner has a plain store. This job
+  # spends the owner's credential and is started by hand; without the secret it is skipped, and
+  # evals/README.md says how to run it elsewhere.
+  evals-bash:
+    name: claude plugin eval overnight (linux, bash-granting)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Run the bash-granting case
+        if: env.ANTHROPIC_API_KEY != ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_WALNUT_SPIRE: "1"
+        run: |
+          claude plugin eval . --case overnight --runs 3 --model haiku --ablation with-without \
+            --allow-tools Bash Write Edit --scaffold --keep-temp --trust-plugin --no-publish \
+            --max-cost-usd 10 --json results-overnight.json
+          python3 bin/rw-metrics roadworthy=results-overnight.json
+      - name: No secret, no run
+        if: env.ANTHROPIC_API_KEY == ''
+        run: echo "ANTHROPIC_API_KEY is not set for this repository; the overnight case was not run."
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evals-overnight
+          path: results-overnight.json
+          if-no-files-found: ignore

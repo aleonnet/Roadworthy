@@ -280,7 +280,9 @@ summary = ", ".join("%s %d" % (k, v) for k, v in sorted(counts.items())) or "not
 mode = "closing" if closing else "before the work"
 if not quiet:
     print("plan-preflight (%s, base %s): %s" % (mode, base[:12] if base else "working tree", summary))
-data = os.environ.get("ROADWORTHY_DATA") or os.path.join(root, ".roadworthy")
+# The same rule as rw_data_dir in hooks/lib.sh: ROADWORTHY_DATA when set, else the project.
+# CLAUDE_PLUGIN_DATA is per plugin and shared by every project; project evidence never goes there.
+data = os.environ.get("ROADWORTHY_DATA", "").strip() or os.path.join(root, ".roadworthy")
 try:
     os.makedirs(data, exist_ok=True)
     with open(os.path.join(data, "preflight.jsonl"), "a", encoding="utf-8") as fh:

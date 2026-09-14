@@ -22,14 +22,20 @@
 #   * two rounds is the ceiling: round ≥ 3 only passes with the user's `owner:` decision;
 #   * growth guard: a `## ` section that was not in `sections-round1:` denies, unless the
 #     user decided (`owner:`); the in-plan review's own heading never counts as growth;
-#   * the current plan is the one the ExitPlanMode call submits (matched by content);
-#     only when the event carries no plan text is "newest .md in the directory" used.
+#   * the current plan is the one the ExitPlanMode call submits (matched by content); when no
+#     candidate matches the text byte for byte, the plan this session WROTE last (a Write or
+#     Edit into a plans directory, read from the transcript the harness keeps) is elected; only
+#     with neither is "newest .md by modification time" used, and then the gate SAYS so in the
+#     context it returns instead of choosing in silence. Acceptance 16 and 17 of the 0.6.0 plan,
+#     promised by an accepted record and measured absent on 2026-09-14.
 #
-# The plans directory is shared by every project (measured 2026-09-13: 101 plans of several
-# projects in one directory, and the gate elected another project's plan), so a plan that
-# declares `project:` (`projeto:`) equal to the repository of the event wins over any newer
+# The plan has TWO homes. plans_dir is shared by every project (measured 2026-09-13: 101 plans
+# of several projects in one directory, and the gate elected another project's plan), so a plan
+# that declares `project:` (`projeto:`) equal to the repository of the event wins over any newer
 # plan of another project, and an elected plan that belongs elsewhere is NAMED in the denial
-# instead of producing a cryptic "no review for the current plan".
+# instead of producing a cryptic "no review for the current plan". The second home is the
+# `plans` directory the project declares in .roadworthy/docs.json, where the house documentation
+# norm keeps plans: a plan written there got "no plan found" (field, 2026-09-08). Both are read.
 # Symlinks and names containing '/' are refused (path traversal).
 #
 # WHAT guards the plan is `plan_gate` (preflight | review | both), new in 0.6.0 and born in
@@ -40,6 +46,10 @@
 # Refuted 2026-09-13: injected -- removed the REJECTED branch;
 # tests/run.sh went red with `rejected review passed`, green again on the clean file, and the file was
 # restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+# Refuted 2026-09-14, against tests/hooks/plan-review-gate.sh: the transcript election removed ->
+# red with `the plan this session wrote was not elected`; the announcement removed -> red with
+# `the date decided in silence`; the second home removed -> red with `the plan in docs/plans was
+# not found`. Each green again on the clean file, restored with its SHA-256 verified.
 export RW_HOOK="plan-review-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -68,14 +78,18 @@ root=""
 [ -n "$cwd" ] && root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cwd")"
 
 submitted="$(rw_field tool_input.plan)"
+tp="$(rw_field transcript_path)"
+project_plans="$(rw_project_plans_dir "$root")"
 # NOTE: bash counts quotes while scanning this $( ... ), heredoc body included. An apostrophe
 # with no pair ("the project's") desynchronises the scan and breaks the `case` below with a
 # syntax error far from the cause. Keep every ' paired inside the block; `bash -n` catches it.
-verdict="$(RW_SUBMITTED="$submitted" python3 - "$plans" "$suffix" "$max_rounds" "$root" "$mode" <<'PY'
+verdict="$(RW_SUBMITTED="$submitted" python3 - "$plans" "$suffix" "$max_rounds" "$root" "$mode" "$project_plans" "$tp" <<'PY'
 import json, os, re, subprocess, sys
 d, suffix, max_rounds = sys.argv[1], sys.argv[2], int(sys.argv[3])
 root = sys.argv[4] if len(sys.argv) > 4 else ""
 mode = sys.argv[5] if len(sys.argv) > 5 else "preflight"
+project_plans = sys.argv[6] if len(sys.argv) > 6 else ""
+transcript = sys.argv[7] if len(sys.argv) > 7 else ""
 submitted = os.environ.get("RW_SUBMITTED", "").strip()
 
 def out(kind, msg=""):
@@ -122,9 +136,48 @@ def same(a, b):
         return False
     return os.path.realpath(os.path.expanduser(a)) == os.path.realpath(os.path.expanduser(b))
 
-cands = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".md") and not f.endswith(suffix)]
+# The two homes of the plan, read as one directory of candidates.
+dirs = [d]
+if project_plans and os.path.isdir(project_plans) and os.path.realpath(project_plans) != os.path.realpath(d):
+    dirs.append(project_plans)
+cands = [os.path.join(dd, f) for dd in dirs for f in os.listdir(dd) if f.endswith(".md") and not f.endswith(suffix)]
 cands = [p for p in cands if os.path.isfile(p) or os.path.islink(p)]
-if not cands: out("DENY", f"no plan found in {d}.")
+if not cands: out("DENY", f"no plan found in {' or '.join(dirs)}.")
+
+def by_date(cands):
+    return max(cands, key=os.path.getmtime)
+
+def written_in_session(cands):
+    # The last Write or Edit into one of the candidates, from the transcript the harness writes.
+    # The transcript is what plan-preflight.sh trusts for readings, for the same reason: the
+    # plugin does not author it.
+    if not transcript or not os.path.exists(transcript):
+        return None
+    known = {os.path.realpath(c): c for c in cands if not os.path.islink(c)}
+    last = None
+    try:
+        for raw in open(transcript, encoding="utf-8", errors="replace"):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                rec = json.loads(raw)
+            except Exception:
+                continue
+            content = ((rec.get("message") or {}).get("content")) or []
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    continue
+                if block.get("name") not in ("Write", "Edit", "MultiEdit"):
+                    continue
+                fp = (block.get("input") or {}).get("file_path") or ""
+                if fp and os.path.realpath(fp) in known:
+                    last = known[os.path.realpath(fp)]
+    except Exception:
+        return None
+    return last
 
 # A plan marked superseded is not a candidate: that is how the documentation norm retires one.
 live = [p for p in cands if not is_superseded(p)]
@@ -143,17 +196,25 @@ if submitted:
         try:
             if open(p, encoding="utf-8").read().strip() == submitted: plan = p; break
         except Exception: pass
+# No text matched: the plan this session wrote is the one meant. The match above is byte for
+# byte, so one edit to the plan after the call was composed drops it here; the transcript still
+# knows which file this session was writing.
+if plan is None:
+    plan = written_in_session(cands)
 # Two live plans of the SAME project and nothing in the call to tell them apart: electing the
 # newest by date is how a stale draft got submitted in the field (2026-09-13). Refusing and
 # naming both is a thirty-second fix; choosing wrong in silence is not. Only plans that declare
 # this project are judged this way, so a directory of undeclared legacy drafts is not blocked.
 if plan is None and ambiguous:
     names = ", ".join(sorted(os.path.basename(p) for p in cands))
-    out("DENY", f"{len(cands)} live plans in {d} declare this project ({names}) and the call carries no plan text to tell them apart. Leave exactly one live: mark the others 'status: {superseded_words[-1]} <the current plan>.md' in their header, or move them out of the directory.")
+    out("DENY", f"{len(cands)} live plans in {' or '.join(dirs)} declare this project ({names}) and neither the call nor the transcript tells them apart. Leave exactly one live: mark the others 'status: {superseded_words[-1]} <the current plan>.md' in their header, or move them out of the directory.")
+elected_by_date = False
 if plan is None:
-    plan = max(cands, key=os.path.getmtime)
+    plan = by_date(cands)
+    elected_by_date = True
 if os.path.islink(plan): out("DENY", "the current plan is a symlink; refused.")
 name = os.path.basename(plan)
+pdir = os.path.dirname(plan)
 
 ptext = open(plan, encoding="utf-8", errors="replace").read()
 pre = ptext.split("\n## ", 1)[0]
@@ -178,12 +239,13 @@ if base:
 # reviewer is consulted. The election above is unchanged: which plan this call submits is the
 # same question in every mode.
 if mode == "preflight":
-    out("ALLOW", plan + "\t" + base)
+    out("ALLOW", plan + "\t" + base + ("\tDATE" if elected_by_date else ""))
 
+# The sidecar review sits next to the plan, in whichever home the plan lives.
 reviews = []
-for f in os.listdir(d):
+for f in os.listdir(pdir):
     if not f.endswith(suffix): continue
-    p = os.path.join(d, f)
+    p = os.path.join(pdir, f)
     if os.path.islink(p): out("DENY", f"{f} is a symlink; refused.")
     text = open(p, encoding="utf-8", errors="replace").read()
     declared = field(text, "plan|plano")
@@ -237,19 +299,34 @@ if snap and not owner:
     grown = [s for s in now if s not in round1]
     if grown:
         out("DENY", f"the plan grew {len(grown)} section(s) after round 1 ({'; '.join(grown)}): a plan that grows to satisfy the reviewer is the failure mode this gate exists for. Stop and report to the user; only an 'owner:' decision in the review unlocks it.")
-out("ALLOW", plan + "\t" + base)
+out("ALLOW", plan + "\t" + base + ("\tDATE" if elected_by_date else ""))
 PY
 )"
+# When the date decided, say so. No permissionDecision here: "allow" would skip the approval
+# screen ExitPlanMode exists for. additionalContext alone reaches the model (hooks reference:
+# "Text from additionalContext is kept from every hook and passed to Claude together").
+said_by_date() {  # said_by_date <plan file>
+  python3 - "$1" <<'PY'
+import json, os, sys
+plan = sys.argv[1]
+print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+  "additionalContext": "Roadworthy/plan-review-gate: the call carried no plan text that matched a file and this session wrote no plan, so %s was elected by modification time in %s. If that is not the plan you meant, mark the others superseded, or write the plan again so the transcript names it." % (os.path.basename(plan), os.path.dirname(plan))}}))
+PY
+}
 kind="${verdict%%	*}"
 rest="${verdict#*	}"; [ "$rest" = "$verdict" ] && rest=""
 case "$kind" in
   ALLOW)
-    [ "$mode" = "review" ] && exit 0
     plan_file="${rest%%	*}"
-    plan_base="${rest#*	}"; [ "$plan_base" = "$rest" ] && plan_base=""
+    rest2="${rest#*	}"; [ "$rest2" = "$rest" ] && rest2=""
+    plan_base="${rest2%%	*}"
+    by_date_flag="${rest2#*	}"; [ "$by_date_flag" = "$rest2" ] && by_date_flag=""
+    if [ "$mode" = "review" ]; then
+      [ "$by_date_flag" = DATE ] && said_by_date "$plan_file"
+      exit 0
+    fi
     pf="$(dirname "$0")/../skills/plan/scripts/plan-preflight.sh"
     [ -f "$pf" ] || deny PreToolUse "plan_gate is '$mode' but the pre-flight script is missing ($pf)."
-    tp="$(rw_field transcript_path)"
     # errtrace is lifted around the call for the same reason stop-gate lifts it: a non-zero
     # exit from the checked command is the ANSWER, not an internal error, and the ERR trap
     # fires inside the command substitution subshell where the condition context cannot
@@ -257,6 +334,7 @@ case "$kind" in
     set +o errtrace
     if pfout="$(bash "$pf" "$plan_file" ${root:+--root "$root"} ${tp:+--transcript "$tp"} ${plan_base:+--base "$plan_base"} 2>&1)"; then
       set -o errtrace
+      [ "$by_date_flag" = DATE ] && said_by_date "$plan_file"
       exit 0
     fi
     set -o errtrace

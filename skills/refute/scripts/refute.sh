@@ -77,7 +77,10 @@ fi
 # The record is written by THIS script, never by the agent: a refutation that exists only as a
 # sentence in a report is the thing this tool exists to replace. It carries both exit codes and
 # both hashes, so the claim can be checked without trusting anyone.
-data="${ROADWORTHY_DATA:-${CLAUDE_PLUGIN_DATA:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.roadworthy}}"
+# The same rule as rw_data_dir in hooks/lib.sh: ROADWORTHY_DATA when set, else the project.
+# CLAUDE_PLUGIN_DATA is per plugin and shared by every project; a refutation record belongs to
+# the repository whose file was refuted.
+data="${ROADWORTHY_DATA:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.roadworthy}"
 if mkdir -p "$data" 2>/dev/null; then
   after="$(hash "$file")"
   python3 - "$data/refutations.jsonl" "$file" "$before" "$after" "$sed_expr$patch_file" "$expect" "$rc" "$rc_clean" "$*" <<'PY' || true

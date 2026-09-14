@@ -17,18 +17,30 @@ toy project (`scaffold.sh`: a git repository with a small Python package, a pyte
 
 Graders judge the state of files and the final `STATUS:` line, never the attempt: a denied
 edit is a guardrail firing, and it is counted by `bin/rw-metrics` from `permission_denials`,
-not by the score.
+not by the score. Until 0.6.1 that sentence was not true of twelve graders across the two rounds:
+eight were `tool_used` (which counts the attempt, so an edit a fence denied scored against the arm
+that denied it), one matched a word already in the prompt, one accepted every outcome. Each grader
+file says what it measures and why. The `scope` case expects `STATUS: needs_human`: the agent cannot
+run commands, and `passed` means "you verified the result yourself".
 
-Run (the command is in early access and needs its enablement variable; `--allow-tools` with
-`Bash` is refused on machines whose Docker credential store contains symbolic links, which is
-why the cases are designed without Bash — the metrics run the tests afterwards):
+Run (the command is in early access and needs its enablement variable). `--allow-tools` with
+`Bash` is refused on machines whose Docker credential store contains symbolic links — measured
+again on 2026-09-14 with CLI 2.1.270: "the Docker (~/.docker, DOCKER_CONFIG) credential store on
+this machine holds a symbolic link inside it, so the Bash sandbox cannot reliably exclude it — a
+Bash-granting evaluation cannot run here". Six cases are designed without Bash (the metrics run the
+tests afterwards); `overnight` needs it and runs in the `evals-bash` job of the CI on Linux.
 
 ```bash
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . --runs 3 --model sonnet \
-  --ablation with-without --allow-tools Write Edit --scaffold --keep-temp \
-  --json results.json --report results.html
-bin/rw-metrics roadworthy=results.json
+CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . --runs 3 --model haiku \
+  --ablation with-without --allow-tools Write Edit --scaffold --keep-temp --trust-plugin \
+  --no-publish --max-cost-usd 30 --json evals/results/haiku-round1.json
+bin/rw-metrics roadworthy=evals/results/haiku-round1.json
 ```
+
+`evals/results/` is gitignored, and the privacy scan of the suite reads only what git tracks or
+would track, so a run leaves nothing the gate objects to. The measured run of 2026-09-14 with a
+smaller model (`haiku`), both rounds, is recorded with its numbers and cost in
+`../docs/decisions/2026-09-14-1610-evals-com-modelo-menor.md`.
 
 `rw-metrics` reads each run's trace and kept workspace and prints the seven KPIs per case
 and arm: task success (target tests pass), regression (a test that passed at baseline fails),

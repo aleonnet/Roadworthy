@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The shared half of the suite: what every case needs and nothing a case owns.
 #
-# Until 0.6.1 this was the first fifty lines of a 1407-line tests/run.sh, and every one of the 36
+# Until 0.6.0 this was the first fifty lines of a 1407-line tests/run.sh, and every one of the 36
 # sections lived in the same shell. That had a measured cost: a section could not be run alone, so
 # a refutation -- inject the defect, watch the check go red -- had to run the WHOLE suite twice.
 # At 160 s a run, the six refutations of plan-preflight.sh cost 32 minutes of wall clock to prove

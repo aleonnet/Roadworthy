@@ -10,6 +10,9 @@
 # Refuted 2026-09-13: injected -- read the scope at `$cwd` instead of the repository root;
 # tests/run.sh went red with `lock inert from a subdirectory`, green again on the clean file, and the file was
 # restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+# Refuted 2026-09-14, against tests/hooks/scope-lock.sh: the exemption for the owner's two files put
+# back -> red with `dead exemption`; the plan's second home ignored -> red with `the lock denied the
+# plan in docs/plans`. Each green again on the clean file, restored with its SHA-256 verified.
 export RW_HOOK="scope-lock"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -34,16 +37,20 @@ case "$target" in
   "$root"/*) relative="${target#"$root"/}" ;;
 esac
 
-# Human configuration of the project is always editable; the rest of .roadworthy/ is not.
-# Exempting the whole directory put the front's own foundation -- the scope, the gates, the
-# ledgers -- inside the blind spot of the guard that is supposed to protect it.
+# docs.json is human configuration and always editable: it names directories and status words
+# and unlocks nothing. The rest of .roadworthy/ is not: exempting the whole directory put the
+# front's own foundation -- the scope, the gates, the ledgers -- inside the blind spot of the
+# guard that is supposed to protect it. `protected` and `overnight-rules` are the owner's files,
+# denied to the agent by the rite gate through both doors since 0.6.1; an exemption for them here
+# would be dead code that reads as a promise.
 case "$relative" in
-  .roadworthy/docs.json|.roadworthy/protected|.roadworthy/overnight-rules) exit 0 ;;
+  .roadworthy/docs.json) exit 0 ;;
 esac
-# The plan and its review live in the plans directory (`plans_dir`), outside the project, so
-# they are matched on the absolute path. Without this the lock denies the very artefact the
-# rite requires (`/roadworthy:plan`), and the only way out is widening the scope by hand —
-# measured in the field on 2026-09-08 and again on 2026-09-13, in two different projects.
+# The plan and its review live in the plans directory (`plans_dir`), outside the project, or in
+# the `plans` directory the project declares in docs.json; either way they are matched on the
+# absolute path. Without this the lock denies the very artefact the rite requires
+# (`/roadworthy:plan`), and the only way out is widening the scope by hand -- measured in the
+# field on 2026-09-08 and again on 2026-09-13, in two different projects.
 # Both sides are resolved through symlinks before comparing: a home or a plans directory
 # reached through a link would otherwise miss the match (the same class of defect measured
 # in the gate on 2026-09-13, where /var and /private/var named one directory as two).
@@ -51,11 +58,15 @@ plans="$(rw_option PLANS_DIR "")"
 [ -n "$plans" ] || plans="$HOME/.claude/plans"
 plans="${plans%/}"
 plans="$(cd "$plans" 2>/dev/null && pwd -P || printf '%s' "$plans")"
+project_plans="$(rw_project_plans_dir "$root")"
 tdir="$(dirname "$target")"
 tdir="$(cd "$tdir" 2>/dev/null && pwd -P || printf '%s' "$tdir")"
 case "$tdir" in
   "$plans"|"$plans"/*) exit 0 ;;
 esac
+if [ -n "$project_plans" ]; then
+  case "$tdir" in "$project_plans"|"$project_plans"/*) exit 0 ;; esac
+fi
 
 globs="$(grep -v -E '^[[:space:]]*(#|$)' "$scope_file" | tr '\n' ',' | sed 's/,$//')"
 # A scope file that exists and declares nothing is not "no lock": it is a malformed front. The

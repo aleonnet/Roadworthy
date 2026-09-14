@@ -4,9 +4,20 @@
 # Gates live in .roadworthy/gates, one shell command per line (`#` comments).
 # Each gate is recorded in the evidence ledger as JSON:
 #   {ts, head, wtree, cmd, cmd_sha256, exit, tail}
-# The ledger lives in $ROADWORTHY_DATA (default: $CLAUDE_PLUGIN_DATA, else .roadworthy)
-# as evidence.jsonl. A record is FRESH when its wtree equals the current content
-# fingerprint, STALE otherwise, MISSING when no record exists for the command.
+# The ledger lives in $ROADWORTHY_DATA when that is set, else in the project's .roadworthy, as
+# evidence.jsonl -- the same rule as rw_data_dir in hooks/lib.sh, repeated here because this script
+# runs on its own. CLAUDE_PLUGIN_DATA is NOT in the chain: Claude Code sets it for every hook to a
+# directory that is per plugin and shared by every project, and a shell run by a person does not
+# set it, so a ledger written under it is one the person's `--check` never finds and the hook's
+# `--check` never finds the person's (measured 2026-09-14: six FRESH gates reported MISSING).
+# A record is FRESH when its wtree equals the current content fingerprint, STALE otherwise,
+# MISSING when no record exists for the command.
+#
+# Refuted 2026-09-14, against tests/scripts/close.sh: the ledger resolved through CLAUDE_PLUGIN_DATA
+# again -> red with `close.sh looked for the ledger in the shared plugin directory`; the orphan
+# check removed from the closing -> red with `an orphan scope closed the front`; removed from
+# --check -> red with `an orphan scope passed --check`. Each green again on the clean file,
+# restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
 #
 # Usage:
 #   close.sh               run all gates (requires a clean tree); exit 0 = passed
@@ -17,16 +28,28 @@ set -uo pipefail
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "close: not a git repository" >&2; exit 1; }
 cd "$root" || exit 1
 gates=".roadworthy/gates"
-data="${ROADWORTHY_DATA:-${CLAUDE_PLUGIN_DATA:-$root/.roadworthy}}"
+snapshot=".roadworthy/plan.snapshot"
+data="${ROADWORTHY_DATA:-$root/.roadworthy}"
 mkdir -p "$data"
 ledger="$data/evidence.jsonl"
 state_file="$data/state"
-# The state is written in BOTH places. $data may point anywhere (ROADWORTHY_DATA, or the
-# plugin's own directory shared by every project), and `close.sh --state` and /roadworthy:resume
-# read it to decide whether a front closed cleanly -- reading another project's state and
-# reporting "passed" on a front full of gaps is the failure this closes. The project copy is
-# authoritative for the project; the data copy stays for whoever points ROADWORTHY_DATA at it.
+# The state is written in BOTH places. $data may point anywhere through ROADWORTHY_DATA, and
+# `close.sh --state` and /roadworthy:resume read it to decide whether a front closed cleanly --
+# reading another project's state and reporting "passed" on a front full of gaps is the failure
+# this closes. The project copy is authoritative for the project; the data copy stays for whoever
+# points ROADWORTHY_DATA at it.
 project_state=".roadworthy/state"
+# A scope the rite wrote names its plan in its first line, and the rite writes the snapshot in the
+# same act. That scope with no snapshot is not an old project: it is the snapshot removed after
+# the front opened -- the one act that used to make this script skip everything it measures
+# against (digests, and the files the front touched outside its globs). A scope written by hand
+# carries no banner and keeps the old path: toy repositories, evaluation scaffolds and projects
+# from before 0.6.0 open their fronts that way, and refusing them would put an agent in front of
+# a wall it cannot resolve.
+rite_scope_orphan() {
+  [ -f .roadworthy/scope ] && head -1 .roadworthy/scope | grep -q 'Written by scope-write.sh' && [ ! -f "$snapshot" ]
+}
+orphan_refusal="close: .roadworthy/scope was written by the rite and $snapshot is gone. The closing is measured against the snapshot, and a front cannot lose it and still close: reopen the front from the plan (skills/plan/scripts/scope-write.sh <plan.md>), which writes the snapshot again from what was approved."
 record_state() {  # record_state <passed|gaps_found|needs_human>
   mkdir -p "$(dirname "$state_file")" ".roadworthy" 2>/dev/null || true
   printf '%s\n' "$1" > "$state_file"
@@ -76,6 +99,7 @@ case "${1:-}" in
     # Reporting success here let a night close declaring every gate FRESH with zero gates
     # (measured 2026-09-13 on this repository, which had no .roadworthy/gates at all).
     [ -f "$gates" ] || { echo "close: no $gates — a closing with no declared gate is not a closing; write the gate commands there, one per line" >&2; exit 1; }
+    if rite_scope_orphan; then echo "$orphan_refusal" >&2; exit 1; fi
     read -r _ wtree _ <<< "$(fp)"
     fail=0; declared=0
     while IFS= read -r cmd; do
@@ -119,13 +143,20 @@ if [ -n "$(rw_dirty)" ]; then
 fi
 # Measured against the SNAPSHOT taken when the front opened, never against whatever the files
 # say now. Re-reading .roadworthy/gates at closing time meant editing the Verification section
-# after approval silently changed what "the gates passed" proves. Projects with no snapshot
-# keep the old behaviour, so nobody is blocked on upgrade.
-snapshot=".roadworthy/plan.snapshot"
+# after approval silently changed what "the gates passed" proves. A front the rite opened cannot
+# close without its snapshot (rite_scope_orphan, above); a scope written by hand has no snapshot
+# to measure against and keeps the pre-0.6.0 path.
+if rite_scope_orphan; then
+  echo "$orphan_refusal" >&2
+  record_state gaps_found; exit 1
+fi
 if [ -f "$snapshot" ]; then
-  python3 - "$snapshot" "$gates" ".roadworthy/scope" <<'PY' || exit 1
+  python3 - "$snapshot" "$gates" ".roadworthy/scope" "$here/../../../hooks" <<'PY' || exit 1
 import hashlib, json, os, subprocess, sys
-snap_path, gates_path, scope_path = sys.argv[1:4]
+snap_path, gates_path, scope_path, hooks_dir = sys.argv[1:5]
+sys.dont_write_bytecode = True   # a __pycache__ under hooks/ would be a stray file to this very check
+sys.path.insert(0, hooks_dir)
+from globmatch import matches
 snap = json.load(open(snap_path, encoding="utf-8"))
 declared = snap.get("digests") or {}
 
@@ -153,17 +184,9 @@ for k in ("scope", "gates", "snapshot_canonical"):
 # the front opens, and demanding that every plan declare the plugin's own bookkeeping in its
 # scope would put housekeeping in every Scope section. A front whose SUBJECT is one of those
 # files still declares it -- the exclusion only stops the closing from refusing over them.
-import re
-def to_regex(g):
-    g = os.path.normpath(g); out = ""; i = 0
-    while i < len(g):
-        if g.startswith("**/", i): out += "(?:.*/)?"; i += 3
-        elif g.startswith("**", i): out += ".*"; i += 2
-        elif g[i] == "*": out += "[^/]*"; i += 1
-        elif g[i] == "?": out += "[^/]"; i += 1
-        else: out += re.escape(g[i]); i += 1
-    return "^" + out + "$"
-globs = [re.compile(to_regex(g)) for g in snap.get("scope_globs", [])]
+# The glob grammar is hooks/globmatch.py, the same file the scope lock reads: "outside the
+# declared globs" has to mean here exactly what it meant to the lock that denied the edit.
+globs = snap.get("scope_globs", [])
 base = snap.get("base_head") or ""
 touched = set()
 if base:
@@ -171,9 +194,17 @@ if base:
     touched |= {l for l in d.stdout.splitlines() if l}
 u = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"], capture_output=True, text=True)
 touched |= {l for l in u.stdout.splitlines() if l}
+# The plan of THIS front is the rite's own artefact: when it lives inside the repository (the
+# `plans` directory of docs.json, the house norm's home for it) it is written before the front
+# exists and cannot be in its own scope. The snapshot names it.
+own_plan = ""
+try:
+    own_plan = os.path.relpath(os.path.realpath(snap.get("plan") or ""), os.path.realpath(os.getcwd()))
+except Exception:
+    own_plan = ""
 def local(p):
-    return p.startswith(".roadworthy/")
-outside = sorted(p for p in touched if not local(p) and not any(g.match(os.path.normpath(p)) for g in globs))
+    return p.startswith(".roadworthy/") or (own_plan and os.path.normpath(p) == own_plan)
+outside = sorted(p for p in touched if not local(p) and not matches(p, globs))
 if outside:
     sys.stderr.write("close: the front touched %d file(s) outside its declared scope:\n" % len(outside))
     for p in outside[:20]:

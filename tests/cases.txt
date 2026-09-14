@@ -17,6 +17,7 @@ tests/scripts/close-front.sh
 tests/scripts/close.sh
 tests/scripts/docs-check.sh
 tests/scripts/docs-init.sh
+tests/scripts/globmatch.sh
 tests/scripts/overnight.sh
 tests/scripts/plan-preflight.sh
 tests/scripts/plan-template.sh

@@ -60,13 +60,39 @@ denied || fail "the shell rewrote the snapshot"
 rg Bash "{\"command\":\"tee $RG/.roadworthy/evidence.jsonl\"}"
 denied || fail "the shell rewrote the evidence ledger"
 ok "nor can the snapshot or the evidence ledger"
+# The owner's configuration is the owner's. `.roadworthy/protected` is what protect-paths reads and
+# `.roadworthy/overnight-rules` is what the night freezes; both were exempt here as "human
+# configuration", which let the agent delete a line from the list that guards against the agent
+# (acceptance 7 of the 0.6.0 plan, reversed on 2026-09-14: a fence whose input the guarded party
+# edits is not a fence). The owner edits them outside the agent, as with the principles file.
+# `docs.json` stays: it names directories and status words, and unlocks nothing.
 rg Bash "{\"command\":\"echo x > $RG/.roadworthy/protected\"}"
-! denied && ok "and human configuration is still writable through the shell" || fail "the shell was denied human configuration"
-for f in docs.json protected overnight-rules; do
+denied && printf '%s' "$OUT" | grep -q 'the owner' && ok "the owner's protected list cannot be written through the shell, front open" || fail "the agent edited the owner configuration through the shell: $OUT"
+rg Bash "{\"command\":\"sed -i '' -e s/a/b/ $RG/.roadworthy/overnight-rules\"}"
+denied && ok "nor the night rules" || fail "the agent edited the owner configuration (overnight-rules) through the shell"
+for f in protected overnight-rules; do
   rg Edit "{\"file_path\":\"$RG/.roadworthy/$f\"}"
-  ! denied || fail "human configuration $f denied by the rite gate"
+  denied || fail "the agent edited the owner configuration with the edit tool: $f"
 done
-ok "human configuration of the project stays editable"
+ok "the owner's two files are denied to the edit tool as well"
+rg Edit "{\"file_path\":\"$RG/.roadworthy/docs.json\"}"
+! denied && ok "docs.json stays editable: it names directories and words, and unlocks nothing" || fail "docs.json denied by the rite gate"
+# ── removing the foundation is writing it ────────────────────────────────────
+# The command reader recognised writes and not removals, and `mv` looked at its destination only.
+# The chain measured on 2026-09-14: open the front, write outside the scope through the shell (a
+# declared limit), `rm .roadworthy/plan.snapshot`, close -- the closing skipped every check it
+# measures against the snapshot and the front closed `passed`, with nothing STALE because the
+# fingerprint excludes the snapshot. `rm .roadworthy/state` cleared a gaps_found the same way, and
+# `rm .roadworthy/overnight` ended a night.
+for cmd in "rm $RG/.roadworthy/plan.snapshot" "rm -f .roadworthy/plan.snapshot" "unlink $RG/.roadworthy/state" "rmdir $RG/.roadworthy/stop-latch" "git rm -q .roadworthy/gates" "rm -rf $RG/.roadworthy" "rm -rf .roadworthy/" "rm .roadworthy/overnight" "rm .roadworthy/protected"; do
+  rg Bash "{\"command\":\"$cmd\"}"
+  denied || fail "the shell removed the snapshot (or another foundation file) with: $cmd"
+done
+ok "rm, rm -rf, unlink, rmdir and git rm on the foundation, the night marker and the owner's files are denied, front open"
+rg Bash "{\"command\":\"mv $RG/.roadworthy/plan.snapshot /tmp/x\"}"
+denied && ok "mv with the snapshot as its SOURCE is denied" || fail "mv carried the snapshot away"
+rg Bash "{\"command\":\"rm $RG/src/old.py && rm -rf $RG/build\"}"
+! denied && ok "removing ordinary files inside the scope still passes" || fail "rm denied outside the foundation: $OUT"
 # The plan is the artefact of the rite itself, and lives outside the project.
 RGP="$TMP/riteplans"; mkdir -p "$RGP"
 rm -f "$RG/.roadworthy/scope"
@@ -113,6 +139,18 @@ CLAUDE_PLUGIN_OPTION_PLANS_DIR="$RGP2" run_hook rite-gate "{\"tool_name\":\"Bash
 ! denied && ok "the plan can be written through the shell too, with no front" || fail "the shell could not write the plan that opens the front: $OUT"
 CLAUDE_PLUGIN_OPTION_PLANS_DIR="$RGP2" run_hook rite-gate "{\"tool_name\":\"Bash\",\"cwd\":\"$RG\",\"tool_input\":{\"command\":\"cat > $RG/docs/other.md\"}}"
 denied && ok "and a neighbour of the plans directory is still denied" || fail "the plans exemption spilled onto its parent"
+# The plan has TWO homes: plans_dir (where plan mode writes) and the `plans` directory the
+# project declares in .roadworthy/docs.json (where the house norm keeps them). A plan written in
+# the second was denied here with no front open -- the field case of 2026-09-08 -- so the second
+# home is exempt like the first, through both doors, and nothing else under docs/ is.
+mkdir -p "$RG/docs/plans"; printf '{"plans":"docs/plans"}\n' > "$RG/.roadworthy/docs.json"
+rg Write "{\"file_path\":\"$RG/docs/plans/2026-01-01-0900-p.md\"}"
+! denied && ok "a plan in the project's own plans directory (docs.json) can be written with no front" || fail "the rite is denied in the home the house norm uses: $OUT"
+rg Bash "{\"command\":\"cat > $RG/docs/plans/2026-01-01-0900-p.md\"}"
+! denied && ok "through the shell too" || fail "the shell could not write the plan in docs/plans: $OUT"
+rg Write "{\"file_path\":\"$RG/docs/decisions/x.md\"}"
+denied && ok "and the rest of docs/ is still denied with no front" || fail "the docs.json exemption spilled past the plans directory"
+rm -f "$RG/.roadworthy/docs.json"
 # None of that loosens what the gate is for.
 rg Bash "{\"command\":\"echo x > $RG/src/a.py\"}"
 denied && ok "a shell write INSIDE the repository is still denied with no front" || fail "the gate stopped guarding its own repository"

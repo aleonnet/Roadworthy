@@ -63,5 +63,26 @@ n_after="$(printf '%s' "$CTX3" | awk '/^ROADWORTHY PRINCIPLES/{s=1;next} /^PROJE
 r = json.loads(open(sys.argv[1]).read().strip().splitlines()[-1])
 sys.exit(0 if {"ts","hook","reason","cwd","front"} <= set(r) and r["hook"] == "scope-lock" else 1)' "$DEND/denials.jsonl" \
   && ok "every denial is recorded with the fence, the reason and the front" || fail "no usable denial record"
+# THE SAME FIELD CASE, on this ledger. Claude Code hands every hook CLAUDE_PLUGIN_DATA, per plugin
+# and shared by every project; the assertions above set ROADWORTHY_DATA and so never ran the way
+# the harness runs. Measured on 2026-09-14: six real denials of the day were in the shared plugin
+# directory, the reader looked in the project, and the line "A FENCE HAS DENIED" had never once
+# reached a prompt. Here nothing sets ROADWORTHY_DATA; only the harness's variable is set.
+PDR="$TMP/pdrepo"; PDD="$TMP/pdplugindata"; mkdir -p "$PDR/.roadworthy" "$PDD"; git -C "$PDR" init -q
+printf 'src/**\n' > "$PDR/.roadworthy/scope"
+for i in 1 2 3; do
+  CLAUDE_PLUGIN_DATA="$PDD" run_hook scope-lock "{\"tool_name\":\"Edit\",\"session_id\":\"p1\",\"cwd\":\"$PDR\",\"tool_input\":{\"file_path\":\"$PDR/out$i.md\"}}"
+done
+[ -f "$PDR/.roadworthy/denials.jsonl" ] && [ ! -f "$PDD/denials.jsonl" ] \
+  && ok "a denial is recorded in the PROJECT ledger with only CLAUDE_PLUGIN_DATA set, as in the harness" || fail "the denial went to the shared plugin directory"
+CLAUDE_PLUGIN_DATA="$PDD" run_hook principles "{\"transcript_path\":\"\",\"cwd\":\"$PDR\"}"
+printf '%s' "$(context)" | grep -q 'HAS DENIED THE SAME WAY' \
+  && ok "and the third denial reaches the prompt: the writer and the reader agree on the ledger" || fail "the writer and the reader disagree on the ledger"
+# The pin of the principles file is the one thing that stays in the shared directory: the file
+# lives outside every repository, so its digest cannot live in one of them.
+PINF2="$TMP/pinned2.md"; printf '1. One.\n' > "$PINF2"
+CLAUDE_PLUGIN_OPTION_PRINCIPLES_FILE="$PINF2" CLAUDE_PLUGIN_DATA="$PDD" run_hook principles '{"transcript_path":"","cwd":"/tmp"}'
+[ -n "$(find "$PDD" -maxdepth 1 -name 'principles.*.json' -print -quit)" ] \
+  && ok "the pin of the principles file stays in CLAUDE_PLUGIN_DATA: global by construction" || fail "the pin left the shared directory"
 
 rw_end

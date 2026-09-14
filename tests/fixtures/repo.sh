@@ -21,10 +21,23 @@ fx_repo_committed() {
 }
 
 # fx_front <dir> <globs> <gates> — a repository with a front already open, written by hand on
-# purpose: this is the SHAPE the fences read, not the rite that produces it.
+# purpose: this is the SHAPE the fences read, not the rite that produces it. It is also the shape
+# of the evaluation scaffolds and of every project from before 0.6.0, which is why close.sh keeps
+# accepting a scope with no banner and no snapshot.
 fx_front() {
   local d="$1" globs="$2" gates="$3"
   mkdir -p "$d/.roadworthy"
   printf '%s\n' "$globs" > "$d/.roadworthy/scope"
   printf '%s\n' "$gates" > "$d/.roadworthy/gates"
+}
+
+# fx_front_rite <dir> <globs> <gates> — a front opened THE WAY THE PLUGIN OPENS IT: scope-write.sh
+# over a plan with fenced Escopo and Verificação blocks, so the scope carries the rite's banner and
+# the snapshot exists. The plan sits next to the repository, not inside it, so it never dirties the
+# tree a closing measures. Needs a repository with a commit (fx_repo_committed): the snapshot
+# records the base HEAD.
+fx_front_rite() {
+  local d="$1" globs="$2" gates="$3"
+  printf '# P\n## Escopo\n```\n%s\n```\n## Verificação\n```\n%s\n```\n' "$globs" "$gates" > "${d%/}-rite-plan.md"
+  bash "$ROOT/skills/plan/scripts/scope-write.sh" "${d%/}-rite-plan.md" --root "$d" >/dev/null
 }

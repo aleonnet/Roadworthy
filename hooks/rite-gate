@@ -31,6 +31,30 @@
 # answer, and a guard that fails closed on what it cannot parse denies nearly every command. What
 # compensates is close.sh, which refuses to close a front whose diff touched anything undeclared.
 #
+# REMOVING IS WRITING. Until 0.6.1 the reader knew the write verbs and not the removal verbs, and
+# `mv` looked at its destination only. The chain measured on 2026-09-14: open the front, write
+# outside the scope through the shell (the declared limit above), `rm .roadworthy/plan.snapshot`,
+# close -- the closing skipped every check it measures against the snapshot and the front closed
+# `passed`, with nothing STALE because the fingerprint excludes the snapshot. `rm .roadworthy/state`
+# cleared a gaps_found the same way; `rm .roadworthy/overnight` ended a night. So `rm`, `unlink`,
+# `rmdir`, `git rm` and the SOURCE of `mv` are targets too, and nothing under .roadworthy/ may be
+# removed by hand: the foundation, the ledgers, the owner's configuration, or the directory itself.
+# `find -delete`, `xargs rm` and an interpreter that unlinks the file are the same declared limit
+# as the interpreter that writes; what backs them up is close.sh refusing a rite-written scope
+# whose snapshot is gone.
+#
+# THE OWNER'S CONFIGURATION IS THE OWNER'S. `.roadworthy/protected` is what protect-paths reads and
+# `.roadworthy/overnight-rules` is what the night freezes. Both used to pass here as "human
+# configuration", which let the agent delete a line from the very list that guards against the
+# agent. Acceptance 7 of the 0.6.0 plan allowed it; reversed on 2026-09-14, because a fence whose
+# input the guarded party edits is not a fence. The owner edits those two files outside the agent,
+# as with the principles file. `docs.json` stays editable: it names directories and status words,
+# and unlocks nothing.
+#
+# THE PLAN HAS TWO HOMES: plans_dir, where plan mode writes it, and the `plans` directory the
+# project declares in .roadworthy/docs.json, where the house documentation norm keeps it. Both
+# are exempt through both doors; the plan is what OPENS a front and cannot need one.
+#
 # Refuted 2026-09-14, against tests/hooks/rite-gate.sh: a write outside the repository counted
 # as work on it -> red with `the gate denied a write outside the repository`; the plans
 # exemption removed with plans_dir inside the repository -> red with `the shell could not
@@ -40,6 +64,12 @@
 # Refuted 2026-09-13: injected -- treated an empty scope file as an open front;
 # tests/run.sh went red with `an empty scope file opens a front`, green again on the clean file,
 # and the file was restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+#
+# Refuted 2026-09-14 (0.6.1), against tests/hooks/rite-gate.sh: `rm` dropped from the verbs -> red
+# with `the shell removed the snapshot`; the source of `mv` ignored again -> red with `mv carried
+# the snapshot away`; the owner's list emptied -> red with `the agent edited the owner
+# configuration`; the second home of the plan removed -> red with `the rite is denied in the home
+# the house norm uses`. Each green again on the clean file, restored with its SHA-256 verified.
 export RW_HOOK="rite-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -61,6 +91,25 @@ foundation() {
     .roadworthy/stop-latch|.roadworthy/stop-latch/*) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# The owner's files: read by the fences that guard against the agent, so never written by it.
+owner_config() {
+  case "$1" in
+    .roadworthy/protected|.roadworthy/overnight-rules) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# The plan's two homes, resolved. Empty when a home is not declared.
+plans="$(rw_option PLANS_DIR "")"
+[ -n "$plans" ] || plans="$HOME/.claude/plans"
+plans="$(rw_realpath "${plans%/}")"
+project_plans="$(rw_project_plans_dir "$root")"
+in_plans_home() {  # in_plans_home <absolute path> — 0 when the path is inside either home
+  case "$1" in "$plans"|"$plans"/*) return 0 ;; esac
+  [ -n "$project_plans" ] && case "$1" in "$project_plans"|"$project_plans"/*) return 0 ;; esac
+  return 1
 }
 
 # A scope file that declares nothing is not a scope. This is the same test scope-lock applies
@@ -86,6 +135,14 @@ deny_bad_state() {  # deny_bad_state <state>
   deny PreToolUse "the last front in $root ended as '$1' and nothing has been done about it. A front that ended badly blocks the next one: read .roadworthy/state, finish or record what was left, then open the new front. (rite_gate)"
 }
 
+deny_owner() {  # deny_owner <relative path>
+  deny PreToolUse "'$1' is the owner's configuration: it is what the fences read to guard against the agent, so the agent does not edit it. Report the change you need (the glob to protect, the rule to freeze) and let the owner make it outside the agent. (rite_gate)"
+}
+
+deny_removal() {  # deny_removal <relative path>
+  deny PreToolUse "'$1' cannot be removed by hand: .roadworthy/ holds the foundation the closing is measured against, the ledgers, the night marker and the owner's configuration. A front is closed by /roadworthy:close, never by deleting what it left; if a file there is wrong, say so and let the owner act. (rite_gate)"
+}
+
 tool="$(rw_field tool_name)"
 case "$tool" in
   Bash)
@@ -93,7 +150,7 @@ case "$tool" in
     [ -n "$command" ] || exit 0
     # Everything below is a best-effort read of the command line; see the note above.
     target="$(RW_CMD="$command" python3 - <<'PY'
-import os, sys
+import os
 Q = chr(39) + chr(34)
 cmd = os.environ.get("RW_CMD", "")
 # Scan once, tracking quotes and $( ) depth: an operator only counts when it is bare.
@@ -126,59 +183,72 @@ while i < len(cmd):
     i += 1
 if cur: tokens.append(cur); ops.append(False)
 
-VERBS = ("tee", "cp", "mv", "install", "truncate", "dd")
+# The verbs the reader knows, in command position. Every other word is allowed (see the note
+# above). Each target leaves with its kind: W for a write, R for a removal (the source of `mv`
+# is a removal from where it was).
+VERBS = ("tee", "cp", "mv", "install", "truncate", "dd", "sed", "rm", "unlink", "rmdir", "git")
 targets, start = [], 0
 plain_after = lambda n: [x for x, o in zip(tokens[n + 1:], ops[n + 1:]) if not o]
 for n, t in enumerate(tokens):
     if ops[n] and t in (">", ">>"):
         if n + 1 < len(tokens) and not ops[n + 1]:
-            targets.append(tokens[n + 1])
+            targets.append(("W", tokens[n + 1]))
     if ops[n] and t in (";", "&&", "||", "|", "&"):
         start = n + 1
         continue
     if n == start and not ops[n]:
         word = os.path.basename(t.strip(Q))
+        if word not in VERBS:
+            continue
         rest = plain_after(n)
+        plain = [r for r in rest if not r.startswith("-")]
         if word == "dd":
-            targets += [r[3:] for r in rest if r.startswith("of=")]
+            targets += [("W", r[3:]) for r in rest if r.startswith("of=")]
         elif word == "tee":
-            targets += [r for r in rest if not r.startswith("-")]
-        elif word in ("cp", "mv", "install"):
-            p = [r for r in rest if not r.startswith("-")]
-            if len(p) >= 2: targets.append(p[-1])
+            targets += [("W", r) for r in plain]
+        elif word in ("cp", "install"):
+            if len(plain) >= 2: targets.append(("W", plain[-1]))
+        elif word == "mv":
+            if len(plain) >= 2:
+                targets += [("R", r) for r in plain[:-1]]
+                targets.append(("W", plain[-1]))
         elif word == "truncate":
-            p = [r for r in rest if not r.startswith("-")]
-            if p: targets.append(p[-1])
-        elif word == "sed" and "-i" in rest:
-            p = [r for r in rest if not r.startswith("-")]
-            if p: targets.append(p[-1])
-print("\n".join(t.strip(Q) for t in targets if t.strip(Q)))
+            if plain: targets.append(("W", plain[-1]))
+        elif word == "sed":
+            if "-i" in rest and plain: targets.append(("W", plain[-1]))
+        elif word in ("rm", "unlink", "rmdir"):
+            targets += [("R", r) for r in plain]
+        elif word == "git":
+            if plain and plain[0] == "rm": targets += [("R", r) for r in plain[1:]]
+print("\n".join(k + "\t" + p.strip(Q) for k, p in targets if p.strip(Q)))
 PY
 )"
     [ -n "$target" ] || exit 0
     # The foundation is protected through THIS door too. Guarding only the edit tools left the
     # exact hole the roadmap recorded from the field -- appending a glob to .roadworthy/scope
     # with a justification quoted from the chat -- open, one `>>` away, whenever a front was open.
-    plans="$(rw_option PLANS_DIR "")"
-    [ -n "$plans" ] || plans="$HOME/.claude/plans"
-    plans="$(rw_realpath "${plans%/}")"
     inside=""
-    while IFS= read -r one; do
+    while IFS=$'\t' read -r kind one; do
       [ -n "$one" ] || continue
       abs="$one"
       case "$one" in /*) ;; *) abs="$cwd/$one" ;; esac
       abs="$(rw_realpath "$abs")"
       rel="$abs"
-      case "$abs" in "$root"/*) rel="${abs#"$root"/}" ;; esac
-      # The foundation is protected wherever it is named, front or no front.
+      case "$abs" in "$root"|"$root"/*) rel="${abs#"$root"}"; rel="${rel#/}" ;; esac
+      # Nothing under .roadworthy/ is removed by hand, the directory included; see the note above.
+      if [ "$kind" = R ]; then
+        case "$rel" in .roadworthy|.roadworthy/|.roadworthy/*) deny_removal "$rel" ;; esac
+      fi
+      # The foundation is protected wherever it is named, front or no front; so are the owner's files.
       if foundation "$rel"; then deny_foundation "$rel"; fi
+      if owner_config "$rel"; then deny_owner "$rel"; fi
       # The plan is the rite's own artefact: it is what OPENS a front, so it cannot need one.
       # The edit tools were already exempt; the shell was not, so `cat > <plan>` was denied. With
       # the default plans_dir (~/.claude/plans) the rule below about writes outside the repository
-      # already covers it -- this line is what makes it hold for a project that points plans_dir
-      # at a directory INSIDE the repository, which is the only case where it bites. Measured:
+      # already covers it -- this line is what makes it hold for a plans directory INSIDE the
+      # repository: plans_dir pointed there, or the `plans` directory of docs.json. Measured:
       # with this line removed and plans_dir inside the repo, the plan is denied.
-      case "$abs" in "$plans"|"$plans"/*) continue ;; esac
+      if in_plans_home "$abs"; then continue; fi
       # A write OUTSIDE this repository is not work on this repository. Without this the gate
       # denied `echo x > /tmp/...` and every write into the session scratchpad, which is not the
       # thing it exists to stop.
@@ -199,16 +269,15 @@ PY
     case "$target" in "$root"/*) relative="${target#"$root"/}" ;; esac
 
     foundation "$relative" && deny_foundation "$relative"
+    owner_config "$relative" && deny_owner "$relative"
 
-    # The plan is the artefact of the rite itself and lives outside the project, in plans_dir.
-    plans="$(rw_option PLANS_DIR "")"
-    [ -n "$plans" ] || plans="$HOME/.claude/plans"
-    plans="$(rw_realpath "${plans%/}")"
+    # The plan is the artefact of the rite itself: in plans_dir, outside the project, or in the
+    # plans directory the project declares.
     tdir="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P || dirname "$target")"
-    case "$tdir" in "$plans"|"$plans"/*) exit 0 ;; esac
+    if in_plans_home "$tdir"; then exit 0; fi
 
     case "$relative" in
-      .roadworthy/docs.json|.roadworthy/protected|.roadworthy/overnight-rules) exit 0 ;;
+      .roadworthy/docs.json) exit 0 ;;
     esac
     # Same rule as the shell door: a file outside this repository is not this repository's work.
     case "$target" in "$root"/*) ;; *) exit 0 ;; esac

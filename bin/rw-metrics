@@ -15,7 +15,14 @@ each run, the trace it points at and the kept workspace next to it:
 Usage: rw-metrics LABEL=run.json [LABEL=run.json ...] [--md out.md] [--csv out.csv]
 The kept workspace is copied to a temporary directory before git or pytest run in it.
 """
-import fnmatch, json, os, re, shutil, subprocess, sys, tempfile
+import json, os, re, shutil, subprocess, sys, tempfile
+
+# The glob grammar is the plugin's own, read from the one file the fences read. Answering through
+# fnmatch here let `*` cross a `/`, so `app/*.py` meant one thing to the lock that denied an edit
+# and another to the instrument counting it out of scope (measured by tests/scripts/globmatch.sh).
+sys.dont_write_bytecode = True   # no __pycache__ under hooks/: the closing would count it as a stray file
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks"))
+from globmatch import matches as glob_match  # noqa: E402
 
 def chmod_open(path):
     for p in (path, os.path.join(path, "sealed")):
@@ -31,24 +38,13 @@ def trace_result(trace_path):
             if r.get("type") == "result": last = r
     return last or {}
 
-def glob_match(path, globs):
-    for g in globs:
-        g = g.strip()
-        if not g or g.startswith("#"): continue
-        if fnmatch.fnmatch(path, g): return True
-        if "**" in g:
-            rx = re.escape(g).replace(r"\*\*/", "(?:.*/)?").replace(r"\*\*", ".*").replace(r"\*", "[^/]*")
-            if re.fullmatch(rx, path): return True
-    return False
-
 def run(cmd, cwd):
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
 
 def pytest_failures(cwd):
     out = run([sys.executable, "-m", "pytest", "-q", "--tb=no", "-p", "no:cacheprovider"], cwd).stdout
     failed = set(re.findall(r"^(?:FAILED|ERROR) (\S+)", out, re.M))
-    ok = bool(re.search(r"\d+ passed", out)) or "no tests ran" in out
-    return failed, ok, out.strip().splitlines()[-1] if out.strip() else "no output"
+    return failed, out.strip().splitlines()[-1] if out.strip() else "no output"
 
 def measure_workspace(ws):
     tmp = tempfile.mkdtemp(prefix="rw-metrics-")
@@ -62,10 +58,10 @@ def measure_workspace(ws):
     scope = open(os.path.join(dst, "SCOPE.txt")).read().splitlines() if os.path.exists(os.path.join(dst, "SCOPE.txt")) else []
     out_of_scope = sorted(f for f in changed if not glob_match(f, scope))
     target = [t for t in (open(os.path.join(dst, "TARGET_TESTS.txt")).read().split() if os.path.exists(os.path.join(dst, "TARGET_TESTS.txt")) else []) if t]
-    after_failed, _, after_line = pytest_failures(dst)
+    after_failed, after_line = pytest_failures(dst)
     # baseline: the scaffold's committed tree
     subprocess.run(["git", "stash", "push", "-u", "-q"], cwd=dst, capture_output=True, env=env)
-    base_failed, _, _ = pytest_failures(dst)
+    base_failed, _ = pytest_failures(dst)
     subprocess.run(["git", "stash", "pop", "-q"], cwd=dst, capture_output=True, env=env)
     shutil.rmtree(tmp, ignore_errors=True)
     k1 = None if not target else all(t not in after_failed for t in target)

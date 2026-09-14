@@ -23,8 +23,19 @@
 # fingerprint of the tree, and the same tree is not blocked twice while a changed tree is. A latch
 # that cannot be written does not block at all: a full disk must not trap a session.
 #
-# `stop_hook_active` is deliberately not used: it does not appear in the readable part of the
-# official documentation, and a fence does not rest on an undocumented field.
+# `stop_hook_active` IS honoured. The hooks guide documents it: "Claude Code overrides a Stop hook
+# after it blocks eight times in a row without progress. Your hook script needs to check whether
+# it already triggered a continuation. Parse the `stop_hook_active` field from the JSON input and
+# exit early if it's true". A comment here once said the field was undocumented; that was read on
+# 2026-09-14 in the guide itself and was not the case. The latch below stays: the field says a
+# continuation already happened in this turn, the latch says this TREE was already judged.
+#
+# Where the evidence is read from. Every hook gets CLAUDE_PLUGIN_DATA from Claude Code, a
+# directory per plugin shared by every project; a person's shell does not set it. Measured on
+# 2026-09-14 at 13:33: this hook reported six gates MISSING that `close.sh --check` in the shell
+# called FRESH one minute later, because close.sh resolved its ledger through that variable and
+# looked in the shared directory. rw_data_dir (hooks/lib.sh) is the one rule now, and it is passed
+# to close.sh explicitly so the two cannot disagree again.
 #
 # Fails open, always and by declaration (RW_ON_CRASH=warn): no transcript, an unreadable or
 # lagging one (the official documentation warns the transcript is written asynchronously), no
@@ -34,12 +45,18 @@
 # Refuted 2026-09-13: injected -- made the gate block even with no gates file declared;
 # tests/run.sh went red with `blocked a project with no gates declared`, green again on the clean
 # file, and the file was restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+# Refuted 2026-09-14, against tests/hooks/stop-gate.sh: the data directory resolved through
+# CLAUDE_PLUGIN_DATA again -> red with `fresh gates blocked from the hook environment` (the 13:33
+# case); `stop_hook_active` ignored -> red with `stop_hook_active ignored`. Each green again on the
+# clean file, restored with its SHA-256 verified.
 export RW_HOOK="stop-gate"
 export RW_ON_CRASH=warn
 source "$(dirname "$0")/lib.sh"
 rw_read_event
 
 rw_bool "$(rw_option STOP_GATE true)" || exit 0
+# A continuation this hook already forced is not judged twice (documented field, see above).
+case "$(rw_field stop_hook_active)" in True|true) exit 0 ;; esac
 
 cwd="$(rw_realpath "$(rw_field cwd)")"
 [ -n "$cwd" ] || exit 0
@@ -91,6 +108,7 @@ claims_done() {
 claims_done "$final" || exit 0
 
 here="$(cd "$(dirname "$0")" && pwd)"
+data="$(rw_data_dir "$root")"
 # A non-zero --check is the NORMAL answer here, not an error, so the ERR trap must not fire on
 # it. errtrace makes the trap inherit into this command substitution, so it is lifted for the
 # call and restored straight after -- the guard keeps failing closed everywhere else.
@@ -99,7 +117,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 # one. In a condition context nothing trips, and errtrace is lifted only for the call so the
 # trap does not fire inside the subshell either.
 set +o errtrace
-if check="$(cd "$root" && bash "$here/../skills/close/scripts/close.sh" --check 2>&1)"; then
+if check="$(cd "$root" && ROADWORTHY_DATA="$data" bash "$here/../skills/close/scripts/close.sh" --check 2>&1)"; then
   set -o errtrace
   exit 0
 fi
@@ -107,7 +125,6 @@ set -o errtrace
 
 # Not fresh. Record the tree we are blocking on, so the next turn on the SAME tree is not blocked
 # again and the session cannot loop. A latch we cannot write means we do not block.
-data="${ROADWORTHY_DATA:-${CLAUDE_PLUGIN_DATA:-$root/.roadworthy}}"
 latch_dir="$data/stop-latch"
 session="$(rw_field session_id)"
 [ -n "$session" ] || session="nosession"

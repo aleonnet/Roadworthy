@@ -108,7 +108,7 @@ rw_record_denial() {
   [ -n "$cwd" ] || return 0
   root="$(rw_root "$cwd" 2>/dev/null)" || return 0
   [ -n "$root" ] || return 0
-  data="${ROADWORTHY_DATA:-${CLAUDE_PLUGIN_DATA:-$root/.roadworthy}}"
+  data="$(rw_data_dir "$root")"
   mkdir -p "$data" 2>/dev/null || return 0
   front="$(python3 -c 'import json,sys
 try:
@@ -170,6 +170,37 @@ rw_realpath() {
   esac
 }
 
+# rw_data_dir <root> — where the evidence of a PROJECT lives: ROADWORTHY_DATA when it is set, else
+# <root>/.roadworthy. CLAUDE_PLUGIN_DATA is deliberately not in this chain. Claude Code sets it for
+# every hook to a directory that is per PLUGIN and shared by every project on the machine
+# (~/.claude/plugins/data/<id>/ per the plugins reference), while a shell run by a person does not
+# set it at all. Measured on 2026-09-14 at 13:33: the denials of the day were in that shared
+# directory, the evidence ledger was in the project, and the stop gate reported six FRESH gates as
+# MISSING because it looked where the hook environment pointed. One resolver, used by every writer
+# and every reader, is what makes the two agree. The pin of the principles file is the one
+# exception and says why in hooks/principles: that file lives outside every repository.
+rw_data_dir() {
+  local root="$1"
+  if [ -n "${ROADWORTHY_DATA:-}" ]; then printf '%s' "$ROADWORTHY_DATA"; else printf '%s/.roadworthy' "$root"; fi
+}
+
+# rw_project_plans_dir <root> — the plan's SECOND home: the `plans` directory the project declares
+# in .roadworthy/docs.json, resolved, or empty when the project declares none. Plan mode writes the
+# plan in plans_dir (~/.claude/plans by default); the house documentation norm keeps it under docs/.
+# A plan written in the second home was denied by the entry gate and unseen by the plan gate
+# (measured 2026-09-08: "no plan found"), so the three of them read this one function.
+rw_project_plans_dir() {
+  local root="$1" rel
+  [ -n "$root" ] && [ -f "$root/.roadworthy/docs.json" ] || return 0
+  rel="$(python3 -c 'import json,sys
+try:
+    print((json.load(open(sys.argv[1])) or {}).get("plans", "") or "")
+except Exception:
+    print("")' "$root/.roadworthy/docs.json" 2>/dev/null)" || rel=""
+  [ -n "$rel" ] || return 0
+  case "$rel" in /*) rw_realpath "${rel%/}" ;; *) rw_realpath "$root/${rel%/}" ;; esac
+}
+
 # rw_root <dir> — the repository the directory belongs to, resolved, or the directory itself.
 # A guard that reads `<cwd>/.roadworthy/...` is INERT one directory down: the session's cwd is
 # wherever the agent happens to be, and the project's files live at the top level.
@@ -193,35 +224,11 @@ rw_cmd_dir() {
 }
 
 # rw_glob_match <path> <comma-separated globs> — 0 when any glob matches.
-# Globs are translated to a regular expression, not matched with fnmatch:
-# `**/` becomes any depth, `*` stops at a separator, `?` takes one character.
+# The grammar lives in hooks/globmatch.py and nowhere else: the closing and the eval instrument
+# read the same file, so "in scope" means one thing to the lock that denies an edit and to the
+# instrument that counts it (until 0.6.1 rw-metrics answered through fnmatch, where `*` crosses
+# a `/`). Anchored at the root, always: a bare `README.md` matches at the root only, and "at any
+# depth" is spelled `**/README.md`.
 rw_glob_match() {
-  python3 - "$1" "$2" <<'PY'
-import os, re, sys
-path, globs = sys.argv[1], [g.strip() for g in sys.argv[2].split(",") if g.strip()]
-path = os.path.normpath(path)
-def to_regex(g):
-    g = os.path.normpath(g)
-    out = ""
-    i = 0
-    while i < len(g):
-        if g.startswith("**/", i):
-            out += "(?:.*/)?"; i += 3
-        elif g.startswith("**", i):
-            out += ".*"; i += 2
-        elif g[i] == "*":
-            out += "[^/]*"; i += 1
-        elif g[i] == "?":
-            out += "[^/]"; i += 1
-        else:
-            out += re.escape(g[i]); i += 1
-    return "^" + out + "$"
-for g in globs:
-    # Anchored at the root, always. A bare `README.md` used to also match `docs/README.md`,
-    # because the old fallback stripped the leading anchor and searched at any separator.
-    # A glob that means "at any depth" says so: `**/README.md`.
-    if re.match(to_regex(g), path):
-        sys.exit(0)
-sys.exit(1)
-PY
+  python3 "$(dirname "${BASH_SOURCE[0]}")/globmatch.py" "$1" "$2"
 }

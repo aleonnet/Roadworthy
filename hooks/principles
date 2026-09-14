@@ -15,6 +15,10 @@
 # Refuted 2026-09-13: injected -- narrowed the numbered-line pattern to `^[9]+[a-z]*`;
 # tests/run.sh went red with `bundled principles: 0`, green again on the clean file, and the file was
 # restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+# Refuted 2026-09-14, against tests/hooks/principles.sh, on the ledger this hook reads: a second
+# resolver planted in the writer (hooks/lib.sh) -> red with `the writer and the reader disagree on
+# the ledger`; the one resolver moved to CLAUDE_PLUGIN_DATA -> red with `the denial went to the
+# shared plugin directory`. Each green again on the clean file, restored with its SHA-256 verified.
 export RW_HOOK="principles"
 export RW_ON_CRASH=allow
 source "$(dirname "$0")/lib.sh"
@@ -30,14 +34,24 @@ cwd="$(rw_realpath "$(rw_field cwd)")"
 root="$(rw_root "$cwd")"
 # Where the plugin keeps what is not content. The principles file lives OUTSIDE any repository
 # and is shared by every project, so its digest cannot live in one of them; it is keyed on the
-# absolute path of the file it pins.
+# absolute path of the file it pins. This is the ONE place CLAUDE_PLUGIN_DATA (per plugin, shared
+# by every project, set by Claude Code for every hook) is the right home: the pin is global by
+# construction. Evidence of a PROJECT never goes there -- see rw_data_dir in hooks/lib.sh.
 data="${ROADWORTHY_DATA:-${CLAUDE_PLUGIN_DATA:-$HOME/.roadworthy}}"
+# The denials ledger is project evidence, and it is READ here through the same resolver that
+# WRITES it (rw_record_denial in lib.sh). Until 0.6.1 the writer resolved through
+# CLAUDE_PLUGIN_DATA and this reader did not, so in a real session the two never met: measured
+# on 2026-09-14, six denials in the shared directory, none in the project, and the line below
+# had never reached a prompt.
+project_data=""
+[ -n "$root" ] && project_data="$(rw_data_dir "$root")"
 
-python3 - "$principles" "$project_rules" "$transcript" "$data" "$root" <<'PY'
+python3 - "$principles" "$project_rules" "$transcript" "$data" "$root" "$project_data" <<'PY'
 import hashlib, json, os, re, sys, time
 principles, project_rules, transcript = sys.argv[1], sys.argv[2], sys.argv[3]
 data = sys.argv[4] if len(sys.argv) > 4 else ""
 root = sys.argv[5] if len(sys.argv) > 5 else ""
+project_data = sys.argv[6] if len(sys.argv) > 6 else ""
 numbered = re.compile(r"^[0-9]+[a-z]*\. ")
 
 def rules(path):
@@ -92,10 +106,9 @@ if data:
 # fact about how this session is behaving, and putting it back into the prompt is the only kind of
 # consequence that reaches the next turn. It is NOT a numbered line: those are the principles, and
 # the suite counts them.
-if root:
+if root and project_data:
     try:
-        ledger = os.path.join(os.environ.get("ROADWORTHY_DATA") or os.path.join(root, ".roadworthy"),
-                              "denials.jsonl")
+        ledger = os.path.join(project_data, "denials.jsonl")
         snap = os.path.join(root, ".roadworthy", "plan.snapshot")
         front = ""
         if os.path.exists(snap):
