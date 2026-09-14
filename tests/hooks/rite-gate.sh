@@ -86,6 +86,40 @@ rm -f "$RG/.roadworthy/state"
 NOGIT="$TMP/nogit-rite"; mkdir -p "$NOGIT"
 run_hook rite-gate "{\"tool_name\":\"Edit\",\"cwd\":\"$NOGIT\",\"tool_input\":{\"file_path\":\"$NOGIT/a.py\"}}"
 ! denied && ok "outside a git repository the gate is inert" || fail "the gate denied outside a repository"
+# ── what the FIRST real session found, in its first two minutes ─────────────
+# The gate had never run outside a synthetic event in a toy repository, and none of those events
+# wrote outside the repository or carried `2>/dev/null`. All three below were measured on
+# 2026-09-14, against the installed 0.6.0, with no front open.
+rm -f "$RG/.roadworthy/scope" "$RG/.roadworthy/state"
+rg Bash "{\"command\":\"echo x > $TMP/outside-the-repo.txt\"}"
+! denied && ok "a shell write OUTSIDE the repository is not this repository's work" || fail "the gate denied a write outside the repository: $OUT"
+# `2>/dev/null` was denied for the same reason, and is fixed by the same rule: /dev/null is not
+# inside the repository. A list of device names was written here first and then removed -- the
+# refutation proved it was dead code, because the outside-the-repository rule already answered it.
+rg Bash "{\"command\":\"grep -n x $RG/src/a.py 2>/dev/null\"}"
+! denied && ok "2>/dev/null is not a write (the commonest idiom in shell)" || fail "2>/dev/null denied: $OUT"
+for dev in /dev/stdout /dev/stderr /dev/tty /dev/fd/2; do
+  rg Bash "{\"command\":\"echo x > $dev\"}"
+  denied && fail "a write to the device $dev was denied"
+done
+ok "nor is a write to /dev/stdout, /dev/stderr, /dev/tty or /dev/fd/2"
+# And the one that made the gate unopenable: the plan is what OPENS a front, and through the shell
+# it was denied -- so the first front of a project could only be opened with the edit tool.
+# plans_dir INSIDE the repository is the only case where the exemption does any work: outside it,
+# the rule about writes outside the repository already answers. A project that keeps its plans in
+# docs/plans is exactly that case.
+RGP2="$RG/docs/plans"; mkdir -p "$RGP2"
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$RGP2" run_hook rite-gate "{\"tool_name\":\"Bash\",\"cwd\":\"$RG\",\"tool_input\":{\"command\":\"cat > $RGP2/p.md\"}}"
+! denied && ok "the plan can be written through the shell too, with no front" || fail "the shell could not write the plan that opens the front: $OUT"
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$RGP2" run_hook rite-gate "{\"tool_name\":\"Bash\",\"cwd\":\"$RG\",\"tool_input\":{\"command\":\"cat > $RG/docs/other.md\"}}"
+denied && ok "and a neighbour of the plans directory is still denied" || fail "the plans exemption spilled onto its parent"
+# None of that loosens what the gate is for.
+rg Bash "{\"command\":\"echo x > $RG/src/a.py\"}"
+denied && ok "a shell write INSIDE the repository is still denied with no front" || fail "the gate stopped guarding its own repository"
+rg Bash "{\"command\":\"echo x > $RG/.roadworthy/scope 2>/dev/null\"}"
+denied && printf '%s' "$OUT" | grep -q 'written by a script' \
+  && ok "and the foundation is still denied even next to a device redirection" || fail "the device exemption leaked onto the foundation: $OUT"
+
 CLAUDE_PLUGIN_OPTION_RITE_GATE=false rg Edit "{\"file_path\":\"$RG/src/a.py\"}"
 ! denied && ok "rite_gate=false honoured" || fail "rite_gate=false ignored"
 

@@ -34,6 +34,29 @@ this plugin always said. The option is `plan_gate` (`preflight` | `review` | `bo
    and refuses. Anyone on Windows without bash has been running with **no guardrails at all**
    while believing otherwise; discovering that through a refusal is better than not discovering it.
 
+### Fixed — 2026-09-14, the entry gate met a real session and was unusable
+
+0.6.0 was installed and reloaded at 11:45. **That is the first time `rite-gate` ever ran outside a
+synthetic event in a toy repository** — the acceptance 0.5.0 left unproved. It fired, and the bench
+found two defects in two minutes, each with the command that produced it.
+
+- **A shell write outside the repository was denied.** `echo x > /tmp/f` from a project with no
+  front open came back refused, and so did every write into the session's scratchpad. The gate
+  exists to stop work on THIS repository without a rite; a write somewhere else is not that. The
+  same omission was in the edit branch. Both now ignore a target outside the repository root, and
+  the foundation is still matched by its path relative to that root, which is where it lives.
+  - This also answers `2>/dev/null`, the commonest idiom in shell, which was being read as a write
+    to `/dev/null` and denied. A list of device names was written first and then **removed**: the
+    refutation proved it was dead code, because /dev/null is not inside the repository either.
+- **The plan could not be written through the shell.** The edit tools were exempt in `plans_dir`;
+  the shell was not, so `cat > <plan>` was refused — and the plan is what OPENS a front, so the
+  first front of a project could only be opened with an edit tool. With the default plans_dir the
+  rule above already covers it; the exemption is what makes it hold for a project that keeps its
+  plans inside the repository, and that is the case the assertion measures.
+
+Each fix is refuted against `tests/hooks/rite-gate.sh`: the defect injected, the case red for its
+own reason, green again on the clean file, the file restored with its SHA-256 verified.
+
 ### Fixed — 2026-09-14, the suite reported success on a suite that had died
 
 Found by the suite, on itself, while it was being reorganised — and it is the worst class of defect

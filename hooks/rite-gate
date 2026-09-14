@@ -31,6 +31,12 @@
 # answer, and a guard that fails closed on what it cannot parse denies nearly every command. What
 # compensates is close.sh, which refuses to close a front whose diff touched anything undeclared.
 #
+# Refuted 2026-09-14, against tests/hooks/rite-gate.sh: a write outside the repository counted
+# as work on it -> red with `the gate denied a write outside the repository`; the plans
+# exemption removed with plans_dir inside the repository -> red with `the shell could not
+# write the plan that opens the front`; the foundation check removed -> red with `the shell
+# widened the scope`. Each green again on the clean file, restored with its SHA-256 verified.
+#
 # Refuted 2026-09-13: injected -- treated an empty scope file as an open front;
 # tests/run.sh went red with `an empty scope file opens a front`, green again on the clean file,
 # and the file was restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
@@ -153,6 +159,10 @@ PY
     # The foundation is protected through THIS door too. Guarding only the edit tools left the
     # exact hole the roadmap recorded from the field -- appending a glob to .roadworthy/scope
     # with a justification quoted from the chat -- open, one `>>` away, whenever a front was open.
+    plans="$(rw_option PLANS_DIR "")"
+    [ -n "$plans" ] || plans="$HOME/.claude/plans"
+    plans="$(rw_realpath "${plans%/}")"
+    inside=""
     while IFS= read -r one; do
       [ -n "$one" ] || continue
       abs="$one"
@@ -160,13 +170,25 @@ PY
       abs="$(rw_realpath "$abs")"
       rel="$abs"
       case "$abs" in "$root"/*) rel="${abs#"$root"/}" ;; esac
+      # The foundation is protected wherever it is named, front or no front.
       if foundation "$rel"; then deny_foundation "$rel"; fi
+      # The plan is the rite's own artefact: it is what OPENS a front, so it cannot need one.
+      # The edit tools were already exempt; the shell was not, so `cat > <plan>` was denied. With
+      # the default plans_dir (~/.claude/plans) the rule below about writes outside the repository
+      # already covers it -- this line is what makes it hold for a project that points plans_dir
+      # at a directory INSIDE the repository, which is the only case where it bites. Measured:
+      # with this line removed and plans_dir inside the repo, the plan is denied.
+      case "$abs" in "$plans"|"$plans"/*) continue ;; esac
+      # A write OUTSIDE this repository is not work on this repository. Without this the gate
+      # denied `echo x > /tmp/...` and every write into the session scratchpad, which is not the
+      # thing it exists to stop.
+      case "$abs" in "$root"/*) [ -n "$inside" ] || inside="$rel" ;; esac
     done <<< "$target"
+    [ -n "$inside" ] || exit 0
     scope_usable && exit 0
     state="$(front_state)"
     case "$state" in gaps_found|needs_human) deny_bad_state "$state" ;; esac
-    first="$(printf '%s' "$target" | head -1)"
-    deny_no_front "the shell write to '$first'"
+    deny_no_front "the shell write to '$inside'"
     ;;
   *)
     target="$(rw_field tool_input.file_path)"
@@ -188,6 +210,8 @@ PY
     case "$relative" in
       .roadworthy/docs.json|.roadworthy/protected|.roadworthy/overnight-rules) exit 0 ;;
     esac
+    # Same rule as the shell door: a file outside this repository is not this repository's work.
+    case "$target" in "$root"/*) ;; *) exit 0 ;; esac
 
     scope_usable && exit 0
     state="$(front_state)"
