@@ -1,6 +1,6 @@
 # <Title>
 
-project: <absolute path of the repository this plan belongs to>
+project: ~/<path of the repository this plan belongs to, written from your home>
 base: <git ref this plan is written against — omit when it is the working tree>
 status: proposed
 <!-- status: use the word your project declares under "status" in .roadworthy/docs.json.
@@ -8,7 +8,10 @@ status: proposed
      docs-check.sh will tell you if the word is wrong for your project. -->
 
 `project:` binds the plan to its repository: the plans directory is shared by every project,
-and without it the gate can elect a newer plan of another project. `base:` is for a front that
+and without it the gate can elect a newer plan of another project. Write it from your home with
+`~`, never as an absolute path: the gate expands `~`, and a plan kept inside the repository is
+committed — an absolute home path in a tracked file publishes the layout of the machine that
+wrote it (this repository's own privacy scan refuses one). `base:` is for a front that
 branches from a tag or a release branch instead of the tip: declare it and every reading —
 yours and the reviewer's — is done with `git show <base>:<path>` and `git grep <pattern> <base>`
 instead of the working tree, so the review does not report divergences that only exist against

@@ -1,4 +1,4 @@
-status: accepted
+status: superado por 2026-09-14-2228-handoff-0-6-2.md
 
 # Handoff — README em duas línguas, o fecho da 0.6.1 — 2026-09-14 18:53
 

@@ -5,6 +5,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-09-14
+
+**The plan template taught a form the suite refuses.** Its `project:` line asked for an absolute
+path; a plan kept inside the repository and committed then carried `/Users/<name>/…`, and this
+repository's own privacy scan went red on it (measured 2026-09-14, on the plan of the README
+front). The gate has expanded `~` since 0.5.0 (`hooks/plan-review-gate`, `same`), and a plan
+declaring `project: ~/…` was elected and approved by it in the same session. The template now
+teaches `~`, and the template case asserts both halves: the `project:` line starts with `~/`, and
+no home path appears anywhere in the file — red on the old template, green on this one, refuted
+with the defect planted. The template is read by the agent from the installed copy, so this ships
+as a patch; the README work below rides along.
+
+### Fixed — 2026-09-14, the template and the version
+- `skills/plan/templates/plan.md`: `project:` is written from home with `~`, with the reason on the
+  line below it.
+- `tests/scripts/plan-template.sh`: two assertions for the above.
+- `hooks/plan-review-gate`: the denial for a plan of another project said "write a
+  `project: /Users/<name>/…` line", the absolute root, while the template says never absolute; a
+  user who obeyed the denial with the plan inside the repository committed the very path the
+  privacy scan refuses. The hint is written from home with `~` when the repository is under it.
+  Two assertions in `tests/hooks/plan-review-gate.sh`: the hint says `~`, and a plan declaring
+  `project: ~/…` is elected for its repository — the second was claimed by this file and measured
+  by nothing until the cold reader asked.
+- A gate that nobody had: `plugin.json`, `marketplace.json` and this file must agree on the
+  version. It is in `.roadworthy/gates` and refuted (the marketplace pinned one version back).
+
 ### Changed — 2026-09-14, the README in two languages, essentials first
 - `README.md` is rewritten for progressive disclosure: a language switch under the title, a
   TL;DR of four guarantees, install, the first front in four steps, then one line per hook and

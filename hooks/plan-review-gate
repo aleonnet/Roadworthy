@@ -50,6 +50,9 @@
 # red with `the plan this session wrote was not elected`; the announcement removed -> red with
 # `the date decided in silence`; the second home removed -> red with `the plan in docs/plans was
 # not found`. Each green again on the clean file, restored with its SHA-256 verified.
+# Refuted 2026-09-14 (0.6.2): the hint of the "another project" denial back to the absolute root
+# -> red with `the denial hints an absolute home path`; the `~` expansion removed from `same` ->
+# red with `a project declared with ~ was not matched`. Both green again on the clean file.
 export RW_HOOK="plan-review-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -221,7 +224,13 @@ pre = ptext.split("\n## ", 1)[0]
 
 proj = field(pre, "project|projeto")
 if root and proj and not same(proj, root):
-    out("DENY", f"the plan this call would submit ({name}) belongs to another project ({proj}); the plans directory is shared by every project. Write the plan of this project there with a 'project: {root}' line and submit again.")
+    # The hint teaches the form the template teaches: the root written from home with `~`. The
+    # absolute root was printed here until 0.6.2, and a plan kept inside the repository that
+    # obeyed it committed a home path -- the thing the privacy scan of this repository refuses.
+    home = os.path.realpath(os.path.expanduser("~"))
+    rr = os.path.realpath(root)
+    hint = "~" + rr[len(home):] if rr == home or rr.startswith(home + os.sep) else root
+    out("DENY", f"the plan this call would submit ({name}) belongs to another project ({proj}); the plans directory is shared by every project. Write the plan of this project there with a 'project: {hint}' line and submit again.")
 
 # A front that branches from a tag or a release branch is written against that ref, not the
 # working tree. Declared, the base must resolve — a typo or an unfetched tag would otherwise

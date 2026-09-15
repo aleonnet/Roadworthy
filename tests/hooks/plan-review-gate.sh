@@ -90,6 +90,19 @@ denied && printf '%s' "$OUT" | grep -q 'b.md' && ok "from the other repository i
 mkdir -p "$TMP/onlyother"; printf '# other\nproject: %s\n\n## Goal\n' "$RB" > "$TMP/onlyother/b.md"
 CLAUDE_PLUGIN_OPTION_PLANS_DIR="$TMP/onlyother" run_hook plan-review-gate "$(ev "$RA")"
 denied && printf '%s' "$OUT" | grep -q 'belongs to another project' && ok "another project's plan is named, not asked for a review" || fail "cryptic denial for another project's plan"
+# The hint in that denial has to teach the form the template teaches: the project written from
+# home with `~`, never the absolute root. Until 0.6.2 the template said `~` and the denial said
+# `/Users/…`; a user who obeyed the denial and kept the plan inside the repository committed the
+# home path the privacy scan refuses (measured 2026-09-14). HOME is the sandbox here so that the
+# repository sits under it, the way a real project does.
+RH="$HOME_SANDBOX/repo-home"; mkdir -p "$RH"; git -C "$RH" init -q
+HOME="$HOME_SANDBOX" CLAUDE_PLUGIN_OPTION_PLANS_DIR="$TMP/onlyother" run_hook plan-review-gate "$(ev "$RH")"
+denied && printf '%s' "$OUT" | grep -q "project: ~/repo-home" && ok "the denial hints the project line from home with ~" || fail "the denial hints an absolute home path instead of ~: $OUT"
+# And a plan that follows the hint is elected: `~` is expanded when the header is compared.
+printf '# plan\nproject: ~/repo-home\n\n## Goal\n\n## Review\nVERDICT: APPROVED\n' > "$PB/h.md"
+HOME="$HOME_SANDBOX" run_hook plan-review-gate "$(ev "$RH")"
+! denied && ok "a plan declaring project: ~/… is elected for its repository and passes" || fail "a project declared with ~ was not matched: $OUT"
+rm -f "$PB/h.md"
 # One directory, two names: /var is a link to /private/var on macOS, so a declared path and a
 # `git rev-parse` root differ as strings. Both sides are resolved before comparing.
 printf '# plan\nproject: %s\n\n## Goal\n\n## Review\nVERDICT: APPROVED\n' "$(cd "$RA" && pwd -P)" > "$PB/a.md"
