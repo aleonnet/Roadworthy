@@ -1,7 +1,7 @@
 # O molde do plano pede `~`, não caminho de home; 0.6.2
 
 project: ~/Development/roadworthy
-status: proposed
+status: accepted
 
 ## Contexto
 
