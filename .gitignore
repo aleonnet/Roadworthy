@@ -28,3 +28,7 @@ evals-round2/results/
 # Python leaves this behind whenever bin/rw-metrics is imported or compiled; it is a build
 # artefact of the machine that ran it, never source.
 bin/__pycache__/
+
+# The maintainer's private working notes (roadmap drafts, red-team findings). They mention the
+# projects the plugin was measured on, so they never ship with the public repository.
+docs/roadmap/
