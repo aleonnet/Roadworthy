@@ -1,9 +1,9 @@
-# Written by scope-write.sh from 2026-09-18-1630-roadmap-privado-lacunas-de-enforcement.md. Do not edit by hand: the closing is measured
+# Written by scope-write.sh from 2026-09-30-2154-o-rito-diz-a-verdade.md. Do not edit by hand: the closing is measured
 # against .roadworthy/plan.snapshot, and a hand edit here only makes the digests disagree.
 bash tests/run.sh
 bash tests/attack.sh
 bash skills/document/scripts/docs-check.sh docs
-bash skills/refute/scripts/refute-ledger.sh hooks --sources principles,protect-paths,scope-lock,guard-commit,overnight-guard,plan-review-gate,rite-gate,stop-gate
+bash skills/refute/scripts/refute-ledger.sh hooks --sources principles,protect-paths,scope-lock,guard-commit,overnight-guard,plan-review-gate,rite-gate,stop-gate,session-state
 bash skills/document/scripts/pointers-check.sh README.md README.pt-BR.md --root .
 test "$(grep -c '^## ' README.md)" = "$(grep -c '^## ' README.pt-BR.md)" && test "$(grep -c '<details>' README.md)" = "$(grep -c '<details>' README.pt-BR.md)" && grep -q '(README.pt-BR.md)' README.md && grep -q '(README.md)' README.pt-BR.md || { echo "readme-parity: README.md and README.pt-BR.md disagree in sections, folds or cross-links"; false; }
 v="$(python3 -c 'import json;print(json.load(open(".claude-plugin/plugin.json"))["version"])')" && test "$v" = "$(python3 -c 'import json;print(json.load(open(".claude-plugin/marketplace.json"))["plugins"][0]["version"])')" && grep -q "^## \[$v\] - " CHANGELOG.md || { echo "version-parity: plugin.json, marketplace.json and CHANGELOG disagree on the version"; false; }

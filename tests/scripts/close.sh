@@ -88,6 +88,86 @@ printf '# only a comment\n\n' > "$NG/.roadworthy/gates"; printf 'f\n' > "$NG/.ro
 git -C "$NG" -c user.email=t@t -c user.name=t add -A; git -C "$NG" -c user.email=t@t -c user.name=t commit -q -m gates
 ! (cd "$NG" && ROADWORTHY_DATA="$TMP/ngdata" bash "$ROOT/skills/close/scripts/close.sh" --check) >/dev/null 2>&1 && ok "--check on a gates file that declares none fails" || fail "--check passed with zero declared gates"
 ! (cd "$NG" && ROADWORTHY_DATA="$TMP/ngdata" bash "$ROOT/skills/close/scripts/close.sh") >/dev/null 2>&1 && [ -f "$NG/.roadworthy/scope" ] && ok "close with zero declared gates fails and keeps the scope" || fail "close released the scope with nothing measured"
+
+# ── 0.7.0: the closing tells the truth ───────────────────────────────────────
+section "close.sh (every declared gate runs, and its evidence is kept)"
+CLOSE="$ROOT/skills/close/scripts/close.sh"
+# A gate inherited the loop's standard input, which is the gates file itself. Measured in the field
+# on 2026-09-24: nine gates declared, the seventh an `ssh`, which read the two lines after it; the
+# loop met end of file, nothing had failed, and the front closed `passed` with two gates never run.
+SI="$TMP/stdin-gate"; fx_repo_committed "$SI"; mkdir -p "$SI/.roadworthy"
+printf 'cat >/dev/null\nfalse\n' > "$SI/.roadworthy/gates"; printf 'f\n' > "$SI/.roadworthy/scope"
+git -C "$SI" add -A; git -C "$SI" commit -q -m gates
+SI_OUT="$( (cd "$SI" && bash "$CLOSE") 2>&1 || true )"
+# The assertion is that the SECOND gate ran and failed -- not merely that the closing refused,
+# which the count of gates below would also catch.
+printf '%s' "$SI_OUT" | grep -q 'FAIL  false' && printf '%s' "$SI_OUT" | grep -q '1 gate(s) red' && [ -f "$SI/.roadworthy/scope" ] \
+  && ok "a gate that reads its standard input does not swallow the gates after it" || fail "a gate that reads stdin hid the gates after it: $SI_OUT"
+# The whole output of a gate was handed to python3 as an ARGUMENT. Above the system's limit the
+# record is never written -- `python3: Argument list too long` in the field on 2026-09-22, with a
+# suite of 3,896 tests -- so the gate passes on the screen and is MISSING to the next --check.
+BG="$TMP/big-gate"; fx_repo_committed "$BG"; mkdir -p "$BG/.roadworthy"
+printf '%s\n' "python3 -c \"import sys; sys.stdout.write('x' * 3000000)\"" > "$BG/.roadworthy/gates"; printf 'f\n' > "$BG/.roadworthy/scope"
+git -C "$BG" add -A; git -C "$BG" commit -q -m gates
+(cd "$BG" && bash "$CLOSE") > "$TMP/big.log" 2>&1 || true
+BG_CHK="$( (cd "$BG" && bash "$CLOSE" --check) 2>&1 || true )"
+printf '%s' "$BG_CHK" | grep -q 'FRESH     python3' \
+  && ok "a gate that prints three megabytes still leaves its evidence, and --check says FRESH" || fail "a large gate output left no evidence: $BG_CHK $(tail -2 "$TMP/big.log")"
+# Defence in depth for the first case: whatever makes the loop stop early, the number of gates that
+# ran has to be the number declared. Here a gate empties the list while the closing is reading it.
+TG="$TMP/trunc-gate"; fx_repo_committed "$TG"; mkdir -p "$TG/.roadworthy"
+printf ': > .roadworthy/gates\nfalse\n' > "$TG/.roadworthy/gates"; printf 'f\n' > "$TG/.roadworthy/scope"
+git -C "$TG" add -A; git -C "$TG" commit -q -m gates
+TG_OUT="$( (cd "$TG" && bash "$CLOSE") 2>&1 || true )"
+printf '%s' "$TG_OUT" | grep -q '2 gate(s) declared, 1 ran' && [ -f "$TG/.roadworthy/scope" ] \
+  && ok "a closing whose loop stopped early is refused, saying how many were declared and how many ran" || fail "the closing passed with gates that never ran: $TG_OUT"
+
+section "close.sh (human verification has a state of its own)"
+# The state was ONE word, rewritten by every closing. Measured in the field on 2026-09-30: three
+# items waiting for a person at 18:28, a documentation front closed at 19:55 and wrote `passed`
+# over them; one was never checked. And there was no way to record the answer at all.
+HU="$TMP/human"; fx_repo_committed "$HU"; mkdir -p "$HU/.roadworthy"
+printf 'true\n' > "$HU/.roadworthy/gates"; printf 'f\n' > "$HU/.roadworthy/scope"
+git -C "$HU" add -A; git -C "$HU" commit -q -m gates
+(cd "$HU" && bash "$CLOSE" --needs-human "bench 3 on the device") >/dev/null
+(cd "$HU" && bash "$CLOSE" --needs-human "bench 3 on the device") >/dev/null     # said twice: one item
+HU_OUT="$( (cd "$HU" && bash "$CLOSE") 2>&1 || true )"
+[ "$( (cd "$HU" && bash "$CLOSE" --state) )" = "needs_human" ] && printf '%s' "$HU_OUT" | grep -q 'bench 3 on the device' && [ ! -f "$HU/.roadworthy/scope" ] \
+  && ok "a green closing does not erase a pending human verification: the state stays needs_human and the item is named" || fail "a later closing erased the pending human verification: $HU_OUT"
+[ "$( (cd "$HU" && bash "$CLOSE" --human) | grep -c 'bench 3')" = "1" ] && ok "the same item said twice is one item" || fail "a repeated item counted twice: $( (cd "$HU" && bash "$CLOSE" --human) )"
+! (cd "$HU" && bash "$CLOSE" --human "no such item" approved --by owner) >/dev/null 2>&1 && ok "a verdict on an item nobody opened is refused" || fail "a verdict on an unknown item was accepted"
+! (cd "$HU" && bash "$CLOSE" --human "bench 3 on the device" approved) >/dev/null 2>&1 && ok "a verdict with nobody named is refused (--by)" || fail "an anonymous verdict was accepted"
+(cd "$HU" && bash "$CLOSE" --human "bench 3 on the device" approved --by owner) >/dev/null
+[ "$( (cd "$HU" && bash "$CLOSE" --state) )" = "passed" ] && [ -z "$( (cd "$HU" && bash "$CLOSE" --human) | grep 'bench 3' || true)" ] \
+  && ok "an approved verdict closes the item, and the state goes back to what the closing measured" || fail "the human verdict was not recorded: state $( (cd "$HU" && bash "$CLOSE" --state) )"
+(cd "$HU" && bash "$CLOSE" --needs-human "colour bands") >/dev/null
+(cd "$HU" && bash "$CLOSE" --human "colour bands" rejected --by owner --note "wrong hue") >/dev/null
+[ "$( (cd "$HU" && bash "$CLOSE" --state) )" = "gaps_found" ] && [ "$(cat "$HU/.roadworthy/state")" = "gaps_found" ] \
+  && ok "a rejected verdict records gaps_found: the work is reopened, not forgotten" || fail "the human verdict was not recorded: a rejection left state $( (cd "$HU" && bash "$CLOSE" --state) )"
+# A record written by 0.6.2 has no kind and no id: it is still an item waiting for someone.
+python3 -c 'import json,sys
+open(sys.argv[1],"a").write(json.dumps({"ts":"2026-09-30T18:28:00","head":"x","wtree":"x","cmd":"needs-human: legacy item","cmd_sha256":"x","exit":0,"tail":"legacy item"})+"\n")' "$ROADWORTHY_DATA/evidence.jsonl"
+LG="$( (cd "$HU" && bash "$CLOSE" --human) )"
+printf '%s' "$LG" | grep -q 'legacy item' && ok "an item recorded by 0.6.2 is read back as open" || fail "a 0.6.2 needs-human record was ignored: $LG"
+(cd "$HU" && bash "$CLOSE" --human all approved --by owner) >/dev/null
+[ -z "$( (cd "$HU" && bash "$CLOSE" --human) | grep -v '^close: no human' || true)" ] && ok "--human all closes every open item at once" || fail "--human all left items open: $( (cd "$HU" && bash "$CLOSE" --human) )"
+# A front with no way forward has an exit that is recorded, never a silent one.
+AB="$TMP/abandon"; fx_repo_committed "$AB"; mkdir -p "$AB/.roadworthy"
+printf 'false\n' > "$AB/.roadworthy/gates"; printf 'f\n' > "$AB/.roadworthy/scope"
+git -C "$AB" add -A; git -C "$AB" commit -q -m gates
+# Run the way a project runs: its own ledger, inside it.
+! (cd "$AB" && env -u ROADWORTHY_DATA bash "$CLOSE" --abandon) >/dev/null 2>&1 && [ -f "$AB/.roadworthy/scope" ] && ok "abandoning a front needs a reason" || fail "a front was abandoned with no reason"
+(cd "$AB" && env -u ROADWORTHY_DATA bash "$CLOSE" --abandon "the approach was wrong; replanning") >/dev/null
+[ ! -f "$AB/.roadworthy/scope" ] && [ "$( (cd "$AB" && env -u ROADWORTHY_DATA bash "$CLOSE" --state) )" = "gaps_found" ] && grep -q 'the approach was wrong' "$AB/.roadworthy/evidence.jsonl" \
+  && ok "an abandoned front releases the scope, records the reason and leaves gaps_found" || fail "abandon did not record: state $( (cd "$AB" && env -u ROADWORTHY_DATA bash "$CLOSE" --state) )"
+# A project's own ledger is the project's whatever its path is today: renaming the directory must
+# not drop what is waiting for a person.
+MV="$TMP/moved-a"; fx_repo_committed "$MV"; mkdir -p "$MV/.roadworthy"; printf 'true\n' > "$MV/.roadworthy/gates"
+git -C "$MV" add -A; git -C "$MV" commit -q -m gates
+(cd "$MV" && env -u ROADWORTHY_DATA bash "$CLOSE" --needs-human "check the label") >/dev/null
+mv "$MV" "$TMP/moved-b"
+[ "$( (cd "$TMP/moved-b" && env -u ROADWORTHY_DATA bash "$CLOSE" --state) )" = "needs_human" ] \
+  && ok "a pending item survives the repository being renamed" || fail "renaming the repository dropped a pending human verification"
 unset ROADWORTHY_DATA
 
 rw_end

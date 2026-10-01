@@ -13,17 +13,43 @@
 # A record is FRESH when its wtree equals the current content fingerprint, STALE otherwise,
 # MISSING when no record exists for the command.
 #
+# EVERY DECLARED GATE RUNS, OR THE CLOSING REFUSES (0.7.0). Until then the loop read the gates file
+# through its standard input and every gate inherited it: a gate that reads stdin -- an `ssh`, a
+# `cat` with no argument -- consumed the lines after it, the loop met end of file with nothing
+# failed, and the front closed `passed` with gates that never ran (field, 2026-09-24: nine
+# declared, seven run). The list is read through its own descriptor now, each gate gets an empty
+# standard input, and the number that ran must equal the number declared.
+#
+# THE EVIDENCE OF A GATE DOES NOT DEPEND ON HOW MUCH IT PRINTS (0.7.0). The whole output used to
+# travel to python3 as an ARGUMENT; above the system's limit the record was never written, the
+# screen said OK and the next --check said MISSING (field, 2026-09-22, a suite of 3,896 tests:
+# `python3: Argument list too long`). The output goes to a file and the record reads its tail.
+#
+# HUMAN VERIFICATION HAS A STATE OF ITS OWN (0.7.0). The state was one word, rewritten by every
+# closing, so a later front erased what an earlier one left for a person to check, and there was no
+# way to record the answer (field, 2026-09-30). The items live in the evidence ledger, which has
+# always recorded them and was never read back: `--needs-human` opens one, `--human` closes it with
+# who checked, and the state is derived -- `needs_human` while any is open, whatever closed since.
+#
 # Refuted 2026-09-14, against tests/scripts/close.sh: the ledger resolved through CLAUDE_PLUGIN_DATA
 # again -> red with `close.sh looked for the ledger in the shared plugin directory`; the orphan
 # check removed from the closing -> red with `an orphan scope closed the front`; removed from
 # --check -> red with `an orphan scope passed --check`. Each green again on the clean file,
 # restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+# Refuted 2026-09-30 (0.7.0), same case: the gate handed the list as its standard input -> red with
+# `a gate that reads stdin hid the gates after it`; the output passed as an argument again -> red
+# with `a large gate output left no evidence`; the declared-against-ran comparison removed -> red
+# with `the closing passed with gates that never ran`; the derived state ignoring open items -> red
+# with `a later closing erased the pending human verification`. Each green again on the clean file.
 #
 # Usage:
 #   close.sh               run all gates (requires a clean tree); exit 0 = passed
 #   close.sh --check       classify each gate FRESH | STALE | MISSING for the current tree
-#   close.sh --needs-human "<item>"   record that a person must verify <item>; state needs_human
-#   close.sh --state       print the last recorded state: passed | gaps_found | needs_human
+#   close.sh --state       print the state: passed | gaps_found | needs_human | none
+#   close.sh --needs-human "<item>"                 a person must verify <item>
+#   close.sh --human                                list what is waiting for a person
+#   close.sh --human "<item>|<id>|all" approved|rejected --by <who> [--note "<text>"]
+#   close.sh --abandon "<reason>"                   release a front that will not close, on the record
 set -uo pipefail
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "close: not a git repository" >&2; exit 1; }
 cd "$root" || exit 1
@@ -64,6 +90,12 @@ read_state() {
 }
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fp() { bash "$here/tree-fingerprint.sh" "$root"; }
+front_name() {
+  [ -f "$snapshot" ] || return 0
+  python3 -c 'import json,sys
+try: print(json.load(open(sys.argv[1])).get("plan_name", ""))
+except Exception: print("")' "$snapshot" 2>/dev/null || true
+}
 # A gate that cannot go red is a green light, not a measurement. This is a NAMED enumeration and
 # it never closes, so it warns and never refuses -- what defends the closing is that every gate
 # has to come from the plan. Silence, though, is how "every gate FRESH" gets written under a
@@ -75,25 +107,196 @@ trivially_green() {
   esac
 }
 
-record() { # cmd exit tail
+record() { # record <cmd> <exit> <file holding the gate's output>
   python3 - "$ledger" "$1" "$2" "$3" "$(fp)" <<'PY'
-import hashlib, json, sys, time
-ledger, cmd, rc, tail, fp = sys.argv[1:6]
+import hashlib, json, os, sys, time
+ledger, cmd, rc, out_file, fp = sys.argv[1:6]
 head, wtree, state = fp.split()
+tail = ""
+# The TAIL of the file, never the whole of it: a gate may print megabytes, and only the last
+# lines say how it ended.
+if out_file and os.path.exists(out_file):
+    with open(out_file, "rb") as fh:
+        fh.seek(0, 2)
+        fh.seek(max(0, fh.tell() - 4000))
+        tail = fh.read().decode("utf-8", errors="replace")[-800:]
 with open(ledger, "a", encoding="utf-8") as fh:
     fh.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "head": head, "wtree": wtree,
                          "cmd": cmd, "cmd_sha256": hashlib.sha256(cmd.encode()).hexdigest(),
-                         "exit": int(rc), "tail": tail[-800:]}) + "\n")
+                         "exit": int(rc), "tail": tail}) + "\n")
 PY
 }
 
+# Everything in the ledger that is not a gate: the items waiting for a person, the verdicts, and
+# how each closing ended. One reader and one writer, so the state is DERIVED from what happened
+# instead of being the last word somebody wrote.
+#   rw_ledger state                                   -> the derived state, or empty when the
+#                                                        ledger says nothing (the state file decides)
+#   rw_ledger open                                    -> one line per open item: id TAB item TAB ts TAB front
+#   rw_ledger add-open <item> <front>                 -> a person must verify <item>
+#   rw_ledger verdict <item|id|all> <approved|rejected> <by> <note>   exit 3: nothing matched
+#   rw_ledger close <passed|gaps_found|abandoned> <front> <reason>
+rw_ledger() {
+  python3 - "$ledger" "$root" "$(fp)" "$@" <<'PY'
+import hashlib, json, os, sys, time
+ledger, root, fp, op = sys.argv[1], os.path.realpath(sys.argv[2]), sys.argv[3], sys.argv[4]
+args = sys.argv[5:]
+# A ledger inside the project belongs to the project, whatever path the project has today. Only a
+# ledger that lives elsewhere (ROADWORTHY_DATA) can hold the records of several projects.
+shared = os.path.realpath(os.path.dirname(ledger)) != os.path.join(root, ".roadworthy")
+head, wtree = (fp.split() + ["", ""])[:2]
+
+def records():
+    out = []
+    if os.path.exists(ledger):
+        for line in open(ledger, encoding="utf-8", errors="replace"):
+            try:
+                out.append(json.loads(line))
+            except Exception:
+                continue
+    return out
+
+def mine(r):
+    # In the project's own ledger every record is the project's: filtering by path there would
+    # drop the pending items of a repository the day its directory is renamed. In a shared ledger
+    # a record that names a root belongs to that root; one written by 0.6.2 names none and belongs
+    # to whoever reads it.
+    if not shared:
+        return True
+    return not r.get("root") or os.path.realpath(r["root"]) == root
+
+def item_id(text):
+    # The identity of an item is its text: said twice, it is one item, and a record of 0.6.2
+    # (no id at all) is the same item as the one a later command names.
+    return hashlib.sha256(" ".join(text.split()).encode()).hexdigest()[:8]
+
+def fold():
+    open_items, outcome, rejected = {}, "", False
+    for r in records():
+        if not mine(r):
+            continue
+        kind, cmd = r.get("kind", ""), r.get("cmd", "")
+        if kind == "needs-human" or (not kind and cmd.startswith("needs-human: ")):
+            item = r.get("item") or cmd[len("needs-human: "):]
+            open_items.setdefault(item_id(item), (item, r.get("ts", ""), r.get("front", "")))
+        elif kind == "human":
+            open_items.pop(item_id(r.get("item", "")), None)
+            if r.get("verdict") == "rejected":
+                rejected = True
+        elif kind == "close":
+            outcome = r.get("outcome", "")
+            if outcome == "passed":
+                rejected = False        # the work was redone and its gates passed again
+    return open_items, outcome, rejected
+
+def append(rec):
+    rec = dict({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "head": head, "wtree": wtree,
+                "root": root, "exit": 0}, **rec)
+    rec["cmd_sha256"] = hashlib.sha256(rec["cmd"].encode()).hexdigest()
+    with open(ledger, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+if op == "state":
+    open_items, outcome, rejected = fold()
+    if open_items:
+        print("needs_human")
+    elif rejected:
+        print("gaps_found")
+    elif outcome:
+        print("passed" if outcome == "passed" else "gaps_found")
+elif op == "open":
+    for iid, (item, ts, front) in fold()[0].items():
+        print("\t".join((iid, item, ts, front)))
+elif op == "add-open":
+    item, front = args[0], args[1]
+    append({"kind": "needs-human", "cmd": "needs-human: " + item, "item": item, "id": item_id(item),
+            "front": front, "tail": item})
+elif op == "verdict":
+    which, verdict, by, note = args[0], args[1], args[2], args[3]
+    open_items = fold()[0]
+    if which == "all":
+        targets = list(open_items.items())
+    else:
+        targets = [(i, v) for i, v in open_items.items() if which in (i, v[0]) or item_id(which) == i]
+    if not targets:
+        sys.exit(3)
+    for iid, (item, _, front) in targets:
+        append({"kind": "human", "cmd": "human: %s %s" % (item, verdict), "item": item, "id": iid,
+                "verdict": verdict, "by": by, "note": note, "front": front, "tail": note})
+elif op == "close":
+    outcome, front, reason = args[0], args[1], args[2]
+    append({"kind": "close", "cmd": "close: " + outcome, "outcome": outcome, "front": front,
+            "reason": reason, "tail": reason})
+PY
+}
+# The state the ledger derives, written where the fences and the next session read it. When the
+# ledger says nothing at all -- a project from before 0.7.0 -- the recorded word stands.
+sync_state() {
+  local derived
+  derived="$(rw_ledger state)"
+  [ -n "$derived" ] && record_state "$derived"
+  return 0
+}
+current_state() {
+  local derived
+  derived="$(rw_ledger state)"
+  if [ -n "$derived" ]; then printf '%s\n' "$derived"; else read_state; fi
+}
+end_closing() {  # end_closing <passed|gaps_found|abandoned> [reason]
+  rw_ledger close "$1" "$(front_name)" "${2:-}"
+  sync_state
+}
+print_open_human() {  # prints the open items, indented; returns 1 when there are none
+  local lines
+  lines="$(rw_ledger open)"
+  [ -n "$lines" ] || return 1
+  printf '%s\n' "$lines" | while IFS=$'\t' read -r id item ts front; do
+    printf '  %s  %s  (since %s%s)\n' "$id" "$item" "$ts" "${front:+, front $front}"
+  done
+}
+
 case "${1:-}" in
-  --state) read_state; exit 0 ;;
+  --state) current_state; exit 0 ;;
   --needs-human)
     item="${2:?--needs-human needs an item}"
-    record_state needs_human
-    record "needs-human: $item" 0 "$item"
+    rw_ledger add-open "$item" "$(front_name)"
+    sync_state
     echo "close: needs_human — $item"; exit 0 ;;
+  --human)
+    if [ $# -eq 1 ]; then
+      print_open_human || echo "close: no human verification is open"
+      exit 0
+    fi
+    which="$2"; verdict="${3:-}"; by=""; note=""
+    shift 3 2>/dev/null || shift $#
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --by) by="${2:-}"; shift 2 ;;
+        --note) note="${2:-}"; shift 2 ;;
+        *) echo "close: unknown argument $1" >&2; exit 1 ;;
+      esac
+    done
+    case "$verdict" in approved|rejected) ;; *) echo "close: the verdict is 'approved' or 'rejected' (close.sh --human \"<item>\" approved --by <who>)" >&2; exit 1 ;; esac
+    [ -n "$by" ] || { echo "close: a verdict names who checked (--by <who>): an answer with nobody behind it is the sentence this command replaces" >&2; exit 1; }
+    rw_ledger verdict "$which" "$verdict" "$by" "$note"; rc=$?
+    if [ "$rc" -eq 3 ]; then
+      echo "close: no open item matches '$which'. Open items:" >&2
+      print_open_human >&2 || echo "  (none)" >&2
+      exit 1
+    fi
+    [ "$rc" -eq 0 ] || exit 1
+    sync_state
+    echo "close: $verdict by $by — state $(current_state)"
+    print_open_human || true
+    exit 0 ;;
+  --abandon)
+    reason="${2:-}"
+    [ -n "$reason" ] || { echo "close: abandoning a front needs a reason (close.sh --abandon \"<reason>\"): it is recorded, and the next session reads it" >&2; exit 1; }
+    [ -f .roadworthy/scope ] || { echo "close: no front is open here; there is nothing to abandon" >&2; exit 1; }
+    end_closing abandoned "$reason"
+    rm -f .roadworthy/scope
+    echo "close: front abandoned — $reason. State gaps_found; scope released. What it left in the tree is still there: say so in the hand-off."
+    exit 0 ;;
   --check)
     # No gates, or a file that declares none, is not "everything fresh": it is nothing measured.
     # Reporting success here let a night close declaring every gate FRESH with zero gates
@@ -110,9 +313,12 @@ import json, sys, os
 ledger, cmd, wtree = sys.argv[1:4]
 last = None
 if os.path.exists(ledger):
-    for line in open(ledger, encoding="utf-8"):
-        r = json.loads(line)
-        if r["cmd"] == cmd: last = r
+    for line in open(ledger, encoding="utf-8", errors="replace"):
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        if r.get("cmd") == cmd and not r.get("kind"): last = r
 if last is None: print("MISSING")
 elif last["wtree"] == wtree and last["exit"] == 0: print("FRESH")
 elif last["wtree"] == wtree: print("FRESH-RED")
@@ -139,7 +345,7 @@ rw_dirty() {
 }
 if [ -n "$(rw_dirty)" ]; then
   echo "close: the tree is dirty; commit first — a gate measured before the last commit is not a gate of this closing"
-  record_state gaps_found; exit 1
+  end_closing gaps_found "dirty tree"; exit 1
 fi
 # Measured against the SNAPSHOT taken when the front opened, never against whatever the files
 # say now. Re-reading .roadworthy/gates at closing time meant editing the Verification section
@@ -148,7 +354,7 @@ fi
 # to measure against and keeps the pre-0.6.0 path.
 if rite_scope_orphan; then
   echo "$orphan_refusal" >&2
-  record_state gaps_found; exit 1
+  end_closing gaps_found "the snapshot is gone"; exit 1
 fi
 if [ -f "$snapshot" ]; then
   python3 - "$snapshot" "$gates" ".roadworthy/scope" "$here/../../../hooks" <<'PY' || exit 1
@@ -215,23 +421,46 @@ PY
 fi
 read -r head wtree _ <<< "$(fp)"
 echo "close: HEAD $head · tree $wtree"
-failed=0; ran=0
+# How many gates the file DECLARES, counted before any of them runs: the same count --check makes.
+declared_n=0
 while IFS= read -r cmd; do
   [[ "$cmd" =~ ^[[:space:]]*(#|$) ]] && continue
-  ran=$((ran + 1))
-  out="$(bash -c "$cmd" 2>&1)"; rc=$?
-  record "$cmd" "$rc" "$out"
-  if [ $rc -eq 0 ]; then printf '  OK    %s\n' "$cmd"; trivially_green "$cmd" && printf '  WARN  %s\n' "that gate cannot fail: it proves nothing"; else printf '  FAIL  %s (exit %s)\n' "$cmd" "$rc"; printf '%s\n' "$out" | tail -5 | sed 's/^/        /'; failed=$((failed + 1)); fi
+  declared_n=$((declared_n + 1))
 done < "$gates"
+gate_out="$(mktemp)"
+trap 'rm -f "$gate_out"' EXIT
+failed=0; ran=0
+# The list is read through descriptor 3, and each gate runs with an EMPTY standard input and
+# without that descriptor: whatever a gate reads, it is never the list of the gates after it.
+exec 3< "$gates"
+while IFS= read -r cmd <&3; do
+  [[ "$cmd" =~ ^[[:space:]]*(#|$) ]] && continue
+  ran=$((ran + 1))
+  bash -c "$cmd" < /dev/null > "$gate_out" 2>&1 3<&-; rc=$?
+  record "$cmd" "$rc" "$gate_out"
+  if [ $rc -eq 0 ]; then printf '  OK    %s\n' "$cmd"; trivially_green "$cmd" && printf '  WARN  %s\n' "that gate cannot fail: it proves nothing"; else printf '  FAIL  %s (exit %s)\n' "$cmd" "$rc"; tail -5 "$gate_out" | sed 's/^/        /'; failed=$((failed + 1)); fi
+done
+exec 3<&-
 if [ $ran -eq 0 ]; then
-  record_state gaps_found
+  end_closing gaps_found "no gate declared"
   echo "close: $gates declares no gate; nothing was measured, so nothing passed — the scope stays locked" >&2; exit 1
 fi
+# Whatever makes the loop stop early -- a gate that empties the list, a descriptor closed under
+# it -- the count has to agree. A closing that ran fewer gates than it declared measured less
+# than it claims.
+if [ "$ran" -ne "$declared_n" ]; then
+  end_closing gaps_found "$declared_n gates declared, $ran ran"
+  echo "close: gaps_found — $declared_n gate(s) declared, $ran ran. A gate that did not run did not pass; the scope stays locked." >&2; exit 1
+fi
 if [ $failed -eq 0 ]; then
-  record_state passed
+  end_closing passed
   rm -f .roadworthy/scope
   echo "close: passed — evidence in $ledger; scope released"
+  if open_now="$(print_open_human)"; then
+    echo "close: the gates passed and a person still has to check what is below — the state is needs_human until the answer is recorded (close.sh --human \"<item>\" approved|rejected --by <who>):"
+    printf '%s\n' "$open_now"
+  fi
 else
-  record_state gaps_found
+  end_closing gaps_found "$failed gate(s) red"
   echo "close: gaps_found — $failed gate(s) red; scope kept"; exit 1
 fi
