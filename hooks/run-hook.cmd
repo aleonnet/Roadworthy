@@ -29,15 +29,17 @@ REM No bash: the hook cannot run, and a guardrail that cannot run does not pass
 REM the call unguarded. Until 0.6.1 this branch exited 0 in silence while the
 REM CHANGELOG said it warned and refused (measured 2026-09-14). The policy is
 REM each hook's own crash policy: a guard fails closed (exit 2 blocks the tool
-REM call, the reason goes to stderr); principles, stop-gate and session-state
-REM warn with exit 1, because exit 2 there would erase the prompt, trap the
-REM session in a wall it cannot argue with, or stand in the way of a session
-REM that is only being told its state. The CI executes this branch on a
+REM call, the reason goes to stderr); principles, stop-gate, session-state and
+REM review-record warn with exit 1, because exit 2 there would erase the
+REM prompt, trap the session in a wall it cannot argue with, stand in the way
+REM of a session that is only being told its state, or keep a subagent from
+REM stopping over a ledger line. The CI executes this branch on a
 REM Windows runner.
 echo Roadworthy/%~1: no bash found on this machine, so the guardrail cannot run. Install Git for Windows (its bash) or disable the plugin in /plugin; this call is refused rather than passed unguarded. >&2
 if /I "%~1"=="principles" exit /b 1
 if /I "%~1"=="stop-gate" exit /b 1
 if /I "%~1"=="session-state" exit /b 1
+if /I "%~1"=="review-record" exit /b 1
 exit /b 2
 CMDBLOCK
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"

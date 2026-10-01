@@ -8,6 +8,11 @@ allowed-tools: Bash Read Glob
 
 The conversation is not the state; the disk is. Before acting:
 
+0. **Read what the session was told.** The `session-state` hook puts the state on disk at the top
+   of every session that starts, resumes, is cleared or is compacted: branch, tree, the open front
+   and its plan, the reporting form agreed for it, the recorded state, what is waiting for a person,
+   what the owner requires of this project, the night marker, whether the gates are fresh. Those are
+   facts measured at that moment; the steps below are what you do with them.
 1. **Map first.** Read the documentation map declared in `.roadworthy/docs.json` (default
    `docs/README.md`). It says what to read for which task.
 2. **Newest handoff by name.** `scripts/resume-pick.sh` prints the handoff to read first. It sorts

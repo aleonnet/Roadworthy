@@ -43,6 +43,20 @@
 # cause was that every round spent its attention on things a machine can check. The reviewer
 # goes back to the DIFF, which is what principle 4 of this plugin always said.
 #
+# THE PROJECT MAY ASK FOR MORE (0.7.0). `plan_gate` is a USER option, and it is born in
+# `preflight`. A project whose owner wants every plan reviewed had nowhere to say so that a hook
+# reads: the rule lived in a memory note, an agent took the plugin's default for sufficient and
+# submitted with the pre-flight alone (field, 2026-10-01). `.roadworthy/rites` is the owner's file
+# (the entry gate denies it to the agent, like `protected`), and a `plan_gate:` line there is
+# joined with the option by taking the stricter of the two: asking for the pre-flight in one place
+# and for the review in the other is asking for both.
+#
+# AN APPROVAL IS RECORDED (0.7.0). The same script is registered for PostToolUse of ExitPlanMode,
+# which fires when the call SUCCEEDS -- that is, when the person approved the plan. It writes the
+# fingerprint of what was approved (hooks/planblocks.py: scope, gates, base) to the project's
+# evidence ledger, and the entry gate looks that fingerprint up before it lets the agent open a
+# front. Until then the script that opens a front read any plan at all (field note, 2026-09-18).
+#
 # Refuted 2026-09-13: injected -- removed the REJECTED branch;
 # tests/run.sh went red with `rejected review passed`, green again on the clean file, and the file was
 # restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
@@ -53,12 +67,62 @@
 # Refuted 2026-09-14 (0.6.2): the hint of the "another project" denial back to the absolute root
 # -> red with `the denial hints an absolute home path`; the `~` expansion removed from `same` ->
 # red with `a project declared with ~ was not matched`. Both green again on the clean file.
+# Refuted 2026-10-01 (0.7.0), against tests/hooks/plan-review-gate.sh: the approval record not
+# written -> red with `an approved plan left no approval record`; the project's rites not joined
+# with the option -> red with `the project asked for a review and the plan went without one`; the
+# recorded verdict not asked for -> red with `a review nobody ran was accepted`. Each green again on
+# the clean file, restored with its SHA-256 verified.
 export RW_HOOK="plan-review-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
 rw_read_event
 
 rw_bool "$(rw_option PLAN_REVIEW_REQUIRED true)" || exit 0
+
+# ── after the call: the approval, written down ─────────────────────────────────────────────────
+if [ "$(rw_field hook_event_name)" = PostToolUse ]; then
+  # Recording never gets in the way: whatever fails here, the session goes on, and the entry gate
+  # can still read the same fact from the transcript.
+  trap - ERR
+  set +e
+  cwd="$(rw_field cwd)"
+  [ -n "$cwd" ] || exit 0
+  RW_PLAN="$(rw_field tool_input.plan)" RW_PATH="$(rw_field tool_input.planFilePath)" \
+  RW_RESPONSE="$(rw_field tool_response)" RW_SESSION="$(rw_field session_id)" RW_CWD="$cwd" \
+  RW_DATA="${ROADWORTHY_DATA:-}" python3 - "$(dirname "$0")" <<'PY' 2>/dev/null
+import json, os, subprocess, sys, time
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+from planblocks import fingerprint, header
+text = os.environ.get("RW_PLAN", "")
+path = os.environ.get("RW_PATH", "")
+if not text.strip() and path and os.path.isfile(path):
+    text = open(path, encoding="utf-8", errors="replace").read()
+response = os.environ.get("RW_RESPONSE", "")
+# PostToolUse fires when the call succeeded. Where the result is visible, it has to say so too.
+if response.strip() and "approved" not in response.lower():
+    sys.exit(0)
+fp = fingerprint(text)
+if not fp:
+    sys.exit(0)
+def top(d):
+    r = subprocess.run(["git", "-C", d, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    return os.path.realpath(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip() else ""
+# The project the plan declares, when it is a repository; else the one the session stands in.
+declared = os.path.expanduser(header(text, "project|projeto"))
+root = (top(declared) if declared and os.path.isdir(declared) else "") or top(os.environ["RW_CWD"])
+if not root:
+    sys.exit(0)
+data = os.environ.get("RW_DATA") or os.path.join(root, ".roadworthy")
+os.makedirs(data, exist_ok=True)
+name = os.path.basename(path) if path else ""
+with open(os.path.join(data, "evidence.jsonl"), "a", encoding="utf-8") as fh:
+    fh.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "kind": "approval",
+                         "cmd": "approval: " + (name or fp[:12]), "plan_name": name, "fingerprint": fp,
+                         "session": os.environ.get("RW_SESSION", ""), "root": root, "exit": 0}) + "\n")
+PY
+  exit 0
+fi
 
 # WHAT guards the plan, as opposed to WHETHER it is guarded. PLAN_REVIEW_REQUIRED stays the
 # boolean on/off switch and is read above with rw_bool: giving it a word like "preflight"
@@ -68,6 +132,13 @@ mode="$(rw_option PLAN_GATE preflight)"
 case "$mode" in
   preflight|review|both) : ;;
   *) deny PreToolUse "plan_gate is '$mode'; it must be preflight, review or both." ;;
+esac
+# What the PROJECT asks for, in the owner's file, joined with the option: the stricter wins.
+project_mode="$(rw_rite "$(rw_root "$(rw_realpath "$(rw_field cwd)")")" plan_gate)"
+case "$project_mode" in
+  "") : ;;
+  preflight|review|both) [ "$project_mode" = "$mode" ] || mode=both ;;
+  *) deny PreToolUse ".roadworthy/rites says plan_gate is '$project_mode'; it must be preflight, review or both. That file is the owner's: report it." ;;
 esac
 plans="$(rw_option PLANS_DIR "")"
 [ -n "$plans" ] || plans="$HOME/.claude/plans"
@@ -81,12 +152,20 @@ root=""
 [ -n "$cwd" ] && root="$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cwd")"
 
 submitted="$(rw_field tool_input.plan)"
+submitted_path="$(rw_field tool_input.planFilePath)"
 tp="$(rw_field transcript_path)"
 project_plans="$(rw_project_plans_dir "$root")"
 # NOTE: bash counts quotes while scanning this $( ... ), heredoc body included. An apostrophe
 # with no pair ("the project's") desynchronises the scan and breaks the `case` below with a
 # syntax error far from the cause. Keep every ' paired inside the block; `bash -n` catches it.
-verdict="$(RW_SUBMITTED="$submitted" python3 - "$plans" "$suffix" "$max_rounds" "$root" "$mode" "$project_plans" "$tp" <<'PY'
+# `review_record: required` in the owner's rites: a review written in a file needs a verdict the
+# PLUGIN recorded when a reviewer finished (hooks/review-record) behind it.
+review_record="$(rw_rite "$root" review_record)"
+case "$review_record" in
+  ""|required) : ;;
+  *) deny PreToolUse ".roadworthy/rites says review_record is '$review_record'; the only word it knows is 'required'. That file is the owner's: report it. A requirement that cannot be read is not read as no requirement." ;;
+esac
+verdict="$(RW_SUBMITTED="$submitted" RW_SUBMITTED_PATH="$submitted_path" RW_REVIEW_RECORD="$review_record" RW_LEDGER="$(rw_data_dir "${root:-.}")/evidence.jsonl" python3 - "$plans" "$suffix" "$max_rounds" "$root" "$mode" "$project_plans" "$tp" <<'PY'
 import json, os, re, subprocess, sys
 d, suffix, max_rounds = sys.argv[1], sys.argv[2], int(sys.argv[3])
 root = sys.argv[4] if len(sys.argv) > 4 else ""
@@ -193,7 +272,15 @@ ambiguous = len(mine) > 1
 if mine: cands = mine
 
 plan = None
-if submitted:
+# The call names its file (`planFilePath`: 356 of 368 plan-mode exits on this machine carry it,
+# measured 2026-09-30). When it is one of the candidates, that is the plan -- no matching needed.
+named = os.environ.get("RW_SUBMITTED_PATH", "")
+if named and not os.path.islink(named):
+    for p in cands:
+        if not os.path.islink(p) and os.path.realpath(p) == os.path.realpath(named):
+            plan = p
+            break
+if plan is None and submitted:
     for p in cands:
         if os.path.islink(p): continue
         try:
@@ -308,6 +395,23 @@ if snap and not owner:
     grown = [s for s in now if s not in round1]
     if grown:
         out("DENY", f"the plan grew {len(grown)} section(s) after round 1 ({'; '.join(grown)}): a plan that grows to satisfy the reviewer is the failure mode this gate exists for. Stop and report to the user; only an 'owner:' decision in the review unlocks it.")
+if os.environ.get("RW_REVIEW_RECORD") == "required":
+    # The last verdict a reviewer left on record about this plan (or about no plan in particular).
+    last = None
+    try:
+        for line in open(os.environ.get("RW_LEDGER", ""), encoding="utf-8", errors="replace"):
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if (r.get("kind") == "review" and "cold-reviewer" in (r.get("agent") or "")
+                    and (not r.get("plans") or name in r["plans"])):
+                last = r
+    except Exception:
+        last = None
+    if last is None or last.get("verdict") != "APPROVED":
+        said = "none is on record" if last is None else "the last one on record says " + str(last.get("verdict"))
+        out("DENY", f"{rname} says the plan is approved, and this project requires a reviewer's own verdict behind it (.roadworthy/rites: review_record: required): {said}. Run the cold reviewer on {name}; it ends its report with a VERDICT line, which the plugin records when it finishes. A review file with no reviewer behind it is the reviewed party describing its own review.")
 out("ALLOW", plan + "\t" + base + ("\tDATE" if elected_by_date else ""))
 PY
 )"

@@ -1,0 +1,77 @@
+{
+ "name": "the scope, the gates and the snapshot rewritten by a program",
+ "setup": {
+  "front": "open"
+ },
+ "steps": [
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"open('.roadworthy/scope','a').write('outside/**\\n')\"",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 - <<'PY'\nopen('.roadworthy/scope','a').write('outside/**\\n')\nPY",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "node -e \"require('fs').appendFileSync('.roadworthy/scope','outside/**\\n')\"",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"p='.road'+'worthy/scope'; open(p,'a').write('outside/**\\n')\"",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"p=chr(46)+'roadworthy/scope'; open(p,'a').write('outside/**\\n')\""
+  },
+  {
+   "tool": "Write",
+   "file_path": "@T@/outside/b.py",
+   "content": "b = 2\n",
+   "expect": "deny"
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 2",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "echo x > outside/b.py",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/the-plan.md",
+   "expect": "allow"
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 2",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"import json,hashlib;d=chr(46)+'roadworthy/';s=json.load(open(d+'plan.snapshot'));s['scope_globs'].append('outside/**');open(d+'scope','a').write('outside/**\\n');s.pop('digests');c=json.dumps(s,sort_keys=True,separators=(',',':'));s['digests']={'scope':hashlib.sha256(open(d+'scope','rb').read()).hexdigest(),'gates':hashlib.sha256(open(d+'gates','rb').read()).hexdigest(),'snapshot_canonical':hashlib.sha256(c.encode()).hexdigest()};json.dump(s,open(d+'plan.snapshot','w'))\""
+  },
+  {
+   "tool": "Write",
+   "file_path": "@T@/outside/b.py",
+   "content": "b = 2\n",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "echo x > outside/b.py",
+   "expect": "deny"
+  }
+ ]
+}

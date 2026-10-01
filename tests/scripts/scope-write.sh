@@ -83,11 +83,51 @@ SWBP
 bash skills/plan/scripts/scope-write.sh "$SWB/p.md" --root "$SWB" >/dev/null 2>&1
 [ "$(python3 -c 'import json;print(json.load(open("'"$SWB"'/.roadworthy/plan.snapshot"))["base_head"])')" = "$(git -C "$SWB" rev-parse HEAD)" ] \
   && ok "with no --base the front opens on HEAD, as it always did" || fail "the default base changed"
-bash skills/plan/scripts/scope-write.sh "$SWB/p.md" --root "$SWB" --base "$SWB_FIRST" >/dev/null 2>&1
-[ "$(python3 -c 'import json;print(json.load(open("'"$SWB"'/.roadworthy/plan.snapshot"))["base_head"])')" = "$SWB_FIRST" ] \
-  && ok "--base keeps the front's real base when it is reopened" || fail "--base ignored"
+swb_base() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["base_head"])' "$SWB/.roadworthy/plan.snapshot"; }
+SWB_OPEN="$(swb_base)"
+# 0.7.0: the SAME front reopened keeps the base it opened with, by itself. Until then that
+# depended on whoever reopened remembering --base, and forgetting it moved what the closing
+# measures (field note, 2026-09-18).
+printf 'c\n' > "$SWB/f.txt"; git -C "$SWB" add -A; git -C "$SWB" -c commit.gpgsign=false commit -qm three
+bash skills/plan/scripts/scope-write.sh "$SWB/p.md" --root "$SWB" >"$TMP/swb.out" 2>&1
+[ "$(swb_base)" = "$SWB_OPEN" ] && grep -q 'reopened' "$TMP/swb.out" \
+  && ok "the same front reopened keeps its base, with no --base given" || fail "reopening moved the base: $(swb_base) is not $SWB_OPEN"
+bash skills/plan/scripts/scope-write.sh "$SWB/p.md" --root "$SWB" --base "$SWB_FIRST" >"$TMP/swb.out" 2>&1 \
+  && fail "reopening moved the base: a different --base was accepted" \
+  || { grep -q 'Reopening keeps the base' "$TMP/swb.out" && [ "$(swb_base)" = "$SWB_OPEN" ] \
+       && ok "and a --base that disagrees with it is refused" || fail "reopening moved the base (wrong refusal): $(cat "$TMP/swb.out")"; }
+bash skills/plan/scripts/scope-write.sh "$SWB/p.md" --root "$SWB" --base "$SWB_OPEN" >/dev/null 2>&1 \
+  && ok "the same base said out loud is accepted" || fail "reopening with its own base was refused"
+# One front at a time: another plan over a live scope is refused, naming the live one.
+sed 's/^# p$/# q/' "$SWB/p.md" > "$SWB/q.md"
+bash skills/plan/scripts/scope-write.sh "$SWB/q.md" --root "$SWB" >"$TMP/swb.out" 2>&1 \
+  && fail "a second front opened over a live one" \
+  || { grep -q 'p.md' "$TMP/swb.out" && grep -q -- '--abandon' "$TMP/swb.out" \
+       && ok "a second front over a live one is refused, naming it and the two ways out" || fail "a second front opened over a live one (wrong refusal): $(cat "$TMP/swb.out")"; }
+# ...and both ways out work: abandoned, the next front opens, on the tip.
+(cd "$SWB" && bash "$ROOT/skills/close/scripts/close.sh" --abandon "replanned") >/dev/null 2>&1
+bash skills/plan/scripts/scope-write.sh "$SWB/q.md" --root "$SWB" >/dev/null 2>&1 && [ "$(swb_base)" = "$(git -C "$SWB" rev-parse HEAD)" ] \
+  && ok "after the live front is abandoned, the next one opens, on the tip" || fail "abandoning did not free the next front (a dead end)"
+(cd "$SWB" && bash "$ROOT/skills/close/scripts/close.sh" --abandon "test") >/dev/null 2>&1
+# A fresh front may still name its base, and a base that does not resolve refuses.
+bash skills/plan/scripts/scope-write.sh "$SWB/p.md" --root "$SWB" --base "$SWB_FIRST" >/dev/null 2>&1 && [ "$(swb_base)" = "$SWB_FIRST" ] \
+  && ok "a new front may name its base with --base" || fail "--base ignored on a new front"
+(cd "$SWB" && bash "$ROOT/skills/close/scripts/close.sh" --abandon "test") >/dev/null 2>&1
 bash skills/plan/scripts/scope-write.sh "$SWB/p.md" --root "$SWB" --base no-such-ref >"$TMP/swb.out" 2>&1 \
   && fail "a base that does not resolve was accepted" \
   || { grep -q "does not resolve" "$TMP/swb.out" && ok "a base that does not resolve refuses to open the front" || fail "wrong refusal: $(cat "$TMP/swb.out")"; }
+# What the snapshot carries from 0.7.0: the fingerprint of what was approved, the reporting form
+# the plan agreed, and what was already changed outside the scope when the front opened.
+printf 'x\n' > "$SWB/loose.txt"
+sed 's/^# p$/# p\nreport: prose, the conclusion first\n/' "$SWB/p.md" > "$SWB/r.md"
+bash skills/plan/scripts/scope-write.sh "$SWB/r.md" --root "$SWB" >/dev/null 2>&1
+python3 - "$SWB/.roadworthy/plan.snapshot" "$(python3 hooks/planblocks.py fingerprint "$SWB/r.md")" <<'PY' \
+  && ok "the snapshot carries the plan's fingerprint, its reporting form and what was already changed outside the scope" || fail "the agreed reporting form did not reach the snapshot (or the fingerprint, or the pre-existing changes)"
+import json, sys
+s = json.load(open(sys.argv[1]))
+assert s["fingerprint"] == sys.argv[2] and len(s["fingerprint"]) == 64, "fingerprint"
+assert s["report"] == "prose, the conclusion first", "report: %r" % s.get("report")
+assert "loose.txt" in s["preexisting"], "preexisting: %r" % s.get("preexisting")
+PY
 
 rw_end

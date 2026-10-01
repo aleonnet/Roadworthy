@@ -66,4 +66,13 @@ run_hook session-state 'not json'
 CLAUDE_PLUGIN_OPTION_SESSION_STATE=false ss "$SS"
 [ "$RC" -eq 0 ] && [ -z "$OUT" ] && ok "session_state=false honoured" || fail "session_state=false ignored"
 
+# ── 0.7.0: what the owner requires, and a project that tracks the rite's local state ─────────
+SR="$TMP/ss-rites"; mkdir -p "$SR/.roadworthy"; git -C "$SR" init -q; git -C "$SR" config user.email t@t; git -C "$SR" config user.name t
+printf '# the owner\nplan_gate: both\ndiff_review: required\n' > "$SR/.roadworthy/rites"; printf 'src/**\n' > "$SR/.roadworthy/scope"
+printf 'x\n' > "$SR/f"; git -C "$SR" add -A; git -C "$SR" commit -q -m 'everything, the scope too'
+SRO="$(python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"SessionStart","source":"startup","session_id":"s","cwd":sys.argv[1]}))' "$SR" | env -u ROADWORTHY_DATA bash "$ROOT/hooks/run-hook.cmd" session-state | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])')"
+printf '%s' "$SRO" | grep -q 'the owner requires: plan_gate: both; diff_review: required' \
+  && ok "the session starts knowing what the owner requires of this project" || fail "the session started blind to the owner's rites: $SRO"
+printf '%s' "$SRO" | grep -q "local state is tracked by git" && ok "and is told when the rite's local state is tracked by git" || fail "a tracked scope was not said: $SRO"
+
 rw_end

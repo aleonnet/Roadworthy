@@ -171,7 +171,9 @@ def item_id(text):
     return hashlib.sha256(" ".join(text.split()).encode()).hexdigest()[:8]
 
 def fold():
-    open_items, outcome, rejected = {}, "", False
+    # `gates` is how the LAST run of gates ended, for a ledger with no closing on record: the gate
+    # records that share the tree of the last one. 0.6.2 wrote those and nothing else.
+    open_items, outcome, rejected, asked, gates = {}, "", False, False, []
     for r in records():
         if not mine(r):
             continue
@@ -179,6 +181,11 @@ def fold():
         if kind == "needs-human" or (not kind and cmd.startswith("needs-human: ")):
             item = r.get("item") or cmd[len("needs-human: "):]
             open_items.setdefault(item_id(item), (item, r.get("ts", ""), r.get("front", "")))
+            asked = True
+        elif not kind:
+            if gates and gates[-1].get("wtree") != r.get("wtree"):
+                gates = []
+            gates.append(r)
         elif kind == "human":
             open_items.pop(item_id(r.get("item", "")), None)
             if r.get("verdict") == "rejected":
@@ -187,6 +194,11 @@ def fold():
             outcome = r.get("outcome", "")
             if outcome == "passed":
                 rejected = False        # the work was redone and its gates passed again
+    if not outcome and asked:
+        # Somebody was asked, every answer is in, and no closing is on record: a project from
+        # before 0.7.0, whose state file still holds the `needs_human` this ledger replaced.
+        # Saying nothing would leave that word standing with nothing open.
+        outcome = "gaps_found" if any(g.get("exit") for g in gates) else ("passed" if gates else "none")
     return open_items, outcome, rejected
 
 def append(rec):
@@ -203,7 +215,7 @@ if op == "state":
     elif rejected:
         print("gaps_found")
     elif outcome:
-        print("passed" if outcome == "passed" else "gaps_found")
+        print(outcome if outcome in ("passed", "none") else "gaps_found")
 elif op == "open":
     for iid, (item, ts, front) in fold()[0].items():
         print("\t".join((iid, item, ts, front)))
@@ -271,8 +283,10 @@ case "${1:-}" in
     shift 3 2>/dev/null || shift $#
     while [ $# -gt 0 ]; do
       case "$1" in
-        --by) by="${2:-}"; shift 2 ;;
-        --note) note="${2:-}"; shift 2 ;;
+        # One shift, then another only if there is something left: `shift 2` with a single
+        # argument fails, shifts nothing, and the loop never ends.
+        --by) by="${2:-}"; shift; [ $# -eq 0 ] || shift ;;
+        --note) note="${2:-}"; shift; [ $# -eq 0 ] || shift ;;
         *) echo "close: unknown argument $1" >&2; exit 1 ;;
       esac
     done
@@ -305,7 +319,9 @@ case "${1:-}" in
     if rite_scope_orphan; then echo "$orphan_refusal" >&2; exit 1; fi
     read -r _ wtree _ <<< "$(fp)"
     fail=0; declared=0
-    while IFS= read -r cmd; do
+    # `|| [ -n "$cmd" ]`: a last line with no newline is still a line. `read` returns non-zero on
+    # it, and without this the gate it holds is dropped -- here, in the count and in the run.
+    while IFS= read -r cmd || [ -n "$cmd" ]; do
       [[ "$cmd" =~ ^[[:space:]]*(#|$) ]] && continue
       declared=$((declared + 1))
       status="$(python3 - "$ledger" "$cmd" "$wtree" <<'PY'
@@ -344,7 +360,7 @@ rw_dirty() {
   git status --porcelain | grep -v -E ' \.roadworthy/(scope|state|plan\.snapshot|overnight|evidence\.jsonl|denials\.jsonl|refutations\.jsonl|preflight\.jsonl|readings\.jsonl|stop-latch/)'
 }
 if [ -n "$(rw_dirty)" ]; then
-  echo "close: the tree is dirty; commit first — a gate measured before the last commit is not a gate of this closing"
+  echo "close: the tree is dirty; commit first — a gate measured before the last commit is not a gate of this closing. What is not this front's (a file of the owner, of another session) is set aside for the closing with 'git stash push -u -- <path>' and brought back after it with 'git stash pop'."
   end_closing gaps_found "dirty tree"; exit 1
 fi
 # Measured against the SNAPSHOT taken when the front opened, never against whatever the files
@@ -356,8 +372,18 @@ if rite_scope_orphan; then
   echo "$orphan_refusal" >&2
   end_closing gaps_found "the snapshot is gone"; exit 1
 fi
+# The snapshot of a front, and no scope: that front already ended (it closed, or it was
+# abandoned), and there is nothing open to close. Said as what it is -- until 0.7.0 this fell into
+# the digest check below and answered "the scope changed since the front opened", to an agent that
+# had only committed its hand-off after a green closing. The state is left as it was.
+if [ -f "$snapshot" ] && [ ! -f .roadworthy/scope ]; then
+  echo "close: no front is open here — the last one ($(front_name)) already ended as '$(current_state)'. To measure the gates again on this tree, reopen it from the same plan (skills/plan/scripts/scope-write.sh <plan.md>) and close it. A hand-off written after the closing is the usual reason: write and commit it BEFORE closing next time, and the closing measures the tree that ships." >&2
+  exit 1
+fi
 if [ -f "$snapshot" ]; then
-  python3 - "$snapshot" "$gates" ".roadworthy/scope" "$here/../../../hooks" <<'PY' || exit 1
+  # A refusal here is how the closing ENDED, and the state says so: `--state` used to keep the
+  # word of the front before (`passed`), or `none`, after a closing that had refused.
+  python3 - "$snapshot" "$gates" ".roadworthy/scope" "$here/../../../hooks" <<'PY' || { end_closing gaps_found "refused before the gates: the foundation, the scope or a protected path"; exit 1; }
 import hashlib, json, os, subprocess, sys
 snap_path, gates_path, scope_path, hooks_dir = sys.argv[1:5]
 sys.dont_write_bytecode = True   # a __pycache__ under hooks/ would be a stray file to this very check
@@ -394,12 +420,14 @@ for k in ("scope", "gates", "snapshot_canonical"):
 # declared globs" has to mean here exactly what it meant to the lock that denied the edit.
 globs = snap.get("scope_globs", [])
 base = snap.get("base_head") or ""
-touched = set()
-if base:
-    d = subprocess.run(["git", "diff", "--name-only", base + "..HEAD"], capture_output=True, text=True)
-    touched |= {l for l in d.stdout.splitlines() if l}
-u = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"], capture_output=True, text=True)
-touched |= {l for l in u.stdout.splitlines() if l}
+# What THIS front changed: hooks/frontcheck.py answers it for the entry gate and for the closing
+# alike -- the difference between the base and HEAD, restricted to the commits made here. A
+# commit that arrived by a pull or a merge of the upstream is somebody else's and is not counted;
+# names are read NUL-separated, so one with a non-ASCII character is the name the globs see.
+from frontcheck import front_paths
+touched = set(front_paths(os.getcwd(), base))
+u = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "-z"], capture_output=True)
+touched |= {l for l in u.stdout.decode("utf-8", errors="replace").split("\0") if l}
 # The plan of THIS front is the rite's own artefact: when it lives inside the repository (the
 # `plans` directory of docs.json, the house norm's home for it) it is written before the front
 # exists and cannot be in its own scope. The snapshot names it.
@@ -408,14 +436,44 @@ try:
     own_plan = os.path.relpath(os.path.realpath(snap.get("plan") or ""), os.path.realpath(os.getcwd()))
 except Exception:
     own_plan = ""
+def listed(path):
+    try:
+        return [l.strip() for l in open(path, encoding="utf-8", errors="replace") if l.strip() and not l.strip().startswith("#")]
+    except Exception:
+        return []
+# What needs no scope, the same three things the commit guard lets through (hooks/guard-commit):
+# the rite's own files, a plan kept in the project's plans directory -- this front's and the
+# hand-off written while it was open -- and what the owner declared outside the rite.
+free = listed(".roadworthy/free")
+plans_home = ""
+try:
+    plans_home = (json.load(open(".roadworthy/docs.json")).get("plans") or "").rstrip("/")
+except Exception:
+    plans_home = ""
 def local(p):
-    return p.startswith(".roadworthy/") or (own_plan and os.path.normpath(p) == own_plan)
+    if p.startswith(".roadworthy/") or (own_plan and os.path.normpath(p) == own_plan):
+        return True
+    if plans_home and plans_home != "." and p.endswith(".md") and os.path.dirname(os.path.normpath(p)) == os.path.normpath(plans_home):
+        return True
+    return bool(free) and matches(p, free)
+# A protected path in the front's diff: the fences deny it at the edit, at the shell and at the
+# commit, and the closing is the last place to say so. Until 0.7.0 it did not look.
+protected = listed(".roadworthy/protected")
+hit = sorted(p for p in touched if protected and matches(p, protected))
+if hit:
+    sys.stderr.write("close: the front changed %d protected path(s) (.roadworthy/protected):\n" % len(hit))
+    for p in hit[:20]:
+        sys.stderr.write("  " + p + "\n")
+    sys.stderr.write("A protected path is off limits to the front: put it back as it was at the base, and report the change you needed.\n")
+    sys.exit(1)
 outside = sorted(p for p in touched if not local(p) and not matches(p, globs))
 if outside:
     sys.stderr.write("close: the front touched %d file(s) outside its declared scope:\n" % len(outside))
     for p in outside[:20]:
         sys.stderr.write("  " + p + "\n")
-    sys.stderr.write("Widen the scope in the plan and reopen the front, or leave those files alone.\n")
+    sys.stderr.write("Leave those files as they were at the base, or take the change to the plan: edit its Scope\n"
+                     "block, submit it again for approval, and run scope-write.sh on the same plan (it reopens\n"
+                     "this front and keeps its base).\n")
     sys.exit(1)
 PY
 fi
@@ -423,7 +481,7 @@ read -r head wtree _ <<< "$(fp)"
 echo "close: HEAD $head · tree $wtree"
 # How many gates the file DECLARES, counted before any of them runs: the same count --check makes.
 declared_n=0
-while IFS= read -r cmd; do
+while IFS= read -r cmd || [ -n "$cmd" ]; do
   [[ "$cmd" =~ ^[[:space:]]*(#|$) ]] && continue
   declared_n=$((declared_n + 1))
 done < "$gates"
@@ -433,7 +491,7 @@ failed=0; ran=0
 # The list is read through descriptor 3, and each gate runs with an EMPTY standard input and
 # without that descriptor: whatever a gate reads, it is never the list of the gates after it.
 exec 3< "$gates"
-while IFS= read -r cmd <&3; do
+while IFS= read -r cmd <&3 || [ -n "$cmd" ]; do
   [[ "$cmd" =~ ^[[:space:]]*(#|$) ]] && continue
   ran=$((ran + 1))
   bash -c "$cmd" < /dev/null > "$gate_out" 2>&1 3<&-; rc=$?
@@ -451,6 +509,51 @@ fi
 if [ "$ran" -ne "$declared_n" ]; then
   end_closing gaps_found "$declared_n gates declared, $ran ran"
   echo "close: gaps_found — $declared_n gate(s) declared, $ran ran. A gate that did not run did not pass; the scope stays locked." >&2; exit 1
+fi
+# What the OWNER requires of a closing here (.roadworthy/rites): `diff_review: required` means the
+# front only passes with a reviewer's APPROVED verdict about the very commit being closed. The
+# verdict is the one hooks/review-record wrote when the reviewer finished -- a record with a source
+# that is not the agent describing its own review. Changing anything after the review means
+# reviewing again: the record names the commit.
+# Read lower-cased; a word it does not know is refused, never read as "no requirement" (the
+# adversarial simulation of 2026-10-01 closed a front with `diff_review: Required` in the rites).
+diff_review=""
+if [ -f .roadworthy/rites ]; then
+  diff_review="$(tr '[:upper:]' '[:lower:]' < .roadworthy/rites | tr -d '\r' | sed -n -E 's/^[[:space:]]*diff_review[[:space:]]*:[[:space:]]*([^#[:space:]]+).*/\1/p' | head -1 || true)"
+fi
+if [ -n "$diff_review" ] && [ "$diff_review" != "required" ]; then
+  end_closing gaps_found "the rites say diff_review: $diff_review"
+  echo "close: gaps_found — .roadworthy/rites says diff_review is '$diff_review'; the only word it knows is 'required'. That file is the owner's: report it. The scope is kept." >&2; exit 1
+fi
+if [ $failed -eq 0 ] && [ "$diff_review" = "required" ]; then
+  review="$(python3 - "$ledger" "$head" <<'PY'
+import json, os, sys
+ledger, head = sys.argv[1], sys.argv[2]
+last = None
+if os.path.exists(ledger):
+    for line in open(ledger, encoding="utf-8", errors="replace"):
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        # A verdict counts when the reviewer of this plugin gave it: any subagent can be told to
+        # end with the line, and the main agent would be writing its own review through it.
+        # (No apostrophe in this block: bash counts quotes while scanning the substitution.)
+        if r.get("kind") == "review" and r.get("head") == head and "cold-reviewer" in (r.get("agent") or ""):
+            last = r
+print((last or {}).get("verdict", "NONE"))
+PY
+)"
+  if [ "$review" != "APPROVED" ]; then
+    end_closing gaps_found "diff review required: $review for $head"
+    if [ "$review" = "NONE" ]; then
+      echo "close: gaps_found — the gates passed, and this project requires a review of the diff (.roadworthy/rites: diff_review: required). No reviewer's verdict is on record for $head. Run the cold reviewer on the front's diff (it ends with a VERDICT line, which the plugin records), then close again; the scope is kept." >&2
+    else
+      echo "close: gaps_found — the gates passed, and the last review of $head says $review (.roadworthy/rites: diff_review: required). Fix what it found, commit, review again, then close; the scope is kept." >&2
+    fi
+    exit 1
+  fi
+  echo "  OK    diff review: APPROVED for $head (required by .roadworthy/rites)"
 fi
 if [ $failed -eq 0 ]; then
   end_closing passed

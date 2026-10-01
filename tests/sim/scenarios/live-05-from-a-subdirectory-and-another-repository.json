@@ -1,0 +1,81 @@
+{
+ "name": "the session stands in a subdirectory; a scratch repository; a plan kept in the project",
+ "setup": {
+  "front": "none",
+  "docs_json": {
+   "plans": "docs/plans"
+  },
+  "files": {
+   "docs/plans/.keep": "",
+   "src/deep/er/x.py": "x = 1\n"
+  }
+ },
+ "steps": [
+  {
+   "tool": "Bash",
+   "command": "cd src/deep/er && ls",
+   "expect": "allow"
+  },
+  {
+   "tool": "Write",
+   "file_path": "@T@/docs/plans/2026-10-01-0100-the-plan.md",
+   "content": "# A plan\n\nproject: @T@\nstatus: proposed\n\n## Context\nA toy.\n\n## Scope\n```\nsrc/**\n```\n\n## Verification\n```\ntest -f src/a.py\n```\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "Write",
+   "file_path": "@T@/docs/plans/notes.txt",
+   "content": "not a plan\n",
+   "expect": "deny"
+  },
+  {
+   "tool": "ExitPlanMode",
+   "plan_file": "@T@/docs/plans/2026-10-01-0100-the-plan.md",
+   "owner": "approve",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git add docs/plans && git commit -q -m 'the plan'",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh ../../../docs/plans/2026-10-01-0100-the-plan.md",
+   "expect": "allow"
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/deep/er/x.py",
+   "old_string": "x = 1",
+   "new_string": "x = 2",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "echo y > y.py && cat y.py",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "mkdir -p @SCRATCH@/toy/.roadworthy && git -C @SCRATCH@/toy init -q && echo 'x/**' > @SCRATCH@/toy/.roadworthy/scope && echo z > @SCRATCH@/toy/z.txt",
+   "expect": "allow"
+  },
+  {
+   "tool": "Write",
+   "file_path": "@SCRATCH@/toy/z2.txt",
+   "content": "z\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "echo t > /tmp/rite-sim-outside-every-repo.txt; rm /tmp/rite-sim-outside-every-repo.txt",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "cd \"$(git rev-parse --show-toplevel)\" && git add -A && git commit -q -m work && bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow"
+  }
+ ]
+}

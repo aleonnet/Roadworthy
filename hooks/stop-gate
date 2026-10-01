@@ -37,6 +37,24 @@
 # looked in the shared directory. rw_data_dir (hooks/lib.sh) is the one rule now, and it is passed
 # to close.sh explicitly so the two cannot disagree again.
 #
+# A CLAIM, NOT A WORD (0.7.0). The gate matched a vocabulary anywhere in the last 2,000 characters.
+# Measured on the 50 transcripts of this machine since 2026-09-14: 4,374 turn ends, 700 matched,
+# 177 real blocks -- and 86 of those had the shape of a false positive: the word only in a table
+# row, negated, or in "ready to"/"pronto para" (62), or a tail that listed what was still open
+# (24). A status report was being blocked as a finished claim, by the very gate whose message asks
+# the agent to "say plainly what is left". So a word does not count: in a table row; in a legend
+# (a line with three or more status marks); negated within the three words before it; or followed
+# by "to/para/when/if". And a tail that declares an open item (`stop_gate_open_markers`, default
+# ⬜,🟡,📍,TODO) is not a claim that the work is finished. Measured with the same corpus: 700 turn
+# ends judged become 422, and 91 of the 177 blocks stay. Widening the vocabulary instead (feito,
+# fechado, aprovado, ✅ -- the proposal of the field note of 2026-09-18) takes 422 to 976 and was
+# refused by that number.
+#
+# EVERY REPOSITORY THE TURN WROTE IN (0.7.0). The session stands in one repository and may edit
+# another; the gates that have to be fresh are those of each repository it touched. The entry gate
+# notes them, per session, in the plugin's own data directory (never in a project), and this hook
+# reads the list.
+#
 # Fails open, always and by declaration (RW_ON_CRASH=warn): no transcript, an unreadable or
 # lagging one (the official documentation warns the transcript is written asynchronously), no
 # repository, any internal error. A guard that decides whether work may END must never trap a
@@ -49,6 +67,10 @@
 # CLAUDE_PLUGIN_DATA again -> red with `fresh gates blocked from the hook environment` (the 13:33
 # case); `stop_hook_active` ignored -> red with `stop_hook_active ignored`. Each green again on the
 # clean file, restored with its SHA-256 verified.
+# Refuted 2026-10-01 (0.7.0), against tests/hooks/stop-gate.sh: a table row read as a claim -> red
+# with `a status report was blocked as a finished claim`; the repositories the session wrote in
+# ignored -> red with `the gates of the repository touched were not read`. Each green again on the
+# clean file, restored with its SHA-256 verified.
 export RW_HOOK="stop-gate"
 export RW_ON_CRASH=warn
 source "$(dirname "$0")/lib.sh"
@@ -58,11 +80,66 @@ rw_bool "$(rw_option STOP_GATE true)" || exit 0
 # A continuation this hook already forced is not judged twice (documented field, see above).
 case "$(rw_field stop_hook_active)" in True|true) exit 0 ;; esac
 
+# What counts as claiming the work is finished: a NAMED vocabulary, read as a claim (see above).
+# The Portuguese words agree in gender and number: "metade do conserto está pronta" is a finished
+# claim about half a fix, and the masculine singular alone let it through (field, 2026-09-14,
+# another project: a fix left half done and declared "pronta").
+claims_done() {
+  RW_FINAL="$1" RW_MARKERS="$(rw_option STOP_GATE_OPEN_MARKERS "⬜,🟡,📍,TODO,still have to,still need to,ainda falta,falta fazer,in progress,em andamento")" python3 - <<'PY'
+import os, re, sys
+tail = os.environ.get("RW_FINAL", "")[-2000:]
+markers = [m.strip() for m in os.environ.get("RW_MARKERS", "").split(",") if m.strip()]
+WORD = re.compile(r"(?<![a-zç])(done|finished|completed?|shipped|delivered|all set|ready to (?:ship|merge)|"
+                  r"pront[oa]s?|conclu[ií]d[oa]s?|finalizad[oa]s?|entregues?)(?![a-zç])|STATUS: passed", re.I)
+NEGATION = {"não", "nao", "not", "no", "never", "nunca", "nem", "ainda", "sem", "without", "isn't", "aren't",
+            "wasn't", "weren't", "hasn't", "haven't", "nothing", "nada", "nenhum", "nenhuma"}
+PURPOSE = {"para", "pra", "to", "quando", "se", "if", "when", "once", "after", "until", "for", "antes", "before"}
+STATUS_MARKS = ("✅", "🟡", "⬜", "📍")
+def legend(line):
+    return sum(line.count(m) for m in STATUS_MARKS) >= 3
+lines = [l for l in tail.splitlines() if not legend(l)]
+# A tail that names an open item is a status report, which is exactly what the gate asks for.
+if any(m in l for l in lines for m in markers):
+    sys.exit(1)
+for line in lines:
+    if line.lstrip().startswith("|"):
+        continue                                # a table row reports the state of an item
+    for m in WORD.finditer(line):
+        if m.group(0).lower().startswith("ready to") or m.group(0) == "STATUS: passed":
+            sys.exit(0)
+        before = re.findall(r"[\wçãõáéíóúâêô']+", line[:m.start()].lower())[-3:]
+        after = re.findall(r"[\wçãõáéíóúâêô']+", line[m.end():].lower())[:1]
+        if any(w in NEGATION or w.endswith("n't") for w in before):
+            continue
+        if after and after[0] in PURPOSE:
+            continue
+        sys.exit(0)
+sys.exit(1)
+PY
+}
+
 cwd="$(rw_realpath "$(rw_field cwd)")"
 [ -n "$cwd" ] || exit 0
-root="$(rw_root "$cwd")"
-git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
-[ -f "$root/.roadworthy/gates" ] || exit 0
+session="$(rw_field session_id)"
+[ -n "$session" ] || session="nosession"
+session_key="$(printf '%s' "$session" | tr -c 'A-Za-z0-9_.-' '_')"
+
+# The repositories to answer for: the one the session stands in, and every other one the entry
+# gate saw this session write in.
+roots=""
+if git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then roots="$(rw_root "$cwd")"; fi
+touched="$(rw_touched_file "$session_key")"
+if [ -n "$touched" ] && [ -f "$touched" ]; then
+  roots="$(printf '%s\n%s\n' "$roots" "$(cat "$touched" 2>/dev/null || true)" | grep -v '^$' | sort -u || true)"
+fi
+[ -n "$roots" ] || exit 0
+# WITHOUT A GATES FILE A REPOSITORY NEVER BLOCKS.
+with_gates=""
+while IFS= read -r r; do
+  [ -n "$r" ] && [ -f "$r/.roadworthy/gates" ] || continue
+  with_gates="${with_gates}${r}"$'\n'
+done <<< "$roots"
+[ -n "$with_gates" ] || exit 0
 
 final="$(rw_field last_assistant_message)"
 if [ -z "$final" ]; then
@@ -97,52 +174,38 @@ PY
 )"
 fi
 [ -n "$final" ] || exit 0
-
-# A NAMED enumeration of what counts as claiming the work is finished. Named, because a guard that
-# guesses at meaning blocks honest turns; short, because the cost of a false positive here is a
-# session that cannot end. The Portuguese words agree in gender and number: "metade do conserto
-# está pronta" is a finished claim about half a fix, and the masculine singular alone let it
-# through (field, 2026-09-14, another project: a fix left half done and declared "pronta").
-claims_done() {
-  printf '%s' "$1" | tail -c 2000 | grep -q -i -E \
-    '(^|[^a-z])(done|finished|complete[d]?|shipped|delivered|all set|ready to (ship|merge))([^a-z]|$)|STATUS: passed|(^|[^a-zç])(pront[oa]s?|conclu[ií]d[oa]s?|finalizad[oa]s?|entregues?)([^a-zç]|$)'
-}
-claims_done "$final" || exit 0
+if ! claims_done "$final"; then exit 0; fi
 
 here="$(cd "$(dirname "$0")" && pwd)"
-data="$(rw_data_dir "$root")"
-# A non-zero --check is the NORMAL answer here, not an error, so the ERR trap must not fire on
-# it. errtrace makes the trap inherit into this command substitution, so it is lifted for the
-# call and restored straight after -- the guard keeps failing closed everywhere else.
-# The assignment goes INSIDE the `if`: a command substitution that returns non-zero trips the
-# ERR trap at the top level even with errtrace off, and here a non-zero answer is the normal
-# one. In a condition context nothing trips, and errtrace is lifted only for the call so the
-# trap does not fire inside the subshell either.
-set +o errtrace
-if check="$(cd "$root" && ROADWORTHY_DATA="$data" bash "$here/../skills/close/scripts/close.sh" --check 2>&1)"; then
+blocked=""
+while IFS= read -r root; do
+  [ -n "$root" ] || continue
+  data="$(rw_data_dir "$root")"
+  # A non-zero --check is the NORMAL answer here, not an error, so the ERR trap must not fire on
+  # it. The assignment goes INSIDE the `if`, and errtrace is lifted only for the call so the trap
+  # does not fire inside the subshell either.
+  set +o errtrace
+  if check="$(cd "$root" && ROADWORTHY_DATA="$data" bash "$here/../skills/close/scripts/close.sh" --check 2>&1)"; then
+    set -o errtrace
+    continue
+  fi
   set -o errtrace
-  exit 0
-fi
-set -o errtrace
-
-# Not fresh. Record the tree we are blocking on, so the next turn on the SAME tree is not blocked
-# again and the session cannot loop. A latch we cannot write means we do not block.
-latch_dir="$data/stop-latch"
-session="$(rw_field session_id)"
-[ -n "$session" ] || session="nosession"
-latch="$latch_dir/$(printf '%s' "$session" | tr -c 'A-Za-z0-9_.-' '_')"
-read -r _ wtree _ <<< "$(cd "$root" && bash "$here/../skills/close/scripts/tree-fingerprint.sh" "$root" 2>/dev/null || echo "x x x")"
-if [ -f "$latch" ] && [ "$(cat "$latch" 2>/dev/null)" = "$wtree" ]; then
-  exit 0
-fi
-mkdir -p "$latch_dir" 2>/dev/null || exit 0
-printf '%s\n' "$wtree" > "$latch" 2>/dev/null || exit 0
+  # Not fresh. Record the tree we are blocking on, so the next turn on the SAME tree is not
+  # blocked again and the session cannot loop. A latch we cannot write means we do not block.
+  latch_dir="$data/stop-latch"
+  latch="$latch_dir/$session_key"
+  read -r _ wtree _ <<< "$(cd "$root" && bash "$here/../skills/close/scripts/tree-fingerprint.sh" "$root" 2>/dev/null || echo "x x x")"
+  if [ -f "$latch" ] && [ "$(cat "$latch" 2>/dev/null)" = "$wtree" ]; then continue; fi
+  mkdir -p "$latch_dir" 2>/dev/null || continue
+  printf '%s\n' "$wtree" > "$latch" 2>/dev/null || continue
+  blocked="${blocked}  in ${root}:"$'\n'"${check}"$'\n\n'
+done <<< "$with_gates"
+[ -n "$blocked" ] || exit 0
 
 {
   echo "Roadworthy/stop-gate: the turn says the work is finished, and the declared gates are not."
   echo
-  printf '%s\n' "$check"
-  echo
+  printf '%s' "$blocked"
   echo "FRESH means the gate ran on THIS tree and passed. Run the gates after the last commit"
   echo "(/roadworthy:close), or say plainly what is left instead of calling it done."
   echo "This tree is now latched: the same claim on the same tree will not be blocked again."

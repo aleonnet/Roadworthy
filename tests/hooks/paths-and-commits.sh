@@ -33,6 +33,7 @@ run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$TMP\",\"tool_input\":{
 denied && printf '%s' "$OUT" | grep -q 'nothing is staged' \
   && ok "and so is the same commit written with git -C" || fail "git -C slipped past the empty check: $OUT"
 git -C "$EC" config user.email t@t; git -C "$EC" config user.name t
+mkdir -p "$EC/.roadworthy"; printf '**\n' > "$EC/.roadworthy/scope"   # 0.7.0: a commit answers to a front
 printf 'x\n' > "$EC/f.txt"; git -C "$EC" add f.txt
 run_hook guard-commit "{\"tool_name\":\"Bash\",\"cwd\":\"$TMP\",\"tool_input\":{\"command\":\"git -C $EC commit -m x\"}}"
 ! denied && ok "with something staged, the same -C commit passes" || fail "a real -C commit was denied: $OUT"

@@ -12,6 +12,7 @@ tests/hooks/session-state.sh
 tests/hooks/stop-gate.sh
 tests/meta/hygiene.sh
 tests/meta/privacy.sh
+tests/meta/rite-liveness.sh
 tests/meta/runner.sh
 tests/meta/validate.sh
 tests/scripts/close-front.sh

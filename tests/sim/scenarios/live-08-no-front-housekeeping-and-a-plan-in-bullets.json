@@ -1,0 +1,79 @@
+{
+ "name": "with no front: junk removed, a file put back, an untracked sweep; a plan whose blocks are bullets is told so by the script",
+ "setup": {
+  "front": "none",
+  "files": {
+   "build/out.o": "o\n"
+  },
+  "ignore": [
+   "build/",
+   "*.log",
+   ".roadworthy/"
+  ]
+ },
+ "steps": [
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"open('README.md','a').write('stray\\n')\"",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git checkout -- README.md",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"open('README.md','a').write('stray\\n')\" && git restore README.md",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "mkdir -p build && echo o > build/out.o && rm -rf build",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "echo t > test.log && rm -f test.log .DS_Store",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"open('stray.tmp','w').write('x')\" && git clean -fdq",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "rm src/a.py",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "echo x > src/a.py",
+   "expect": "deny"
+  },
+  {
+   "tool": "Write",
+   "file_path": "@PLANS@/bullets.md",
+   "content": "# Bullets\n\nproject: @T@\n\n## Context\nx\n\n## Scope\n- src/**\n\n## Verification\n- `true`\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "ExitPlanMode",
+   "plan_file": "@PLANS@/bullets.md",
+   "owner": "approve",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/bullets.md",
+   "expect": "allow",
+   "expect_rc": 1
+  }
+ ]
+}

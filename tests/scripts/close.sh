@@ -151,6 +151,73 @@ LG="$( (cd "$HU" && bash "$CLOSE" --human) )"
 printf '%s' "$LG" | grep -q 'legacy item' && ok "an item recorded by 0.6.2 is read back as open" || fail "a 0.6.2 needs-human record was ignored: $LG"
 (cd "$HU" && bash "$CLOSE" --human all approved --by owner) >/dev/null
 [ -z "$( (cd "$HU" && bash "$CLOSE" --human) | grep -v '^close: no human' || true)" ] && ok "--human all closes every open item at once" || fail "--human all left items open: $( (cd "$HU" && bash "$CLOSE" --human) )"
+# What the first cold review of this script found (2026-09-30), each reproduced before its fix.
+# A gates file whose last line has no newline: `read` returns non-zero on it and the loop dropped
+# it, in the count and in the run alike -- so the two agreed, and the last gate never ran.
+UT="$TMP/unterminated"; fx_repo_committed "$UT"; mkdir -p "$UT/.roadworthy"
+printf 'true\nfalse' > "$UT/.roadworthy/gates"; printf 'f\n' > "$UT/.roadworthy/scope"
+git -C "$UT" add -A; git -C "$UT" commit -q -m gates
+UT_OUT="$( (cd "$UT" && env -u ROADWORTHY_DATA bash "$CLOSE") 2>&1 || true )"
+printf '%s' "$UT_OUT" | grep -q 'FAIL  false' && [ -f "$UT/.roadworthy/scope" ] \
+  && ok "the last gate runs even when the file does not end in a newline" || fail "the last gate, unterminated, never ran: $UT_OUT"
+UT_CHK="$( (cd "$UT" && env -u ROADWORTHY_DATA bash "$CLOSE" --check) 2>&1 || true )"
+printf '%s' "$UT_CHK" | grep -q 'FRESH-RED false' && ok "and --check reads it too" || fail "the last gate, unterminated, is invisible to --check: $UT_CHK"
+# A project from before 0.7.0: the state file says needs_human, the ledger holds the item and the
+# gates of the closing before it, and no record of how a closing ended. With the item approved the
+# ledger used to say nothing, so the stale word stood: needs_human, with nothing open, for ever.
+LS="$TMP/legacy-state"; fx_repo_committed "$LS"; mkdir -p "$LS/.roadworthy"; printf 'true\n' > "$LS/.roadworthy/gates"
+git -C "$LS" add -A; git -C "$LS" commit -q -m gates
+python3 -c 'import json,sys
+rows = [{"ts":"2026-09-20T10:00:00","head":"h","wtree":"w1","cmd":"true","cmd_sha256":"x","exit":0,"tail":""},
+        {"ts":"2026-09-20T10:01:00","head":"h","wtree":"w1","cmd":"needs-human: the label on the device","cmd_sha256":"x","exit":0,"tail":""}]
+open(sys.argv[1],"w").write("".join(json.dumps(r)+"\n" for r in rows))' "$LS/.roadworthy/evidence.jsonl"
+printf 'needs_human\n' > "$LS/.roadworthy/state"
+(cd "$LS" && env -u ROADWORTHY_DATA bash "$CLOSE" --human all approved --by owner) >/dev/null
+[ "$( (cd "$LS" && env -u ROADWORTHY_DATA bash "$CLOSE" --state) )" = "passed" ] && [ "$(cat "$LS/.roadworthy/state")" = "passed" ] \
+  && ok "with every item approved, a project from before 0.7.0 goes back to what its last gates measured" || fail "an approved item left needs_human behind: state $( (cd "$LS" && env -u ROADWORTHY_DATA bash "$CLOSE" --state) ), file $(cat "$LS/.roadworthy/state")"
+python3 -c 'import json,sys
+open(sys.argv[1],"a").write(json.dumps({"ts":"2026-09-21T10:00:00","head":"h","wtree":"w2","cmd":"true","cmd_sha256":"x","exit":1,"tail":""})+"\n")' "$LS/.roadworthy/evidence.jsonl"
+[ "$( (cd "$LS" && env -u ROADWORTHY_DATA bash "$CLOSE" --state) )" = "gaps_found" ] \
+  && ok "and to gaps_found when those last gates were red" || fail "an approved item hid red gates: state $( (cd "$LS" && env -u ROADWORTHY_DATA bash "$CLOSE" --state) )"
+# `--by` with nothing after it: `shift 2` fails with one argument left, shifts nothing, and the
+# loop span for ever. The alarm is the assertion: a command that hangs is killed and counted.
+BY_RC=0; (cd "$HU" && perl -e 'alarm 20; exec @ARGV' bash "$CLOSE" --human all approved --by) >/dev/null 2>&1 || BY_RC=$?
+[ "$BY_RC" -eq 1 ] && ok "--by with no value is refused at once" || fail "--by with no value did not end in a refusal (exit $BY_RC; 142 is the alarm: it hung)"
+# ── 0.7.0: the closing looks at what is protected, and at what the owner requires ────────────
+PR="$TMP/protected-diff"; fx_repo_committed "$PR"; mkdir -p "$PR/.roadworthy" "$PR/lib/auth" "$PR/src" "$PR/notes"
+printf 't\n' > "$PR/lib/auth/token.py"; printf 'a\n' > "$PR/src/a.py"
+printf '# P\n## Scope\n```\nsrc/**\nlib/**\n```\n## Verification\n```\ntrue\n```\n' > "$PR/plan.md"
+git -C "$PR" add -A; git -C "$PR" commit -q -m base
+(cd "$PR" && bash "$ROOT/skills/plan/scripts/scope-write.sh" plan.md) >/dev/null
+printf 'lib/auth/**\n' > "$PR/.roadworthy/protected"; printf 'notes/**\n' > "$PR/.roadworthy/free"
+printf 't2\n' > "$PR/lib/auth/token.py"; printf 'n\n' > "$PR/notes/n.md"
+git -C "$PR" add -A; git -C "$PR" commit -q -m 'a protected path changed, in scope'
+PR_OUT="$( (cd "$PR" && env -u ROADWORTHY_DATA bash "$CLOSE") 2>&1 || true )"
+printf '%s' "$PR_OUT" | grep -q 'protected path' && printf '%s' "$PR_OUT" | grep -q 'lib/auth/token.py' && [ -f "$PR/.roadworthy/scope" ] \
+  && ok "a protected path in the front's diff refuses the closing, and is named" || fail "the closing passed over a protected path: $PR_OUT"
+printf 't\n' > "$PR/lib/auth/token.py"; git -C "$PR" commit -q -am 'put back'
+PR_OUT="$( (cd "$PR" && env -u ROADWORTHY_DATA bash "$CLOSE") 2>&1 || true )"
+printf '%s' "$PR_OUT" | grep -q 'close: passed' \
+  && ok "put back as it was, the front closes -- and a path the owner freed is not counted against it" || fail "a freed path, or a protected path put back, refused the closing: $PR_OUT"
+# The owner's rites: a closing needs an approved review of the commit it closes.
+RV="$TMP/review-required"; fx_repo_committed "$RV"; mkdir -p "$RV/.roadworthy"
+printf 'true\n' > "$RV/.roadworthy/gates"; printf 'f\n' > "$RV/.roadworthy/scope"; printf 'diff_review: required\n' > "$RV/.roadworthy/rites"
+git -C "$RV" add -A; git -C "$RV" commit -q -m gates
+RV_OUT="$( (cd "$RV" && env -u ROADWORTHY_DATA bash "$CLOSE") 2>&1 || true )"
+printf '%s' "$RV_OUT" | grep -q 'requires a review of the diff' && [ -f "$RV/.roadworthy/scope" ] && [ "$(cat "$RV/.roadworthy/state")" = "gaps_found" ] \
+  && ok "with diff_review required and no verdict on record, green gates do not close the front" || fail "the closing passed without the review the project requires: $RV_OUT"
+rv_event() { python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"SubagentStop","session_id":"s","cwd":sys.argv[1],"agent_type":"roadworthy:cold-reviewer","last_assistant_message":sys.argv[2]}))' "$RV" "$1"; }
+rv_event $'Two blockers.\n\nVERDICT: REJECTED' | env -u ROADWORTHY_DATA bash "$ROOT/hooks/run-hook.cmd" review-record
+RV_OUT="$( (cd "$RV" && env -u ROADWORTHY_DATA bash "$CLOSE") 2>&1 || true )"
+printf '%s' "$RV_OUT" | grep -q 'says REJECTED' && [ -f "$RV/.roadworthy/scope" ] \
+  && ok "a REJECTED verdict recorded by the plugin keeps it open" || fail "the closing passed without the review the project requires (a rejected one): $RV_OUT"
+rv_event $'Round 2: the blockers fell.\n\n**VERDICT: APPROVED**' | env -u ROADWORTHY_DATA bash "$ROOT/hooks/run-hook.cmd" review-record
+RV_OUT="$( (cd "$RV" && env -u ROADWORTHY_DATA bash "$CLOSE") 2>&1 || true )"
+printf '%s' "$RV_OUT" | grep -q 'diff review: APPROVED' && printf '%s' "$RV_OUT" | grep -q 'close: passed' \
+  && ok "an APPROVED verdict for this commit, recorded when the reviewer finished, closes it" || fail "an approved review did not close the front (a dead end): $RV_OUT"
+rv_event 'I looked around and everything seems fine.' | env -u ROADWORTHY_DATA bash "$ROOT/hooks/run-hook.cmd" review-record
+[ "$(grep -c '"kind": "review"' "$RV/.roadworthy/evidence.jsonl")" = "2" ] \
+  && ok "a subagent that ends with no verdict line records nothing" || fail "a report with no verdict was recorded as a review"
 # A front with no way forward has an exit that is recorded, never a silent one.
 AB="$TMP/abandon"; fx_repo_committed "$AB"; mkdir -p "$AB/.roadworthy"
 printf 'false\n' > "$AB/.roadworthy/gates"; printf 'f\n' > "$AB/.roadworthy/scope"
@@ -169,5 +236,29 @@ mv "$MV" "$TMP/moved-b"
 [ "$( (cd "$TMP/moved-b" && env -u ROADWORTHY_DATA bash "$CLOSE" --state) )" = "needs_human" ] \
   && ok "a pending item survives the repository being renamed" || fail "renaming the repository dropped a pending human verification"
 unset ROADWORTHY_DATA
+
+# ── 0.7.0: what a refused closing leaves behind, and a closing with nothing open ─────────────
+RS="$TMP/refused-state"; fx_repo_committed "$RS"; mkdir -p "$RS/src"; printf 'a\n' > "$RS/src/a.py"
+printf '# P\n## Scope\n```\nsrc/**\n```\n## Verification\n```\ntrue\n```\n' > "$RS/plan.md"
+git -C "$RS" add -A; git -C "$RS" commit -q -m base
+rs() { (cd "$RS" && env -u ROADWORTHY_DATA bash "$CLOSE" "$@") 2>&1 || true; }
+(cd "$RS" && bash "$ROOT/skills/plan/scripts/scope-write.sh" plan.md) >/dev/null
+git -C "$RS" check-ignore -q .roadworthy/scope && git -C "$RS" check-ignore -q .roadworthy/plan.snapshot && ! git -C "$RS" check-ignore -q .roadworthy/gates \
+  && ok "opening a front makes the rite's local state ignored in this clone, and leaves the gates versioned" || fail "the rite's local state is still visible to git add -A"
+[ -z "$(git -C "$RS" status --porcelain -- .gitignore)" ] && ok "without touching the project's own .gitignore" || fail "scope-write changed the project's .gitignore"
+printf 'stray\n' > "$RS/outside.txt"; git -C "$RS" add -A; git -C "$RS" commit -q -m 'the gates, and a file outside the scope'
+RS_OUT="$(rs)"
+printf '%s' "$RS_OUT" | grep -q 'outside its declared scope' && [ "$(rs --state)" = "gaps_found" ] \
+  && ok "a closing refused before the gates leaves gaps_found, not the word of the front before" || fail "a refused closing did not record gaps_found: $(rs --state) / $RS_OUT"
+printf '%s' "$RS_OUT" | grep -q 'edit its Scope' && ok "and the refusal says how a scope is widened" || fail "the out-of-scope refusal does not say the way forward: $RS_OUT"
+git -C "$RS" rm -q outside.txt; git -C "$RS" commit -q -m 'put back'
+printf '%s' "$(rs)" | grep -q 'close: passed' && ok "put back, the same front closes" || fail "the front did not close after the stray file was removed"
+printf 'h\n' > "$RS/handoff.md"; git -C "$RS" add -A; git -C "$RS" commit -q -m 'a hand-off, after the closing'
+RS_OUT="$(rs)"
+printf '%s' "$RS_OUT" | grep -q 'no front is open here' && [ "$(rs --state)" = "passed" ] \
+  && ok "closing again with nothing open says so, and leaves the state alone" || fail "a closing with no front open spoke of a changed scope, or moved the state: $(rs --state) / $RS_OUT"
+(cd "$RS" && bash "$ROOT/skills/plan/scripts/scope-write.sh" plan.md) >/dev/null 2>&1
+printf 'dirt\n' >> "$RS/src/a.py"
+printf '%s' "$(rs)" | grep -q "git stash push -u" && ok "a dirty tree is told how to set aside what is not the front's" || fail "the dirty-tree refusal does not say the way forward"
 
 rw_end

@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# review-record — SubagentStop hook: the verdict of a reviewer, written down by the plugin.
+#
+# A review used to exist only as what the agent wrote about it: a `.review.md` next to the plan,
+# or nothing at all for a review of the diff. Both are the reviewed party describing its own
+# review. When a subagent ends its report with a verdict line, THIS hook records it -- who ran,
+# what it said, and the commit and tree it said it about -- in the project's evidence ledger.
+# Nothing here judges the review; it makes "a reviewer ran and said APPROVED about this tree" a
+# fact with a source that is not the agent's own prose.
+#
+# Who reads it:
+#   * skills/close/scripts/close.sh, when the owner's .roadworthy/rites says `diff_review: required`:
+#     the closing only records `passed` with an APPROVED verdict for the commit it is closing;
+#   * hooks/plan-review-gate, when the rites say `review_record: required`: a review written in a
+#     file needs a recorded verdict behind it.
+#
+# The verdict line is the one the cold reviewer of this plugin already ends with
+# (`VERDICT: APPROVED | REJECTED | ESCALATE`; `VEREDITO:` and the Portuguese words are read too).
+# A subagent that says no such line is not a reviewer, and nothing is recorded. The event carries
+# `last_assistant_message` ("Hooks that need the final assistant text of the current turn should
+# use `last_assistant_message` on Stop and SubagentStop instead of reading the transcript" --
+# hooks reference, read 2026-10-01) and, inside a subagent, `agent_type`.
+#
+# It never blocks: a subagent that could not stop because a ledger could not be written would be
+# a session trapped by bookkeeping.
+#
+# Refuted 2026-10-01 through its two readers: the closing no longer asking for the verdict ->
+# tests/scripts/close.sh red with `the closing passed without the review the project requires`; the
+# plan gate no longer asking -> tests/hooks/plan-review-gate.sh red with `a review nobody ran was
+# accepted`. What is NOT measured outside a synthetic event: that the harness hands this hook the
+# reviewer's type and final text when a real subagent ends. That is the owner's bench.
+export RW_HOOK="review-record"
+export RW_ON_CRASH=warn
+source "$(dirname "$0")/lib.sh"
+rw_read_event
+
+message="$(rw_field last_assistant_message)"
+[ -n "$message" ] || exit 0
+cwd="$(rw_realpath "$(rw_field cwd)")"
+[ -n "$cwd" ] || exit 0
+git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+root="$(rw_root "$cwd")"
+data="$(rw_data_dir "$root")"
+here="$(cd "$(dirname "$0")" && pwd)"
+fp="$(bash "$here/../skills/close/scripts/tree-fingerprint.sh" "$root" 2>/dev/null || true)"
+plans="$(rw_option PLANS_DIR "")"
+[ -n "$plans" ] || plans="$HOME/.claude/plans"
+
+RW_MESSAGE="$message" RW_AGENT="$(rw_field agent_type)" RW_SESSION="$(rw_field session_id)" \
+  python3 - "$data" "$root" "$fp" "$plans" "$(rw_project_plans_dir "$root")" <<'PY' || true
+import json, os, re, sys, time
+data, root, fp = sys.argv[1], sys.argv[2], sys.argv[3]
+message = os.environ.get("RW_MESSAGE", "")
+# The LAST verdict line of the report: a reviewer may quote an earlier round before giving its own.
+found = re.findall(r"^[\s>*_#`-]*(?:VERDICT|VEREDITO)[\s*_`]*:[\s*_`]*([A-Za-zÀ-ÿ]+)", message, re.M | re.I)
+if not found:
+    sys.exit(0)
+word = found[-1].upper()
+if word.startswith(("APPROV", "APROV")):
+    verdict = "APPROVED"
+elif word.startswith(("REJECT", "REPROV")):
+    verdict = "REJECTED"
+elif word.startswith("ESCAL"):
+    verdict = "ESCALATE"
+else:
+    sys.exit(0)
+# The plans this report names, so a verdict about one plan is not read as a verdict about another.
+names = []
+for d in sys.argv[4:]:
+    if d and os.path.isdir(d):
+        for f in os.listdir(d):
+            if f.endswith(".md") and f in message and f not in names:
+                names.append(f)
+head, wtree = (fp.split() + ["", ""])[:2]
+os.makedirs(data, exist_ok=True)
+with open(os.path.join(data, "evidence.jsonl"), "a", encoding="utf-8") as fh:
+    fh.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "kind": "review",
+                         "cmd": "review: " + verdict, "verdict": verdict, "head": head, "wtree": wtree,
+                         "agent": os.environ.get("RW_AGENT", ""), "session": os.environ.get("RW_SESSION", ""),
+                         "plans": names, "root": root, "exit": 0}, ensure_ascii=False) + "\n")
+PY
+exit 0

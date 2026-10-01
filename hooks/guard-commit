@@ -1,18 +1,40 @@
 #!/usr/bin/env bash
 # guard-commit — PreToolUse hook for Bash.
 #
-# Two guarantees about `git commit`, enforced before the command runs:
+# Three guarantees about `git commit`, enforced before the command runs:
 #   * forbidden flags (default: --trailer) never reach the history, whatever
 #     the wording of the command — the whole command line is inspected,
 #     including heredocs, so a false positive costs a rewritten command and
 #     a false negative would cost a polluted history;
 #   * with `block_empty_commits`, a commit with nothing staged is denied
-#     (`git commit -a`, `--all` and `--allow-empty` are left to git).
-# Commands that are not a git commit pass untouched.
+#     (`git commit -a`, `--all` and `--allow-empty` are left to git);
+#   * WHAT ENTERS THE HISTORY IS WHAT THE FRONT DECLARED (0.7.0). The entry gate reads commands,
+#     and a program that opens a file itself writes through nothing a reader can name: 25.7% of
+#     33,811 real commands use an interpreter or a heredoc (measured 2026-09-30), so "deny what
+#     cannot be read" is not available. The commit is where the set is EXACT without guessing --
+#     git's own index. A commit is denied when a path it would take is protected; when a front is
+#     open and the path is outside its scope; or when no front is open and the path is not one of
+#     the rite's own artefacts. However the file was written, it does not enter the history.
+#
+# The set is what is staged, plus what the same command stages (`git add ... && git commit`),
+# plus every tracked change when the commit says `-a`, plus the paths the commit names. It can
+# only be LARGER than what git will take, never smaller. What needs no front and no scope: the
+# plan (a `.md` directly in the plans directory), `.roadworthy/gates` (the rite writes it and it
+# is committed with the front), the owner's own files under .roadworthy/, and whatever the owner
+# freed in .roadworthy/free. `commit_scope=false` switches this guarantee off.
+#
+# Commands that are not a git commit pass untouched. The command is read by hooks/shellread.py,
+# the same reader the entry gate uses: until 0.7.0 this hook matched `git commit` with a regular
+# expression of its own, and `git -C <dir> commit` was missed by one of its two copies.
 #
 # Refuted 2026-09-13: injected -- made the forbidden-flag match look for a string that cannot occur;
 # tests/run.sh went red with `forbidden flag passed`, green again on the clean file, and the file was
 # restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+# Refuted 2026-10-01 (0.7.0): the scope check removed -> tests/hooks/guard-commit.sh red with `a
+# file outside the scope reached the history`; the protected check removed -> red with `a file
+# outside the scope reached the history (a protected one)`; a merge in progress judged like a
+# commit of the front -> tests/meta/rite-liveness.sh red with `the rite has a dead end`. Each green
+# again on the clean file, restored with its SHA-256 verified.
 export RW_HOOK="guard-commit"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -21,42 +43,126 @@ rw_read_event
 command="$(rw_field tool_input.command)"
 [ -n "$command" ] || exit 0
 
-forbidden="$(rw_option FORBIDDEN_COMMIT_FLAGS "--trailer")"
-IFS=',' read -r -a flags <<< "$forbidden"
-for flag in "${flags[@]}"; do
-  flag="$(printf '%s' "$flag" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-  [ -n "$flag" ] || continue
-  if printf '%s' "$command" | grep -q -F -- "$flag"; then
-    deny PreToolUse "'$flag' is forbidden in commits (forbidden_commit_flags). Rewrite the command without it."
-  fi
-done
+# The forbidden flags, anywhere in a command that COMMITS -- heredocs included, so a false positive
+# costs a rewritten commit and a false negative would cost a polluted history. A command with no
+# commit in it is not judged: `grep -rn -- '--trailer' docs/` was refused until 0.7.0.
+if printf '%s' "$command" | grep -q -E '(^|[^[:alnum:]_-])commit([^[:alnum:]_]|$)'; then
+  forbidden="$(rw_option FORBIDDEN_COMMIT_FLAGS "--trailer")"
+  IFS=',' read -r -a flags <<< "$forbidden"
+  for flag in "${flags[@]}"; do
+    flag="$(printf '%s' "$flag" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [ -n "$flag" ] || continue
+    if printf '%s' "$command" | grep -q -F -- "$flag"; then
+      deny PreToolUse "'$flag' is forbidden in commits (forbidden_commit_flags). Rewrite the command without it."
+    fi
+  done
+fi
 
-# Only plain `git commit` (not commit-tree, not -a/--all/--allow-empty) is
-# subject to the empty-staging check.
-#
-# `git -C <dir> commit` has to be in this pattern, not only in the directory extraction below.
-# Measured by tests/attack.sh on 2026-09-14: the trigger demanded `git` and `commit` adjacent, so
-# a `-C` commit never reached the check at all -- and the careful `-C` handling twelve lines down,
-# written for 0.3.0, was unreachable code. `git commit` with nothing staged was denied; the same
-# commit written with `-C` went through.
-if rw_bool "$(rw_option BLOCK_EMPTY_COMMITS true)" \
-   && printf '%s' "$command" | grep -q -E '(^|[;&|[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+commit([[:space:]]|$)' \
-   && ! printf '%s' "$command" | grep -q -E -- '(^|[[:space:]])(-a|--all|--allow-empty|--amend)([[:space:]]|$)'; then
-  # A command that stages on the same line (`git add … && git commit`) is judged by git
-  # itself: at hook time the index is still empty and the check would lie.
-  if ! printf '%s' "$command" | grep -q -E '(^|[;&|[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+(add|rm|mv)([[:space:]]|$)'; then
-    # The repository is the one the commit runs in: `git -C <dir> commit`, a leading
-    # `cd <dir> &&`, else the session cwd.
-    cwd="$(rw_field cwd)"
-    dir="$(printf '%s' "$command" | sed -n -E 's/.*git[[:space:]]+-C[[:space:]]+([^[:space:]]+)[[:space:]]+commit.*/\1/p' | head -1)"
-    [ -n "$dir" ] || dir="$(printf '%s' "$command" | sed -n -E 's/^[[:space:]]*cd[[:space:]]+([^[:space:];&|]+)[[:space:]]*(&&|;).*/\1/p' | head -1)"
-    [ -n "$dir" ] || dir="$cwd"
-    dir="${dir/#\~/$HOME}"; dir="${dir%\"}"; dir="${dir#\"}"
-    case "$dir" in /*) ;; *) dir="$cwd/$dir" ;; esac
+# The command is read ONCE, by the reader the entry gate uses: which repository each commit runs
+# in (after a `cd`, a `git -C`), whether it says `-a`, which paths it names, and what the same
+# command stages. Until 0.7.0 the empty check below matched the text with regular expressions of
+# its own, and they knew `-a` only as a word by itself: `git commit -am msg` with nothing staged
+# was refused as empty, and so was `git commit -m msg -- path` (found by tests/sim/rite-sim.py on
+# 2026-10-01, in a scenario that was only trying to commit a fix).
+cwd="$(rw_realpath "$(rw_field cwd)")"
+[ -n "$cwd" ] || exit 0
+read_out="$(RW_CMD="$command" python3 "$(dirname "$0")/shellread.py" "$cwd")"
+commits="$(printf '%s\n' "$read_out" | grep -E '^C	' || true)"
+[ -n "$commits" ] || exit 0
+adds="$(printf '%s\n' "$read_out" | grep -E '^A	' || true)"
+
+# A commit with nothing staged is denied -- when what is staged is ALL it would take: no `-a`, no
+# path named, nothing staged by the same command (at hook time the index is still empty and the
+# check would lie), and neither --allow-empty nor --amend, which are left to git.
+if rw_bool "$(rw_option BLOCK_EMPTY_COMMITS true)" && [ -z "$adds" ] \
+   && ! printf '%s' "$command" | grep -q -E -- '(^|[[:space:]])(--allow-empty|--amend)([[:space:]]|$)' \
+   && ! printf '%s' "$command" | grep -q -E '(^|[;&|[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+(rm|mv|reset|stash|merge|cherry-pick|revert|apply|am|checkout|restore|rebase|submodule|read-tree|update-index)([[:space:]]|$)'; then
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    # Only a commit that says nothing beyond "what is staged".
+    if printf '%s\n' "$commits" | awk -F'\t' -v d="$dir" '$2 == d && $3 != "-" { found = 1 } END { exit !found }'; then continue; fi
     if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
        && git -C "$dir" diff --cached --quiet 2>/dev/null; then
       deny PreToolUse "nothing is staged in $dir; a commit here would be empty. Stage the intended files first (block_empty_commits)."
     fi
-  fi
+  done <<< "$(printf '%s\n' "$commits" | cut -f2 | sort -u)"
 fi
+
+# ── what the commit would take, against what the front declared ──────────────────────────────
+rw_bool "$(rw_option COMMIT_SCOPE true)" || exit 0
+
+# taken <root> <directory of the commit> — every path this command would put in the commit.
+# (A function, not inline: bash 3.2, which macOS ships, cannot parse a `case` inside `$( )`.)
+taken() {
+  local root="$1" dir="$2" cdir adir what
+  git -C "$root" -c core.quotepath=false diff --cached --name-only 2>/dev/null || true
+  while IFS=$'\t' read -r _ cdir what; do
+    [ -n "$what" ] || continue
+    [ "$(rw_realpath "$cdir")" = "$dir" ] || continue
+    if [ "$what" = "-" ]; then :
+    elif [ "$what" = "-a" ]; then git -C "$root" -c core.quotepath=false diff --name-only 2>/dev/null || true
+    elif [ "$what" = "?" ]; then git -C "$root" -c core.quotepath=false status --porcelain -uall 2>/dev/null | cut -c4- || true
+    else (cd "$dir" 2>/dev/null && git -c core.quotepath=false status --porcelain -uall -- "$what" 2>/dev/null | cut -c4-) || true
+    fi
+  done <<< "$commits"
+  while IFS=$'\t' read -r _ adir what; do
+    [ -n "$what" ] || continue
+    [ "$(rw_target_root "$(rw_realpath "$adir")/x")" = "$root" ] || continue
+    if [ "$what" = "*" ]; then git -C "$root" -c core.quotepath=false status --porcelain -uall 2>/dev/null | cut -c4- || true
+    else (cd "$adir" 2>/dev/null && git -c core.quotepath=false status --porcelain -uall -- "$what" 2>/dev/null | cut -c4-) || true
+    fi
+  done <<< "$adds"
+}
+
+# One repository at a time: each directory a commit of this command runs in.
+while IFS= read -r dir; do
+  [ -n "$dir" ] || continue
+  dir="$(rw_realpath "$dir")"
+  if rw_agent_place "$dir"; then continue; fi       # a toy repository in the scratchpad
+  root="$(rw_target_root "$dir/x")"
+  [ -n "$root" ] || continue
+  export RW_DENIAL_ROOT="$root"
+  # The paths, relative to the root, one per line. Larger than what git will take, never smaller.
+  taking="$(taken "$root" "$dir" | sed 's/^.* -> //; s/^"//; s/"$//' | grep -v '^$' | sort -u || true)"
+  [ -n "$taking" ] || continue
+  # Concluding a merge, a rebase, a cherry-pick: what is staged came from the OTHER side, and it
+  # is not this front's to answer for. What the front itself changed is measured when git is done.
+  gitdir="$(git -C "$root" rev-parse --absolute-git-dir 2>/dev/null || true)"
+  if [ -n "$gitdir" ]; then
+    for marker in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
+      if [ -e "$gitdir/$marker" ]; then continue 2; fi
+    done
+  fi
+
+  protected="$(rw_protected_globs "$root")"
+  frozen="$(rw_frozen_globs "$root")"
+  free="$(rw_free_globs "$root")"
+  scope=""
+  if [ -f "$root/.roadworthy/scope" ]; then scope="$(rw_list_globs "$root/.roadworthy/scope")"; fi
+  outside=""; n=0
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    if [ -n "$protected" ] && rw_glob_match "$rel" "$protected"; then
+      deny PreToolUse "this commit would take '$rel', which is a protected path (protected_paths: $protected). However it was changed, it does not enter the history: put it back (git restore --staged --worktree -- '$rel') and report the change you needed. (commit_scope)"
+    fi
+    if [ -n "$frozen" ] && rw_glob_match "$rel" "$frozen"; then
+      deny PreToolUse "this commit would take '$rel', which is frozen for the night (overnight mode, freeze: $frozen). Unstage it (git restore --staged -- '$rel'); version bumps and release notes wait for the morning. (commit_scope)"
+    fi
+    # What needs no front: the rite's own artefacts, the owner's files, what the owner freed.
+    # Nothing under .roadworthy/ is the front's subject: the gates are committed with the front,
+    # the owner's files are the owner's, and the local state is the rite's bookkeeping (a project
+    # that does not ignore it must not have every `git add -A` refused). The closing counts the
+    # same way.
+    case "$rel" in .roadworthy/*) continue ;; esac
+    if rw_is_plan_file "$root/$rel" "$root"; then continue; fi
+    if [ -n "$free" ] && rw_glob_match "$rel" "$free"; then continue; fi
+    if [ -n "$scope" ] && rw_glob_match "$rel" "$scope"; then continue; fi
+    n=$((n + 1)); [ "$n" -gt 5 ] || outside="${outside}${outside:+, }$rel"
+  done <<< "$taking"
+  [ "$n" -gt 0 ] || continue
+  if [ -n "$scope" ]; then
+    deny PreToolUse "this commit would take $n path(s) outside the approved scope ($root/.roadworthy/scope): $outside. A file outside the scope does not reach the history, however it was written. Unstage it (git restore --staged -- <path>) and commit what the front declared; if the change is needed, it belongs in the plan's scope, which is the owner's to approve. (commit_scope)"
+  fi
+  deny PreToolUse "no front is open in $root, and this commit would take $n path(s) that are not the rite's own: $outside. Work enters the history through a front: open one from the approved plan (skills/plan/scripts/scope-write.sh <plan.md>). The plan itself, .roadworthy/gates and what the owner listed in .roadworthy/free commit without one. (commit_scope)"
+done <<< "$(printf '%s\n' "$commits" | cut -f2 | sort -u)"
 exit 0

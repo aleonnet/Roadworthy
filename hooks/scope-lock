@@ -7,12 +7,26 @@
 # file is removed by /roadworthy:close. Lines in the scope file are globs
 # relative to the project root; `#` starts a comment.
 #
+# WHOSE scope (0.7.0). The scope that judges a file is the one of the repository THE FILE is in,
+# never the one the session happens to stand in. Resolved from the session's directory, the lock
+# was wrong in both directions (field, 2026-09-18 and 2026-09-22): a file of another repository
+# was judged by a scope that knew nothing about it, and a temporary file in no repository at all
+# was denied 35 times in one session by the scope of a front that had already ended. A file in
+# no repository still answers to the session's front -- editing something in the home directory
+# is collateral damage to nobody's plan -- unless it is under a temporary directory or is one of
+# the agent's own working places (the session scratchpad, the project memory).
+#
 # Refuted 2026-09-13: injected -- read the scope at `$cwd` instead of the repository root;
 # tests/run.sh went red with `lock inert from a subdirectory`, green again on the clean file, and the file was
 # restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
 # Refuted 2026-09-14, against tests/hooks/scope-lock.sh: the exemption for the owner's two files put
 # back -> red with `dead exemption`; the plan's second home ignored -> red with `the lock denied the
 # plan in docs/plans`. Each green again on the clean file, restored with its SHA-256 verified.
+# Refuted 2026-10-01 (0.7.0), against tests/hooks/scope-lock.sh: the repository of the file not
+# asked -> red with `the session repository decided for a file of another`; the temporary place not
+# exempt -> red with `a file outside every repository was denied by the scope`; the free list
+# ignored -> red with `free list was ignored`; the scratchpad not exempt -> red with `the scratchpad
+# was locked`. Each green again on the clean file, restored with its SHA-256 verified.
 export RW_HOOK="scope-lock"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -21,54 +35,45 @@ rw_read_event
 rw_bool "$(rw_option SCOPE_LOCK true)" || exit 0
 
 cwd="$(rw_realpath "$(rw_field cwd)")"
-# The scope belongs to the PROJECT, not to wherever the agent happens to stand: reading it at
-# "$cwd/.roadworthy/scope" left the lock inert one directory down.
-root="$(rw_root "$cwd")"
-scope_file="$root/.roadworthy/scope"
-[ -f "$scope_file" ] || exit 0
-
 target="$(rw_field tool_input.file_path)"
 [ -n "$target" ] || target="$(rw_field tool_input.notebook_path)"
 [ -n "$target" ] || exit 0
 target="$(rw_realpath "$target")"
+
+# The agent's own working places are never repository work, whatever git says about them.
+if rw_agent_place "$target"; then exit 0; fi
+
+root="$(rw_target_root "$target")"
+if [ -z "$root" ]; then
+  # In no repository. A temporary file is nobody's project; anything else still answers to the
+  # front of the session, whose plan certainly did not declare it.
+  if rw_temp_place "$target"; then exit 0; fi
+  root="$(rw_root "$cwd")"
+fi
+export RW_DENIAL_ROOT="$root"
+scope_file="$root/.roadworthy/scope"
+[ -f "$scope_file" ] || exit 0
 
 relative="$target"
 case "$target" in
   "$root"/*) relative="${target#"$root"/}" ;;
 esac
 
-# docs.json is human configuration and always editable: it names directories and status words
-# and unlocks nothing. The rest of .roadworthy/ is not: exempting the whole directory put the
-# front's own foundation -- the scope, the gates, the ledgers -- inside the blind spot of the
-# guard that is supposed to protect it. `protected` and `overnight-rules` are the owner's files,
-# denied to the agent by the rite gate through both doors since 0.6.1; an exemption for them here
-# would be dead code that reads as a promise.
-case "$relative" in
-  .roadworthy/docs.json) exit 0 ;;
-esac
-# The plan and its review live in the plans directory (`plans_dir`), outside the project, or in
-# the `plans` directory the project declares in docs.json; either way they are matched on the
-# absolute path. Without this the lock denies the very artefact the rite requires
-# (`/roadworthy:plan`), and the only way out is widening the scope by hand -- measured in the
-# field on 2026-09-08 and again on 2026-09-13, in two different projects.
-# Both sides are resolved through symlinks before comparing: a home or a plans directory
-# reached through a link would otherwise miss the match (the same class of defect measured
-# in the gate on 2026-09-13, where /var and /private/var named one directory as two).
-plans="$(rw_option PLANS_DIR "")"
-[ -n "$plans" ] || plans="$HOME/.claude/plans"
-plans="${plans%/}"
-plans="$(cd "$plans" 2>/dev/null && pwd -P || printf '%s' "$plans")"
-project_plans="$(rw_project_plans_dir "$root")"
-tdir="$(dirname "$target")"
-tdir="$(cd "$tdir" 2>/dev/null && pwd -P || printf '%s' "$tdir")"
-case "$tdir" in
-  "$plans"|"$plans"/*) exit 0 ;;
-esac
-if [ -n "$project_plans" ]; then
-  case "$tdir" in "$project_plans"|"$project_plans"/*) exit 0 ;; esac
-fi
+# The PLAN is the rite's own artefact and is editable under the lock: a `.md` file directly in
+# plans_dir or in the `plans` directory the project declares. Not the directory, and not what is
+# under it -- see rw_is_plan_file. Without this the lock denies the very artefact the rite
+# requires (`/roadworthy:plan`), and the only way out is widening the scope by hand: measured in
+# the field on 2026-09-08 and again on 2026-09-13, in two different projects.
+# Nothing under .roadworthy/ is exempt. The foundation is the rite's, `protected`,
+# `overnight-rules`, `free` and `docs.json` are the owner's, and the rite gate denies all of them
+# to the agent through both doors; an exemption here would be dead code that reads as a promise.
+if rw_is_plan_file "$target" "$root"; then exit 0; fi
 
-globs="$(grep -v -E '^[[:space:]]*(#|$)' "$scope_file" | tr '\n' ',' | sed 's/,$//')"
+# What the owner declared outside the rite (.roadworthy/free) needs no scope.
+free="$(rw_free_globs "$root")"
+if [ -n "$free" ] && rw_glob_match "$relative" "$free"; then exit 0; fi
+
+globs="$(rw_list_globs "$scope_file")"
 # A scope file that exists and declares nothing is not "no lock": it is a malformed front. The
 # old `exit 0` here is what made `touch .roadworthy/scope` switch the guard off entirely while
 # still looking, to everything else, like an open front.
@@ -77,6 +82,6 @@ if [ -z "$globs" ]; then
 fi
 
 if ! rw_glob_match "$relative" "$globs"; then
-  deny PreToolUse "'$relative' is outside the approved scope ($scope_file). Widen the scope deliberately, with a reason, or leave the file alone. If this scope belongs to a front that is already finished, close it (/roadworthy:close) instead of widening it: a scope stays until the gates pass, and a scope nobody released is what makes the next front reach for the file by hand."
+  deny PreToolUse "'$relative' is outside the approved scope ($scope_file). Leave the file alone, or take the change to the plan: edit its Scope block, submit the plan again for approval, and run skills/plan/scripts/scope-write.sh on the same plan -- it reopens this front and keeps its base. If this scope belongs to a front that is already finished, close it (/roadworthy:close): a scope stays until the gates pass."
 fi
 exit 0

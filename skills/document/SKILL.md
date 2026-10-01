@@ -33,6 +33,11 @@ context boundary.
   the project chooses the directory names, the plugin only knows the roles.
 - **Pointers.** `scripts/pointers-check.sh CLAUDE.md --memory <dir>`: every path an instruction
   file cites exists, and the memory index and its files point at each other both ways.
+- **The hand-off is written BEFORE the closing.** It is a `.md` directly in the plans directory,
+  which needs no front and no scope, so it can be written at any moment; committed after a closing
+  it changes the tree the gates measured and they are stale again. And `.roadworthy/docs.json` —
+  the map, the status words, the `plans` directory — is the owner's file: the agent reads it and
+  does not edit it, because the directory it names is exempt from the fences.
 
 ## Templates
 

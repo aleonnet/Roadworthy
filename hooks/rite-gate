@@ -6,13 +6,14 @@
 # invocations. Nothing noticed. This is the wall that makes the first act of a front be the front.
 #
 # Denies when all of these hold:
-#   * the session is inside a git repository;
-#   * the repository has NO USABLE SCOPE -- .roadworthy/scope absent, empty, or only comments.
+#   * the TARGET is inside a git repository (the target, not the session: see WHOSE FRONT below);
+#   * that repository has NO USABLE SCOPE -- .roadworthy/scope absent, empty, or only comments.
 #     "Usable" is the whole point: `touch .roadworthy/scope` used to satisfy every check while
 #     hooks/scope-lock exits early on an empty glob list, so one empty file switched off both
 #     fences at once;
-#   * the target is not an artefact of the rite itself (the plan, in plans_dir) nor human
-#     configuration of the project (docs.json, protected, overnight-rules).
+#   * the target is not the plan (a `.md` directly in one of the plan's two homes), not one of the
+#     agent's own working places (the session scratchpad, the project memory), and not a path the
+#     owner declared outside the rite in .roadworthy/free.
 #
 # The decision is taken on the ABSENCE OF THE ARTEFACT, never on whether the skill was invoked.
 # A transcript records that a skill was called, not that a front was opened; deciding on the call
@@ -22,9 +23,19 @@
 # (the scope, the gates, the snapshot, the state, the ledgers, the latch). Those are the
 # foundation a closing is measured against; a hand that edits them is editing the evidence.
 #
-# And a front that ended badly blocks the next one: with `gaps_found` or `needs_human` recorded,
-# the first write of a new front is denied. No state at all means a new project, and passes --
-# refusing there would deny the first write of every repository on earth.
+# A FRONT OPENS ONLY FROM WHAT WAS APPROVED (0.7.0). When the agent runs the rite's own
+# scope-write.sh, the plan it names has to carry the fingerprint of an approval on record
+# (hooks/planblocks.py: the scope, the gates and the base -- prose may change, those may not).
+# Until then the script read any plan at all (field note, 2026-09-18). `plan_review_required=false`
+# switches this off with the rest of the plan gate, and a person running the script outside the
+# agent is not asked: the fence is about what the agent may do on its own.
+#
+# What this gate does NOT do any more: refuse the first write after a front that ended
+# `gaps_found` or `needs_human`. It never blocked a front opened by the rite (the scope was there,
+# so the check was not reached) and it denied four honest writes in one day (field note,
+# 2026-09-30). A front that did not close keeps its scope, and scope-write.sh refuses a second
+# front over a live one: that is where "the last front is unfinished" is said, with the two ways
+# out. A human verification still open is shown at the start of the session and at the closing.
 #
 # Shell commands are read by hooks/shellread.py, the way the shell reads them: quoting, heredocs,
 # substitutions, every separator, wrappers, `bash -c`, and the directory in force. Until 0.7.0 the
@@ -46,21 +57,41 @@
 # cleared a gaps_found the same way; `rm .roadworthy/overnight` ended a night. So `rm`, `unlink`,
 # `rmdir`, `git rm` and the SOURCE of `mv` are targets too, and nothing under .roadworthy/ may be
 # removed by hand: the foundation, the ledgers, the owner's configuration, or the directory itself.
-# `find -delete`, `xargs rm` and an interpreter that unlinks the file are the same declared limit
-# as the interpreter that writes; what backs them up is close.sh refusing a rite-written scope
-# whose snapshot is gone.
+# Since 0.7.0 that includes the removals that name no file: `find ... -delete`, `find | xargs rm`,
+# `git clean`, `git stash -u`. An interpreter that unlinks the file is the same declared limit as
+# the interpreter that writes; what backs it up is close.sh refusing a rite-written scope whose
+# snapshot is gone.
+#
+# ONLY A READER IS HANDED THE RITE'S FILES (0.7.0). For an ordinary file the gate denies what the
+# reader can name as a write. For a path under .roadworthy/ the rule is the other way round: a
+# command not known to only read is denied (`gzip .roadworthy/state`, an editor, `chmod`), and so
+# is a command that names that directory and writes through something that cannot be followed (a
+# variable only known at run time, names through a pipe). A list of verbs that write never closes;
+# the first cold review of the reader found thirty more in an afternoon.
+#
+# WHOSE FRONT (0.7.0). The front that counts is the one of the repository THE TARGET is in. Until
+# then the gate resolved the repository from the session's directory, and was wrong in both
+# directions (field, 2026-09-18 and 2026-09-22): a write into another repository passed as "outside
+# this one", and the foundation of another repository was nobody's. A target in no repository is
+# no repository's work. The rite's own directory is recognised by NAME, in any repository and in
+# none: wherever a wrongly followed `cd` lands a relative path, the name is still in it.
 #
 # THE OWNER'S CONFIGURATION IS THE OWNER'S. `.roadworthy/protected` is what protect-paths reads and
 # `.roadworthy/overnight-rules` is what the night freezes. Both used to pass here as "human
 # configuration", which let the agent delete a line from the very list that guards against the
 # agent. Acceptance 7 of the 0.6.0 plan allowed it; reversed on 2026-09-14, because a fence whose
-# input the guarded party edits is not a fence. The owner edits those two files outside the agent,
-# as with the principles file. `docs.json` stays editable: it names directories and status words,
-# and unlocks nothing.
+# input the guarded party edits is not a fence. The owner edits those files outside the agent, as
+# with the principles file. Since 0.7.0 that is four files: `free` (what the owner declares outside
+# the rite) and `docs.json` joined them. docs.json was editable on the argument that it "names
+# directories and status words, and unlocks nothing" -- but the `plans` directory it names is
+# exempt from this gate and from the scope lock, so pointing it at `.` exempted the repository
+# (field note, 2026-09-18).
 #
 # THE PLAN HAS TWO HOMES: plans_dir, where plan mode writes it, and the `plans` directory the
 # project declares in .roadworthy/docs.json, where the house documentation norm keeps it. Both
-# are exempt through both doors; the plan is what OPENS a front and cannot need one.
+# are exempt through both doors; the plan is what OPENS a front and cannot need one. The exemption
+# is for the plan -- a `.md` directly in the home -- never for the directory (hooks/lib.sh,
+# rw_is_plan_file).
 #
 # Refuted 2026-09-14, against tests/hooks/rite-gate.sh: a write outside the repository counted
 # as work on it -> red with `the gate denied a write outside the repository`; the plans
@@ -83,6 +114,23 @@
 # read as commands again -> tests/scripts/shellread.sh red with `a read was taken for a write`; a
 # newline treated as whitespace again -> red with `a write hid behind`. Each green again on the
 # clean file, restored with its SHA-256 verified.
+#
+# Refuted 2026-10-01 (0.7.0), each one planted alone, red with the text named, restored by hash
+# (skills/refute/scripts/refute.sh). Against tests/hooks/rite-gate.sh: the repository taken from
+# the session -> `the session repository decided for a file of another`; the protected list not
+# asked through the shell -> `the shell wrote a protected path`; docs.json, free and rites out of
+# the owner's files -> `the agent edited docs.json`; the sweep check off -> `a sweep reached the
+# foundation`; git's untracked files not asked -> `git clean was denied though git would not
+# touch`; the free list ignored -> `free list was ignored`; the scratchpad not exempt -> `the
+# scratchpad was gated`; the blind-target rule off -> `a write hid behind a variable, a pipe or
+# nesting`; the plan exemption back to the directory -> `the plans exemption covered more than the
+# plan`; the path not lower-cased -> `the rite's directory spelled in another case was not
+# recognised`; the target limit lifted -> `a command with more targets than the gate can judge was
+# let through`. Against tests/meta/rite-liveness.sh: the approval lookup off -> `a front opened
+# from an unapproved scope`; a person's verdict let through -> `the agent edited the rites the
+# owner requires`; the scope not held through the shell, and the note not said -> `a change outside
+# the scope was committed, closed over, or never said`; the undo refused with no front -> `the rite
+# has a dead end`.
 export RW_HOOK="rite-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -92,8 +140,6 @@ rw_bool "$(rw_option RITE_GATE true)" || exit 0
 
 cwd="$(rw_realpath "$(rw_field cwd)")"
 [ -n "$cwd" ] || exit 0
-root="$(rw_root "$cwd")"
-git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
 # The files only a script may write. Denied by hand whether or not a front is open.
 foundation() {
@@ -109,51 +155,276 @@ foundation() {
 # The owner's files: read by the fences that guard against the agent, so never written by it.
 owner_config() {
   case "$1" in
-    .roadworthy/protected|.roadworthy/overnight-rules) return 0 ;;
+    .roadworthy/protected|.roadworthy/overnight-rules|.roadworthy/free|.roadworthy/docs.json|.roadworthy/rites) return 0 ;;
     *) return 1 ;;
   esac
 }
 
-# The plan's two homes, resolved. Empty when a home is not declared.
-plans="$(rw_option PLANS_DIR "")"
-[ -n "$plans" ] || plans="$HOME/.claude/plans"
-plans="$(rw_realpath "${plans%/}")"
-project_plans="$(rw_project_plans_dir "$root")"
-in_plans_home() {  # in_plans_home <absolute path> — 0 when the path is inside either home
-  case "$1" in "$plans"|"$plans"/*) return 0 ;; esac
-  [ -n "$project_plans" ] && case "$1" in "$project_plans"|"$project_plans"/*) return 0 ;; esac
-  return 1
-}
-
 # A scope file that declares nothing is not a scope. This is the same test scope-lock applies
 # before it decides it has anything to enforce, so the two cannot disagree.
-scope_usable() {
-  [ -f "$root/.roadworthy/scope" ] || return 1
-  grep -q -v -E '^[[:space:]]*(#|$)' "$root/.roadworthy/scope" 2>/dev/null
+scope_usable() {  # scope_usable <root>
+  [ -f "$1/.roadworthy/scope" ] || return 1
+  grep -q -v -E '^[[:space:]]*(#|$)' "$1/.roadworthy/scope" 2>/dev/null
 }
 
-front_state() {
-  if [ -f "$root/.roadworthy/state" ]; then cat "$root/.roadworthy/state"; else echo "none"; fi
-}
-
-deny_no_front() {  # deny_no_front <what>
-  deny PreToolUse "no front is open in $root, so $1 has nothing to belong to. Open one from the approved plan: skills/plan/scripts/scope-write.sh <plan.md> writes .roadworthy/scope, .roadworthy/gates and .roadworthy/plan.snapshot in one act, and from then on every edit is measured against what was approved. (rite_gate)"
+deny_no_front() {  # deny_no_front <root> <what>
+  deny PreToolUse "no front is open in $1, so $2 has nothing to belong to. A front opens from an approved plan. Writing the plan is open to you now: a .md directly in the plans directory, with its Scope and Verification as fenced blocks. Submit it through plan mode; once it is approved, 'skills/plan/scripts/scope-write.sh <plan.md>' (from inside that repository, or with --root <repository>) writes the scope, the gates and the snapshot in one act, and from then on every edit is measured against what was approved. Scratch work belongs in the session scratchpad, which needs no front. (rite_gate)"
 }
 
 deny_foundation() {  # deny_foundation <relative path>
   deny PreToolUse "'$1' is written by a script, never by hand: it is the foundation the closing is measured against, and editing it by hand only makes the digests disagree. Use skills/plan/scripts/scope-write.sh to open a front, /roadworthy:close to close one. (rite_gate)"
 }
 
-deny_bad_state() {  # deny_bad_state <state>
-  deny PreToolUse "the last front in $root ended as '$1' and nothing has been done about it. A front that ended badly blocks the next one: read .roadworthy/state, finish or record what was left, then open the new front. (rite_gate)"
+# judge_open <where the front opens> <plan> — the agent running scope-write.sh.
+judge_open() {
+  local where="$1" plan="$2" oroot
+  rw_bool "$(rw_option PLAN_REVIEW_REQUIRED true)" || return 0
+  if [ "$where" = "?" ] || [ "$plan" = "?" ]; then
+    deny PreToolUse "this command opens a front from a plan, or in a repository, that is only known when it runs, so the approval it needs cannot be looked up. Name both: skills/plan/scripts/scope-write.sh <plan.md> [--root <repository>]. (rite_gate)"
+  fi
+  where="$(rw_realpath "$where")"
+  if rw_agent_place "$where"; then return 0; fi
+  oroot="$(rw_target_root "$where/x")"
+  [ -n "$oroot" ] || return 0                 # no repository there: the script says so itself
+  # A plan with no Scope or no Verification as a FENCED block has nothing to approve and opens no
+  # front: the script refuses it and says exactly that. Denying here instead sent the agent back
+  # to "submit the plan again", in a loop (adversarial simulation, 2026-10-01).
+  python3 "$(dirname "$0")/planblocks.py" fingerprint "$plan" >/dev/null 2>&1 || return 0
+  export RW_DENIAL_ROOT="$oroot"
+  if python3 "$(dirname "$0")/planblocks.py" approved "$plan" "$(rw_data_dir "$oroot")/evidence.jsonl" "$(rw_field transcript_path)" >/dev/null 2>&1; then
+    return 0
+  fi
+  deny PreToolUse "no approval is on record for what '$(basename "$plan")' would make this front enforce (its Scope, its Verification and its base). A front opens from an approved plan: submit the plan through plan mode and have it approved -- the approval is recorded then, and editing the prose afterwards does not void it; changing a glob, a gate or the base does. The owner can also open the front himself, outside the agent. (rite_gate)"
 }
 
 deny_owner() {  # deny_owner <relative path>
-  deny PreToolUse "'$1' is the owner's configuration: it is what the fences read to guard against the agent, so the agent does not edit it. Report the change you need (the glob to protect, the rule to freeze) and let the owner make it outside the agent. (rite_gate)"
+  deny PreToolUse "'$1' is the owner's configuration: it is what the fences read to guard against the agent, so the agent does not edit it. Report the change you need (the glob to protect, the rule to freeze, the path to free) and let the owner make it outside the agent. (rite_gate)"
 }
 
 deny_removal() {  # deny_removal <relative path>
   deny PreToolUse "'$1' cannot be removed by hand: .roadworthy/ holds the foundation the closing is measured against, the ledgers, the night marker and the owner's configuration. A front is closed by /roadworthy:close, never by deleting what it left; if a file there is wrong, say so and let the owner act. (rite_gate)"
+}
+
+deny_sweep() {  # deny_sweep <directory> <how>
+  deny PreToolUse "this removal names no file and would reach '$1/.roadworthy' ($2): the foundation the closing is measured against, the ledgers and the owner's configuration. Name what is to be removed -- a path, or a pattern that cannot match the rite's files -- and leave .roadworthy/ out of it. (rite_gate)"
+}
+
+deny_handed() {  # deny_handed <relative path>
+  if [ "$1" = ".roadworthy/.interpreter" ]; then
+    deny PreToolUse "this command hands an interpreter code that writes, removes or renames through a path under .roadworthy/. Nothing there is written by hand, in any language: it is the foundation the closing is measured against, the ledgers and the owner's configuration. Reading it is fine (open(path).read(), json.load). The rite's files change through the rite's own scripts -- scope-write.sh, close.sh, refute.sh -- and the owner's through the owner. (rite_gate)"
+  fi
+  if [ "$1" = ".roadworthy" ]; then
+    deny PreToolUse "this command names .roadworthy/ and also writes or removes something that could not be followed -- a variable only known when it runs, names arriving through a pipe, a directory changed to somewhere unknown, or nesting too deep to read. Nothing under .roadworthy/ is written or removed by hand, so it is denied whole. Split it: read the rite's files in one command, and write with the target spelled out in another. (rite_gate)"
+  fi
+  deny PreToolUse "'$1' is handed to a command that is not known to only read. Nothing under .roadworthy/ is written, moved or changed by hand: it is the foundation the closing is measured against, the ledgers and the owner's configuration. Reading it is fine (cat, grep, head, jq, wc, diff, ls). (rite_gate)"
+}
+
+deny_protected() {  # deny_protected <relative path> <globs> <word>
+  deny PreToolUse "'$1' is $3 ($2), and the shell is a door like the edit tools. Report the needed change instead of making it. (rite_gate)"
+}
+
+# The repository the session stands in, when it stands in one.
+session_root=""
+if git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then session_root="$(rw_root "$cwd")"; fi
+
+# judge_rite <kind> <absolute path> — the rite's own directory, recognised by NAME: a path with a
+# `.roadworthy` component, in any repository and in none. Returns when the path is not there;
+# otherwise it denies, or returns for the one thing left (a write to a name the rite does not own).
+judge_rite() {
+  local kind="$1" abs rel
+  # Lower-cased before it is matched: on a case-insensitive disk -- the default on macOS --
+  # `.Roadworthy/scope` IS `.roadworthy/scope`, and every check here compared the lower-case
+  # spelling only (found by the adversarial simulation of 2026-10-01, with a plain `>` redirection).
+  abs="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+  case "$abs" in
+    */.roadworthy) rel=".roadworthy" ;;
+    */.roadworthy/*) rel=".roadworthy/${abs#*/.roadworthy/}" ;;
+    *) return 0 ;;
+  esac
+  case "$kind" in
+    R|D|F|G) deny_removal "$rel" ;;
+    N) deny_handed "$rel" ;;
+    U|X) deny_foundation "$rel" ;;
+  esac
+  # W, and V (a file put back the way git has it): for the rite's own files both are writes.
+  # A write INTO the directory with the name left out (`cp x .roadworthy/`) is a write to whatever
+  # the source is called.
+  [ "$rel" != ".roadworthy" ] || deny_foundation "$rel"
+  if foundation "$rel"; then deny_foundation "$rel"; fi
+  if owner_config "$rel"; then deny_owner "$rel"; fi
+  return 0
+}
+
+# judge <kind> <absolute path> <shell|edit> — everything the gate has to say about one target.
+# Sets `pending_root` and `pending_what` when the target is repository work with no front, and
+# leaves the denial to the caller: every target is looked at for the foundation first, so the
+# refusal a command gets is the gravest one it earned.
+pending_root=""; pending_what=""
+judge() {
+  local kind="$1" abs="$2" door="$3" troot rel r globs untracked probe untracked_only=""
+  # The agent's own working places are nobody's repository, whatever git says about them.
+  if rw_agent_place "$abs"; then return 0; fi
+  judge_rite "$kind" "$abs"
+  troot="$(rw_target_root "$abs")"
+  # Removing a directory removes what is in it: `rm -rf "$PWD"`, `rm -rf ../this-repository`.
+  if [ "$kind" = R ] && [ -d "$abs/.roadworthy" ]; then export RW_DENIAL_ROOT="$abs"; deny_sweep "$abs" "the directory goes, and the rite's with it"; fi
+  # A removal that names no file is judged by what lies under the directory it sweeps.
+  if [ "$kind" = F ]; then
+    if [ -d "$abs/.roadworthy" ]; then export RW_DENIAL_ROOT="$abs"; deny_sweep "$abs" "it removes everything it finds there"; fi
+    kind=D
+  fi
+  if [ "$kind" = G ]; then
+    # Exactly what git would take: the rite's files that are neither tracked nor ignored.
+    if [ -n "$troot" ] && [ "$abs" = "$troot" ] && [ -d "$troot/.roadworthy" ]; then
+      untracked="$(git -C "$troot" ls-files --others --exclude-standard -- .roadworthy 2>/dev/null | head -1 || true)"
+      if [ -n "$untracked" ]; then export RW_DENIAL_ROOT="$troot"; deny_sweep "$troot" "'$untracked' is untracked and not ignored, so git would take it"; fi
+    fi
+    kind=D; untracked_only=1                    # git takes only what it does not track
+  fi
+  [ "$kind" != N ] || return 0
+  r="$troot"; [ -n "$r" ] || r="$session_root"; [ -n "$r" ] || r="$cwd"
+  rel="$abs"
+  case "$abs" in "$r") rel="." ;; "$r"/*) rel="${abs#"$r"/}" ;; esac
+  # What is protected is protected through this door too. The edit tools have protect-paths; the
+  # shell had nothing, so `sed -i` on a protected file was only ever stopped by the scope. Only a
+  # target the reader can NAME is judged here (W, R); what it cannot name is caught where the set
+  # is exact -- the commit and the closing.
+  # (V, a file put back the way git has it, is not judged: it is how a protected path that
+  # something changed gets undone.)
+  if [ "$door" = shell ] && { [ "$kind" = W ] || [ "$kind" = R ]; }; then
+    export RW_DENIAL_ROOT="$r"
+    globs="$(rw_protected_globs "$r")"
+    if [ -n "$globs" ] && rw_glob_match "$rel" "$globs"; then deny_protected "$rel" "protected_paths: $globs" "a protected path"; fi
+    globs="$(rw_frozen_globs "$r")"
+    if [ -n "$globs" ] && rw_glob_match "$rel" "$globs"; then deny_protected "$rel" "overnight mode, freeze: $globs" "frozen for the night"; fi
+  fi
+  # A target in no repository is no repository's work. Without this the gate denied
+  # `echo x > /tmp/...`, which is not the thing it exists to stop.
+  [ -n "$troot" ] || return 0
+  # A repository other than the one the session stands in: noted, so the stop gate asks for ITS
+  # gates too when the turn says the work is finished.
+  if [ "$troot" != "$session_root" ]; then note_touched "$troot"; fi
+  # The plan is the rite's own artefact: it is what OPENS a front, so it cannot need one.
+  if rw_is_plan_file "$abs" "$troot"; then return 0; fi
+  # What the owner declared outside the rite needs no front.
+  globs="$(rw_free_globs "$troot")"
+  if [ -n "$globs" ] && rw_glob_match "$rel" "$globs"; then return 0; fi
+  if scope_usable "$troot"; then
+    export RW_DENIAL_ROOT="$troot"
+    # The front is measured by what is on disk, not only by what the command said (frontcheck.py).
+    front_facts "$troot"
+    if [ -n "$FRONT_BROKEN" ]; then deny_broken "$troot" "$FRONT_BROKEN"; fi
+    # A change outside the scope that is already in the tree, or already committed by this front,
+    # is SAID to the agent and does not stop it. It stopped every write for a day of this front's
+    # own development, and the simulation of honest work showed what that costs: the owner saving
+    # a note in the same tree, or a colleague's file left unstaged, blocked the agent and told it
+    # to stash work that was not its own (2026-10-01). Nothing here can tell whose change it is.
+    # What is exact stays exact: the commit does not take the path (guard-commit) and the closing
+    # refuses the front while it is there (close.sh).
+    if [ -n "$FRONT_HISTORY$FRONT_DRIFT" ]; then front_note "$troot"; fi
+    # The scope holds through the shell too, for a target the reader can NAME. Until 0.7.0 the
+    # scope lock stood on the edit tools alone, and `echo x > outside/b.py` with a front open went
+    # through (the first run of tests/sim/rite-sim.py, 2026-10-01). Putting a file back the way
+    # git has it (V) removes a difference and needs no scope; what git ignores cannot reach the
+    # history and is left alone, so a log redirected into build/ is not an incident.
+    if [ "$door" = shell ] && { [ "$kind" = W ] || [ "$kind" = R ]; }; then
+      globs="$(rw_list_globs "$troot/.roadworthy/scope")"
+      probe="$rel"; [ ! -d "$abs" ] || probe="$rel/x"
+      if ! rw_glob_match "$probe" "$globs" && ! git -C "$troot" check-ignore -q -- "$rel" 2>/dev/null; then
+        # Removing what git does not track changes nothing the history can see: a build
+        # directory, a stray output. Removing a tracked file outside the scope is a change.
+        if [ "$kind" = R ] && [ -z "$(git -C "$troot" ls-files -- "$rel" 2>/dev/null | head -1 || true)" ]; then return 0; fi
+        # Putting back a tracked file that went missing (a rename undone with `mv`) is undoing.
+        if [ "$kind" = W ] && [ ! -e "$abs" ] && [ -n "$(git -C "$troot" ls-files -- "$rel" 2>/dev/null | head -1 || true)" ]; then return 0; fi
+        deny_scope "$rel" "$troot"
+      fi
+    fi
+    return 0
+  fi
+  # No front. What the history cannot see needs none: a file put back the way git has it, the
+  # removal of something git does not track, a write to a path git ignores. Refusing those denied
+  # `rm -rf build` and `git checkout -- README.md` to a session that had changed nothing.
+  [ "$kind" != V ] || return 0
+  [ -z "$untracked_only" ] || return 0
+  if [ "$door" = shell ] && git -C "$troot" check-ignore -q -- "$rel" 2>/dev/null; then return 0; fi
+  if [ "$kind" = R ] || [ "$kind" = D ]; then
+    [ -n "$(git -C "$troot" ls-files -- "$rel" 2>/dev/null | head -1 || true)" ] || return 0
+  fi
+  if [ -z "$pending_root" ]; then pending_root="$troot"; pending_what="$rel"; fi
+  return 0
+}
+
+note_touched() {  # note_touched <root> — never fails, never blocks
+  local f
+  f="$(rw_touched_file "$(printf '%s' "$(rw_field session_id)" | tr -c 'A-Za-z0-9_.-' '_')")"
+  [ -n "$f" ] || return 0
+  mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
+  grep -q -x -F -- "$1" "$f" 2>/dev/null || printf '%s\n' "$1" >> "$f" 2>/dev/null || true
+  return 0
+}
+
+# front_facts <root> — sets FRONT_BROKEN (why the front on disk is not the one approved, or empty)
+# and FRONT_DRIFT (the paths changed outside the scope, one per line). Measured once per root.
+FRONT_ROOT=""; FRONT_BROKEN=""; FRONT_DRIFT=""; FRONT_HISTORY=""
+front_facts() {
+  local facts required=false
+  [ "$FRONT_ROOT" != "$1" ] || return 0
+  FRONT_ROOT="$1"; FRONT_BROKEN=""; FRONT_DRIFT=""; FRONT_HISTORY=""
+  if rw_bool "$(rw_option PLAN_REVIEW_REQUIRED true)"; then required=true; fi
+  facts="$(python3 "$(dirname "$0")/frontcheck.py" "$1" "$(rw_data_dir "$1")/evidence.jsonl" "$required" "$(rw_project_plans_dir "$1")")"
+  FRONT_BROKEN="$(printf '%s\n' "$facts" | sed -n 's/^BROKEN	//p' | head -1)"
+  FRONT_DRIFT="$(printf '%s\n' "$facts" | sed -n 's/^DRIFT	//p')"
+  FRONT_HISTORY="$(printf '%s\n' "$facts" | sed -n 's/^HISTORY	//p')"
+}
+
+deny_broken() {  # deny_broken <root> <reason>
+  deny PreToolUse "the front open in $1 is not the front that was approved: $2. Nothing is written over it. Reopen it from the approved plan (skills/plan/scripts/scope-write.sh <plan.md>), which writes the scope, the gates and the snapshot again, or abandon it with its reason (skills/close/scripts/close.sh --abandon \"<reason>\"). Both are open to you now. (rite_gate)"
+}
+
+# front_note <root> — what the agent is told, once, about changes outside the scope.
+FRONT_NOTE=""
+front_note() {
+  local n shown
+  [ -z "$FRONT_NOTE" ] || return 0
+  if [ -n "$FRONT_DRIFT" ]; then
+    n="$(printf '%s\n' "$FRONT_DRIFT" | grep -c . || true)"
+    shown="$(printf '%s\n' "$FRONT_DRIFT" | head -5 | tr '\n' ' ')"
+    FRONT_NOTE="Roadworthy/rite-gate: $n path(s) outside the approved scope are changed in the tree of $1: $shown-- the commit will not take them and the closing refuses the front while they are there. If they are yours, undo them now: 'git restore --staged --worktree -- <path>' for a tracked file, rm or 'git clean -fd -- <path>' for a new one. If they are the owner's or another session's, leave them alone and say so in your report: they are set aside for the closing by whoever they belong to. If this front needs the change, it belongs in the plan: edit its Scope block, submit it again for approval, and run scope-write.sh on the same plan."
+  fi
+  if [ -n "$FRONT_HISTORY" ]; then
+    n="$(printf '%s\n' "$FRONT_HISTORY" | grep -c . || true)"
+    shown="$(printf '%s\n' "$FRONT_HISTORY" | head -5 | tr '\n' ' ')"
+    FRONT_NOTE="${FRONT_NOTE}${FRONT_NOTE:+ }Roadworthy/rite-gate: the commits made here since this front opened carry $n path(s) outside the approved scope: $shown-- the closing will refuse the front over them. If the commit is yours, take it back ('git reset --soft <the commit before>' keeps every change in the tree, where what is outside the scope can be unstaged and put back). If it is the owner's, say so in your report."
+  fi
+  return 0
+}
+
+# finish — the one way out for a call that is NOT denied: says the note, once per session and per
+# set of paths, and lets the call through. (additionalContext with no decision reaches the model
+# and decides nothing: the form hooks/plan-review-gate already uses.)
+finish() {
+  local f key now
+  [ -n "$FRONT_NOTE" ] || exit 0
+  key="$(printf '%s' "$(rw_field session_id)" | tr -c 'A-Za-z0-9_.-' '_')"
+  if [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then
+    f="$CLAUDE_PLUGIN_DATA/sessions/$key.note"
+    now="$(printf '%s' "$FRONT_NOTE" | shasum -a 256 2>/dev/null | cut -d' ' -f1 || true)"
+    if [ -n "$now" ] && [ "$(cat "$f" 2>/dev/null || true)" = "$now" ]; then exit 0; fi
+    mkdir -p "$(dirname "$f")" 2>/dev/null && printf '%s\n' "$now" > "$f" 2>/dev/null || true
+  fi
+  RW_NOTE="$FRONT_NOTE" python3 -c 'import json, os
+print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": os.environ["RW_NOTE"]}}))'
+  exit 0
+}
+
+deny_scope() {  # deny_scope <relative path> <root>
+  deny PreToolUse "'$1' is outside the approved scope ($2/.roadworthy/scope), and the shell is a door like the edit tools. Leave the file alone, or take the change to the plan: edit its Scope block, submit the plan again for approval, and run scope-write.sh on the same plan -- it reopens this front and keeps its base. Scratch output belongs in the session scratchpad or in a path git ignores. (rite_gate)"
+}
+
+no_front() {  # no_front <what kind of act>
+  [ -n "$pending_root" ] || finish
+  export RW_DENIAL_ROOT="$pending_root"
+  deny_no_front "$pending_root" "$1 '$pending_what'"
 }
 
 tool="$(rw_field tool_name)"
@@ -163,82 +434,65 @@ case "$tool" in
     [ -n "$command" ] || exit 0
     # The command is read by hooks/shellread.py -- one grammar, in one file, with its own table of
     # cases (tests/scripts/shellread.sh). It answers KIND <TAB> DIRECTORY <TAB> PATH per target:
-    # W a write, R a removal, U a write somewhere under PATH, D a removal somewhere under PATH,
-    # S the rite's own scope-write.sh run on a plan.
+    # W a write, R a removal, U and D a write and a removal somewhere under PATH, F and G a removal
+    # that names no file, N a path of the rite handed to a command not known to only read, X a
+    # command that could not be read, S the rite's own scope-write.sh run on a plan.
     target="$(RW_CMD="$command" python3 "$(dirname "$0")/shellread.py" "$cwd")"
     [ -n "$target" ] || exit 0
-    # The foundation is protected through THIS door too. Guarding only the edit tools left the
-    # exact hole the roadmap recorded from the field -- appending a glob to .roadworthy/scope
-    # with a justification quoted from the chat -- open, one `>>` away, whenever a front was open.
-    inside=""
+    # A hook has a time limit (hooks/hooks.json), and one that runs out of it does not deny: the
+    # call goes ahead. Each target costs a few subprocesses to judge, so a command naming hundreds
+    # of them is a way to run the gate out of time. It is refused whole instead of judged late.
+    if [ "$(printf '%s\n' "$target" | grep -c . || true)" -gt 400 ]; then
+      deny PreToolUse "this command writes or removes more than 400 separate targets, which is more than the gate can judge inside its time limit; a gate that runs out of time does not deny, so it is refused whole. Split it into smaller commands, or name the directory instead of every file. (rite_gate)"
+    fi
+    # Two passes. The foundation is protected through THIS door too -- guarding only the edit tools
+    # left the exact hole the roadmap recorded from the field, appending a glob to .roadworthy/scope,
+    # one `>>` away -- and it is looked for in every target before anything else is said.
     while IFS=$'\t' read -r kind dir one; do
       [ -n "$one" ] || continue
-      [ "$kind" = S ] && continue
-      abs="$one"
-      # A relative path is relative to the directory in force for IT -- after a `cd`, a `git -C` --
-      # which the reader carries, never to wherever the session stands.
-      case "$one" in /*) ;; *) abs="${dir:-$cwd}/$one" ;; esac
-      abs="$(rw_realpath "$abs")"
-      rel="$abs"
-      case "$abs" in "$root"|"$root"/*) rel="${abs#"$root"}"; rel="${rel#/}" ;; esac
-      # Nothing under .roadworthy/ is removed by hand, the directory included; see the note above.
-      # D is a removal whose targets are not on the command line (`find ... -delete`): it is judged
-      # by the directory it searches.
-      if [ "$kind" = R ] || [ "$kind" = D ]; then
-        case "$rel" in .roadworthy|.roadworthy/|.roadworthy/*) deny_removal "$rel" ;; esac
-      fi
-      # A write whose target is not on the command line, aimed at the plugin's own directory
-      # (`tar x -C .roadworthy`), is a write to the foundation with the name left out.
-      if [ "$kind" = U ]; then
-        case "$rel" in .roadworthy|.roadworthy/|.roadworthy/*) deny_foundation "$rel" ;; esac
-      fi
-      # The foundation is protected wherever it is named, front or no front; so are the owner's files.
-      if foundation "$rel"; then deny_foundation "$rel"; fi
-      if owner_config "$rel"; then deny_owner "$rel"; fi
-      # The plan is the rite's own artefact: it is what OPENS a front, so it cannot need one.
-      # The edit tools were already exempt; the shell was not, so `cat > <plan>` was denied. With
-      # the default plans_dir (~/.claude/plans) the rule below about writes outside the repository
-      # already covers it -- this line is what makes it hold for a plans directory INSIDE the
-      # repository: plans_dir pointed there, or the `plans` directory of docs.json. Measured:
-      # with this line removed and plans_dir inside the repo, the plan is denied.
-      if in_plans_home "$abs"; then continue; fi
-      # A write OUTSIDE this repository is not work on this repository. Without this the gate
-      # denied `echo x > /tmp/...` and every write into the session scratchpad, which is not the
-      # thing it exists to stop.
-      case "$abs" in "$root"|"$root"/*) [ -n "$inside" ] || inside="${rel:-.}" ;; esac
+      case "$kind" in S|C|A|H) continue ;; esac   # the rite's own scripts; a commit (guard-commit's)
+      case "$one" in
+        /*)
+          abs="$(rw_realpath "$one")"
+          if ! rw_agent_place "$abs"; then judge_rite "$kind" "$abs"; fi
+          ;;
+        *)
+          # A relative path is relative to the directory in force for IT -- after a `cd`, a
+          # `git -C` -- which the reader carries. A `cd` the reader followed and the shell did not
+          # (inside a function never called, after `false &&`) does not hide the rite's directory:
+          # it is recognised by NAME wherever the path lands. (A second judgement at the session's
+          # directory stood here; refuted on 2026-10-01, the tests stayed green without it.)
+          abs="$(rw_realpath "${dir:-$cwd}/$one")"
+          if ! rw_agent_place "$abs"; then judge_rite "$kind" "$abs"; fi
+          ;;
+      esac
     done <<< "$target"
-    [ -n "$inside" ] || exit 0
-    scope_usable && exit 0
-    state="$(front_state)"
-    case "$state" in gaps_found|needs_human) deny_bad_state "$state" ;; esac
-    deny_no_front "the shell write to '$inside'"
+    while IFS=$'\t' read -r kind dir one; do
+      [ -n "$one" ] || continue
+      case "$kind" in S|C|A|H) continue ;; esac
+      abs="$one"
+      case "$one" in /*) ;; *) abs="${dir:-$cwd}/$one" ;; esac
+      judge "$kind" "$(rw_realpath "$abs")" shell
+    done <<< "$target"
+    # The answer of a person is recorded by the person. A human verification exists because a
+    # machine cannot make it; an agent that types `--human all approved --by owner` has made it.
+    if printf '%s\n' "$target" | grep -q '^H	'; then
+      deny PreToolUse "a human verification is answered by the person, not by the agent. Ask for the answer and stop there. The owner records it by writing, in the chat, a line of their own: 'rw-human: all approved' (or 'rw-human: <item> rejected <note>') -- the plugin reads it from the prompt and records it -- or by running the command outside the agent. Listing what is open (close.sh --human) and asking for a verification (close.sh --needs-human \"<item>\") are yours. (rite_gate)"
+    fi
+    # Opening a front is the rite's own act, and it has its own condition: an approval on record.
+    while IFS=$'\t' read -r kind dir one; do
+      [ "$kind" = S ] || continue
+      judge_open "$dir" "$one"
+    done <<< "$target"
+    no_front "the shell write to"
     ;;
   *)
     target="$(rw_field tool_input.file_path)"
     [ -n "$target" ] || target="$(rw_field tool_input.notebook_path)"
     [ -n "$target" ] || exit 0
-    target="$(rw_realpath "$target")"
-    relative="$target"
-    case "$target" in "$root"/*) relative="${target#"$root"/}" ;; esac
-
-    foundation "$relative" && deny_foundation "$relative"
-    owner_config "$relative" && deny_owner "$relative"
-
-    # The plan is the artefact of the rite itself: in plans_dir, outside the project, or in the
-    # plans directory the project declares.
-    tdir="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P || dirname "$target")"
-    if in_plans_home "$tdir"; then exit 0; fi
-
-    case "$relative" in
-      .roadworthy/docs.json) exit 0 ;;
-    esac
-    # Same rule as the shell door: a file outside this repository is not this repository's work.
-    case "$target" in "$root"/*) ;; *) exit 0 ;; esac
-
-    scope_usable && exit 0
-    state="$(front_state)"
-    case "$state" in gaps_found|needs_human) deny_bad_state "$state" ;; esac
-    deny_no_front "the edit of '$relative'"
+    # protect-paths is the door for what is protected when the edit tools are used.
+    judge W "$(rw_realpath "$target")" edit
+    no_front "the edit of"
     ;;
 esac
-exit 0
+finish

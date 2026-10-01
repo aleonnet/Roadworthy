@@ -94,4 +94,70 @@ CLAUDE_PLUGIN_OPTION_STOP_GATE=false bash -c 'printf "{\"session_id\":\"s5\",\"c
 [ $? -ne 2 ] && ok "stop_gate=false honoured" || fail "stop_gate=false ignored"
 set -e
 
+# ── 0.7.0: a claim, not a word ────────────────────────────────────────────────
+# 86 of 177 real blocks on this machine had the shape of a false positive: the word in a table row,
+# negated, in "ready to", or in a tail that listed what was still open (measured 2026-09-30).
+section "stop-gate (a claim that the work is finished, not a word in a report)"
+SC="$TMP/stop-claim"; SCD="$TMP/stop-claim-data"; mkdir -p "$SC/.roadworthy" "$SCD"
+git -C "$SC" init -q; git -C "$SC" config user.email t@t; git -C "$SC" config user.name t
+printf 'true\n' > "$SC/.roadworthy/gates"; echo x > "$SC/f"; git -C "$SC" add -A; git -C "$SC" commit -q -m base
+sc() {  # sc <session> <final message> [<extra env>]  -> SCRC
+  set +e
+  python3 -c 'import json,sys; print(json.dumps({"session_id":sys.argv[1],"cwd":sys.argv[2],"last_assistant_message":sys.argv[3]}))' "$1" "$SC" "$2" \
+    | ROADWORTHY_DATA="$SCD" bash "$ROOT/hooks/run-hook.cmd" stop-gate >/dev/null 2>"$TMP/sc.err"
+  SCRC=$?
+  set -e
+}
+n=0
+while IFS= read -r msg; do
+  n=$((n + 1)); sc "r$n" "$(printf '%b' "$msg")"
+  [ "$SCRC" -ne 2 ] || fail "a status report was blocked as a finished claim: $msg"
+done <<'MSGS'
+| 3 | the reader | table of cases | done |\n| 4 | the gate | not started | - |
+The front is not done: two phases are left.
+Ainda não está pronto; falta a bancada.
+The branch is ready to be reviewed once the suite passes, not before.
+Fica pronto para o fecho quando os portões passarem.
+✅ feito e provado aqui · 🟡 feito no código e nos testes · ⬜ não começado · 📍 depende de você\nNothing is finished yet.
+Phase 2 is done.\n⬜ Phase 3 has not started.
+The reader is done; TODO: the gate and the closing.
+Nada foi concluído nesta rodada.
+MSGS
+ok "a table row, a negation, 'ready to', 'pronto para', a legend and a tail that names an open item are not blocked ($n messages)"
+n=0
+while IFS= read -r msg; do
+  n=$((n + 1)); sc "c$n" "$(printf '%b' "$msg")"
+  [ "$SCRC" -eq 2 ] || fail "a finished claim on gates never measured passed: $msg (rc=$SCRC)"
+done <<'MSGS'
+All done.
+The work is finished and pushed.
+Está tudo pronto.
+A frente foi concluída.
+STATUS: passed
+✅ feito e provado aqui · 🟡 feito no código · ⬜ não começado · 📍 depende de você\nTudo entregue.
+MSGS
+ok "a plain claim is still blocked, in both languages, with or without a legend above it ($n messages)"
+set +e
+python3 -c 'import json,sys; print(json.dumps({"session_id":"m1","cwd":sys.argv[1],"last_assistant_message":"Phase 2 is done.\nPENDING: phase 3."}))' "$SC" \
+  | ROADWORTHY_DATA="$SCD" CLAUDE_PLUGIN_OPTION_STOP_GATE_OPEN_MARKERS="PENDING" bash "$ROOT/hooks/run-hook.cmd" stop-gate >/dev/null 2>&1
+MRC=$?
+set -e
+[ "$MRC" -ne 2 ] && ok "stop_gate_open_markers names the project's own marks" || fail "the open-markers option was ignored"
+
+# ── 0.7.0: the gates of every repository the turn wrote in ───────────────────
+section "stop-gate (another repository the session wrote in)"
+SA="$TMP/stop-a"; SB="$TMP/stop-b"; PD="$TMP/stop-plugin-data"; mkdir -p "$SA" "$SB/.roadworthy" "$SB/src" "$PD"
+for r in "$SA" "$SB"; do git -C "$r" init -q; git -C "$r" config user.email t@t; git -C "$r" config user.name t; echo x > "$r/f"; done
+SB="$(cd "$SB" && pwd -P)"; SA="$(cd "$SA" && pwd -P)"
+printf 'true\n' > "$SB/.roadworthy/gates"; printf 'src/**\n' > "$SB/.roadworthy/scope"
+git -C "$SA" add -A; git -C "$SA" commit -q -m base; git -C "$SB" add -A; git -C "$SB" commit -q -m base
+sab() { set +e; python3 -c 'import json,sys; print(json.dumps({"session_id":"ab","cwd":sys.argv[1],"last_assistant_message":"All done."}))' "$SA" | env -u ROADWORTHY_DATA CLAUDE_PLUGIN_DATA="$PD" bash "$ROOT/hooks/run-hook.cmd" stop-gate >/dev/null 2>"$TMP/sab.err"; SABRC=$?; set -e; }
+sab
+[ "$SABRC" -ne 2 ] && ok "a session in a repository with no gates, that touched nothing else, is not blocked" || fail "blocked with nothing to answer for"
+python3 -c 'import json,sys; print(json.dumps({"tool_name":"Edit","session_id":"ab","cwd":sys.argv[1],"tool_input":{"file_path":sys.argv[2]+"/src/x.py"}}))' "$SA" "$SB" \
+  | env -u ROADWORTHY_DATA CLAUDE_PLUGIN_DATA="$PD" bash "$ROOT/hooks/run-hook.cmd" rite-gate >/dev/null
+sab
+[ "$SABRC" -eq 2 ] && grep -q "$SB" "$TMP/sab.err" && ok "after an edit in ANOTHER repository, its gates are asked for, and it is named" || fail "the gates of the repository touched were not read (rc=$SABRC): $(cat "$TMP/sab.err")"
+[ ! -e "$SA/.roadworthy" ] && [ -f "$PD/sessions/ab.touched" ] && ok "the note of what was touched lives with the plugin, not in either project" || fail "the touched-repositories note was written into a project"
+
 rw_end

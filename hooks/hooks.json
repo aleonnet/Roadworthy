@@ -1,5 +1,5 @@
 {
-  "description": "Roadworthy guardrails. The guards fail CLOSED: an internal error denies the action, because a boundary that fails open is not a boundary. Context injection (principles) fails open with a visible notice, because an error there would erase the prompt. A denial is a structured JSON decision with exit 0; the one exit 2 is stop-gate's, because blocking a turn is what exit 2 means on the Stop event.",
+  "description": "Roadworthy guardrails. The guards fail CLOSED: an internal error denies the action, because a boundary that fails open is not a boundary. A guard that simply dies answers with a denial too. Context injection (principles) fails open with a visible notice, because an error there would erase the prompt; session-state, review-record and the approval record written after a plan is approved fail open as well, because they only write down what happened. A denial is a structured JSON decision with exit 0; the one exit 2 is stop-gate's, because blocking a turn is what exit 2 means on the Stop event.",
   "hooks": {
     "SessionStart": [
       {
@@ -30,7 +30,7 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" rite-gate",
-            "timeout": 10
+            "timeout": 60
           },
           {
             "type": "command",
@@ -50,12 +50,12 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" rite-gate",
-            "timeout": 10
+            "timeout": 60
           },
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" guard-commit",
-            "timeout": 20
+            "timeout": 60
           },
           {
             "type": "command",
@@ -70,6 +70,29 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" plan-review-gate",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" plan-review-gate",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" review-record",
             "timeout": 10
           }
         ]

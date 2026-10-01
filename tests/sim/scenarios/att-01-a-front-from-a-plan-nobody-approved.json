@@ -1,0 +1,73 @@
+{
+ "name": "opening a front from a plan that was never approved, or was changed after it",
+ "setup": {
+  "front": "none"
+ },
+ "steps": [
+  {
+   "tool": "Write",
+   "file_path": "@PLANS@/a-plan.md",
+   "content": "# A plan\n\nproject: @T@\nstatus: proposed\n\n## Context\nA toy.\n\n## Scope\n```\nsrc/**\n```\n\n## Verification\n```\ntest -f src/a.py\n```\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/a-plan.md",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "cd @T@ && bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/a-plan.md --root @T@",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "P=@PLANS@/a-plan.md; bash @PLUGIN@/skills/plan/scripts/scope-write.sh \"$P\"",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash -c 'bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/a-plan.md'",
+   "expect": "deny"
+  },
+  {
+   "tool": "ExitPlanMode",
+   "plan_file": "@PLANS@/a-plan.md",
+   "owner": "reject",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/a-plan.md",
+   "expect": "deny"
+  },
+  {
+   "tool": "ExitPlanMode",
+   "plan_file": "@PLANS@/a-plan.md",
+   "owner": "approve",
+   "expect": "allow"
+  },
+  {
+   "tool": "Write",
+   "file_path": "@PLANS@/a-plan.md",
+   "content": "# A plan\n\nproject: @T@\nstatus: proposed\n\n## Context\nA toy.\n\n## Scope\n```\nsrc/**\noutside/**\n```\n\n## Verification\n```\ntest -f src/a.py\n```\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/a-plan.md",
+   "expect": "deny"
+  },
+  {
+   "tool": "Write",
+   "file_path": "@PLANS@/a-plan.md",
+   "content": "# A plan\n\nproject: @T@\nstatus: proposed\n\n## Context\nA toy, reworded after approval.\n\n## Scope\n```\nsrc/**\n```\n\n## Verification\n```\ntest -f src/a.py\n```\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/a-plan.md",
+   "expect": "allow"
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "an open front: honest work, a commit, a green closing",
+  "setup": {"scope": ["src/**"], "gates": ["test -f src/a.py"], "front": "open"},
+  "steps": [
+    {"tool": "SessionStart", "source": "startup"},
+    {"tool": "Read", "file_path": "@T@/src/a.py", "expect": "allow"},
+    {"tool": "Edit", "file_path": "@T@/src/a.py", "old_string": "a = 1", "new_string": "a = 2", "expect": "allow"},
+    {"tool": "Write", "file_path": "@T@/src/new.py", "content": "n = 1\n", "expect": "allow"},
+    {"tool": "Bash", "command": "grep -n 'a = ' src/a.py | head -3 && cat .roadworthy/scope", "expect": "allow"},
+    {"tool": "Bash", "command": "sed -i.bak 's/n = 1/n = 2/' src/new.py && rm src/new.py.bak", "expect": "allow"},
+    {"tool": "Write", "file_path": "@T@/outside/b.py", "content": "b = 2\n", "expect": "deny"},
+    {"tool": "Bash", "command": "echo 'b = 3' > outside/b.py", "expect": "deny"},
+    {"tool": "Write", "file_path": "@SCRATCH@/notes.txt", "content": "scratch\n", "expect": "allow"},
+    {"tool": "Bash", "command": "git add src && git commit -q -m 'work inside the scope'", "expect": "allow"},
+    {"tool": "Stop", "message": "The work is done.", "expect": "deny"},
+    {"tool": "Bash", "command": "bash @PLUGIN@/skills/close/scripts/close.sh", "expect": "allow"},
+    {"tool": "Stop", "message": "The work is done.", "expect": "allow"}
+  ]
+}

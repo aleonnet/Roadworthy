@@ -25,6 +25,8 @@
 # Refuted 2026-09-30, against tests/hooks/session-state.sh: the line that names the open front and
 # its plan removed -> red with `the session started blind: the open front was not named`; green
 # again on the clean file, restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+# Refuted 2026-10-01: the owner's rites not said -> tests/hooks/session-state.sh red with `the
+# session started blind to the owner's rites`, green again on the clean file, restored by hash.
 export RW_HOOK="session-state"
 export RW_ON_CRASH=allow
 source "$(dirname "$0")/lib.sh"
@@ -102,6 +104,21 @@ else:
     lines.append("  front      none open")
 if usable and snap.get("report"):
     lines.append("  report     " + snap["report"])
+# What the OWNER requires of this project beyond the plugin's defaults. Said here so the agent
+# meets it as a fact at the start, not as a refusal in the middle (field, 2026-10-01: a plan
+# submitted with the pre-flight alone in a project whose written rule asked for a review; the rule
+# was a memory note no hook read).
+try:
+    with open(os.path.join(rw, "rites"), encoding="utf-8", errors="replace") as fh:
+        rites = [l.strip() for l in fh if l.strip() and not l.strip().startswith("#")]
+except Exception:
+    rites = []
+if rites:
+    lines.append("  rites      the owner requires: " + "; ".join(rites)[:300])
+out = git("ls-files", "--", ".roadworthy/scope", ".roadworthy/state", ".roadworthy/plan.snapshot")
+if out.strip():
+    lines.append("  warning    the rite's local state is tracked by git here (%s): a stash or a checkout brings an old scope back; untrack it with git rm --cached"
+                 % ", ".join(out.split()))
 
 rc, out = closing("--state")
 state = out.strip().splitlines()[-1] if out.strip() else "none"

@@ -277,4 +277,51 @@ CLAUDE_PLUGIN_OPTION_PLANS_DIR="$PGP_EMPTY" run_hook plan-review-gate "$PG_EVENT
 rm -rf "$PGR/docs" "$PGR/.roadworthy/docs.json"
 unset CLAUDE_PLUGIN_OPTION_PLANS_DIR
 
+# ── 0.7.0: what the PROJECT requires, and the approval written down ──────────
+# `plan_gate` is a user option born in `preflight`. A project whose owner wanted every plan
+# reviewed had nowhere to say so that a hook reads; an agent took the default for sufficient and
+# submitted with the pre-flight alone (field, 2026-10-01).
+section "plan-review-gate (the owner's rites, and the approval on record)"
+unset CLAUDE_PLUGIN_OPTION_PLAN_GATE
+RP="$TMP/rites-project"; mkdir -p "$RP/.roadworthy" "$RP/src"; git -C "$RP" init -q; git -C "$RP" config user.email t@t; git -C "$RP" config user.name t
+RP="$(cd "$RP" && pwd -P)"
+printf 'a\n' > "$RP/src/a.py"; git -C "$RP" add -A; git -C "$RP" commit -q -m base
+RPP="$TMP/rites-plans"; mkdir -p "$RPP"
+printf '# A plan\n\nproject: %s\n\n## Context\nx\n\n## Scope\n```\nsrc/**\n```\n\n## Verification\n```\ntrue\n```\n' "$RP" > "$RPP/p.md"
+rpe() { python3 -c 'import json,sys; print(json.dumps({"hook_event_name":sys.argv[3],"tool_name":"ExitPlanMode","session_id":"s","transcript_path":sys.argv[5],"cwd":sys.argv[1],"tool_input":{"plan":open(sys.argv[2]).read(),"planFilePath":sys.argv[2]},"tool_response":sys.argv[4]}))' "$RP" "$RPP/p.md" "$1" "${2:-}" "$TMP/rp-transcript.jsonl"; }
+: > "$TMP/rp-transcript.jsonl"      # the pre-flight proves readings from a transcript; this plan cites nothing
+rpg() { CLAUDE_PLUGIN_OPTION_PLANS_DIR="$RPP" run_hook plan-review-gate "$(rpe "$@")"; }
+rpg PreToolUse
+! denied && ok "with no rites, the plugin's default stands: the pre-flight alone guards the plan" || fail "the default changed: $OUT"
+printf 'plan_gate: both\n' > "$RP/.roadworthy/rites"
+rpg PreToolUse
+denied && printf '%s' "$OUT" | grep -q 'no review for the current plan' \
+  && ok "the project's rites ask for both, the user's option says preflight: the review is required" || fail "the project asked for a review and the plan went without one: $OUT"
+printf 'plan: p.md\nround: 1\nVERDICT: APPROVED\n' > "$RPP/p.review.md"
+rpg PreToolUse
+! denied && ok "with the review approved (and the pre-flight green), the plan is submitted" || fail "an approved review under the project's rites was denied (a dead end): $OUT"
+printf 'plan_gate: sometimes\n' > "$RP/.roadworthy/rites"
+rpg PreToolUse
+denied && printf '%s' "$OUT" | grep -q "is the owner's" && ok "a word the rites do not know is refused and sent to the owner, never read as 'no requirement'" || fail "an unknown plan_gate in the rites was ignored: $OUT"
+# A review written in a file, with nobody behind it.
+printf 'plan_gate: both\nreview_record: required\n' > "$RP/.roadworthy/rites"
+rpg PreToolUse
+denied && printf '%s' "$OUT" | grep -q 'none is on record' && ok "review_record required: a review file with no recorded verdict behind it is refused" || fail "a review nobody ran was accepted: $OUT"
+python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"SubagentStop","session_id":"s","cwd":sys.argv[1],"agent_type":"roadworthy:cold-reviewer","last_assistant_message":"Reviewed p.md against its base.\n\nVERDICT: APPROVED"}))' "$RP" | bash "$ROOT/hooks/run-hook.cmd" review-record
+rpg PreToolUse
+! denied && ok "once a reviewer finished with APPROVED about that plan, recorded by the plugin, it passes" || fail "a recorded approval was not found (a dead end): $OUT"
+rm -f "$RP/.roadworthy/rites"
+# The approval: written by the plugin when the plan-mode exit SUCCEEDS.
+rm -f "$RP/.roadworthy/evidence.jsonl"
+rpg PostToolUse "User has approved your plan. You can now start coding."
+FP="$(python3 "$ROOT/hooks/planblocks.py" fingerprint "$RPP/p.md")"
+grep -q "\"fingerprint\": \"$FP\"" "$RP/.roadworthy/evidence.jsonl" 2>/dev/null && grep -q '"kind": "approval"' "$RP/.roadworthy/evidence.jsonl" \
+  && ok "an approved plan-mode exit leaves an approval on record, with the fingerprint of scope, gates and base" || fail "an approved plan left no approval record"
+[ -z "$OUT" ] && ok "and recording it says nothing and blocks nothing" || fail "the approval record wrote to the tool's output: $OUT"
+python3 "$ROOT/hooks/planblocks.py" approved "$RPP/p.md" "$RP/.roadworthy/evidence.jsonl" && ok "which is what the entry gate looks up before a front opens" || fail "the recorded approval is not found by the lookup"
+sed 's/^# A plan$/# A plan, reworded/' "$RPP/p.md" > "$RPP/p2.md"
+python3 "$ROOT/hooks/planblocks.py" approved "$RPP/p2.md" "$RP/.roadworthy/evidence.jsonl" && ok "prose edited after the approval keeps it" || fail "editing the prose voided the approval"
+sed 's|^src/\*\*$|src/**\ndocs/**|' "$RPP/p.md" > "$RPP/p3.md"
+python3 "$ROOT/hooks/planblocks.py" approved "$RPP/p3.md" "$RP/.roadworthy/evidence.jsonl" && fail "a front opened from an unapproved scope: a widened scope kept the approval" || ok "a glob added after the approval does not"
+
 rw_end

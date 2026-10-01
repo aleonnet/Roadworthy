@@ -1,0 +1,98 @@
+{
+ "name": "a red closing, the fix, a human verification, a second front",
+ "setup": {
+  "front": "open",
+  "gates": [
+   "grep -q 'a = 2' src/a.py"
+  ]
+ },
+ "steps": [
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh --state",
+   "expect": "allow"
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 2",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git commit -q -am 'the fix'",
+   "expect": "allow"
+  },
+  {
+   "tool": "Write",
+   "file_path": "@PLANS@/second.md",
+   "content": "# Second\n\nproject: @T@\nstatus: proposed\n\n## Context\nA toy.\n\n## Scope\n```\noutside/**\n```\n\n## Verification\n```\ntrue\n```\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "ExitPlanMode",
+   "plan_file": "@PLANS@/second.md",
+   "owner": "approve",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/second.md",
+   "expect": "allow"
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/outside/b.py",
+   "old_string": "b = 1",
+   "new_string": "b = 2",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh --needs-human 'the label on the device'",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh --state",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/second.md",
+   "expect": "allow"
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/outside/b.py",
+   "old_string": "b = 1",
+   "new_string": "b = 2",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git add -A && git commit -q -m 'second front'",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow"
+  },
+  {
+   "tool": "SessionStart",
+   "source": "resume"
+  }
+ ]
+}

@@ -36,6 +36,16 @@ git -C "$PP" init -q; mkdir -p "$PP/lib/auth/deep"
 run_hook protect-paths "{\"tool_name\":\"Edit\",\"cwd\":\"$PP/lib/auth/deep\",\"tool_input\":{\"file_path\":\"$PP/lib/auth/x.py\"}}"
 denied && ok "the project protected list holds from a subdirectory" || fail "project protected list inert from a subdirectory"
 
+# The list that counts is the one of the repository the FILE is in. Read from the session's
+# directory, the protected areas of a repository did not exist for a session standing in another
+# (field note, 2026-09-18).
+PA="$TMP/pp-session"; mkdir -p "$PA/.roadworthy" "$PA/lib/auth"; git -C "$PA" init -q
+run_hook protect-paths "{\"tool_name\":\"Edit\",\"cwd\":\"$PA\",\"tool_input\":{\"file_path\":\"$PP/lib/auth/x.py\"}}"
+denied && ok "a protected file of another repository is protected from a session standing elsewhere" || fail "the session repository decided for a file of another: its protected list did not travel"
+printf 'lib/other.py\n' > "$PA/.roadworthy/protected"
+run_hook protect-paths "{\"tool_name\":\"Edit\",\"cwd\":\"$PA\",\"tool_input\":{\"file_path\":\"$PP/lib/other.py\"}}"
+! denied && ok "and the session repository's own list says nothing about another repository's file" || fail "the session repository decided for a file of another: its list was applied elsewhere"
+
 # ── protect-paths: overnight freeze ──────────────────────────────────────────
 section "protect-paths (overnight freeze)"
 ON="$TMP/pp-night"; fx_night "$ON"

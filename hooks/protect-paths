@@ -5,40 +5,40 @@
 # globs. This is the mechanical form of "this area is off limits": the model
 # cannot talk itself past it. Empty option → the guard is inactive.
 #
+# WHOSE list (0.7.0). The project's own list (.roadworthy/protected) and the night's freezes are
+# read from the repository THE FILE is in, never from the one the session stands in: resolved from
+# the session's directory, the protected areas of a repository simply did not exist for a session
+# standing in another (field note, 2026-09-18). The same list reaches the shell through rite-gate
+# and the index through guard-commit; hooks/lib.sh assembles it in one place.
+#
 # Refuted 2026-09-13: injected -- read the project list at `$cwd` instead of the repository root;
 # tests/run.sh went red with `project protected list inert from a subdirectory`, green again on the clean file, and the file was
 # restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+# Refuted 2026-10-01 (0.7.0): the repository of the file not asked -> tests/hooks/protect-paths.sh
+# red with `the session repository decided for a file of another`, green again on the clean file,
+# restored with its SHA-256 verified.
 export RW_HOOK="protect-paths"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
 rw_read_event
 
 cwd="$(rw_realpath "$(rw_field cwd)")"
-globs="$(rw_option PROTECTED_PATHS "")"
-# The project may declare its own protected globs in .roadworthy/protected
-# (one per line, `#` comments); they are joined with the user option.
-root="$(rw_root "$cwd")"
-# The project's protected list lives at the top level, like every other .roadworthy file.
-# Read at "$cwd" it vanished the moment the session stood in a subdirectory.
-if [ -n "$root" ] && [ -f "$root/.roadworthy/protected" ]; then
-  project="$(grep -v -E '^[[:space:]]*(#|$)' "$root/.roadworthy/protected" | tr '\n' ',' | sed 's/,$//')"
-  if [ -n "$project" ]; then globs="${globs:+$globs,}$project"; fi
-fi
-# Overnight mode: while `.roadworthy/overnight` exists, the `freeze:` globs of
-# `.roadworthy/overnight-rules` (version files, release notes) join the list —
-# a bump or a changelog entry waits for the morning.
-frozen=""
-if [ -n "$root" ]; then
-  if [ -f "$root/.roadworthy/overnight" ] && [ -f "$root/.roadworthy/overnight-rules" ]; then
-    frozen="$(grep -E '^[[:space:]]*freeze:' "$root/.roadworthy/overnight-rules" | sed 's/^[[:space:]]*freeze:[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | tr '\n' ',' | sed 's/,$//')"
-  fi
-fi
-[ -n "$globs" ] || [ -n "$frozen" ] || exit 0
-
 target="$(rw_field tool_input.file_path)"
 [ -n "$target" ] || target="$(rw_field tool_input.notebook_path)"
 [ -n "$target" ] || exit 0
 target="$(rw_realpath "$target")"
+
+# The repository of the file; a file in none is measured from the session's directory, which is
+# what the user's own option globs were always written against.
+root="$(rw_target_root "$target")"
+[ -n "$root" ] || root="$(rw_root "$cwd")"
+export RW_DENIAL_ROOT="$root"
+globs="$(rw_protected_globs "$root")"
+# Overnight mode: while `.roadworthy/overnight` exists, the `freeze:` globs of
+# `.roadworthy/overnight-rules` (version files, release notes) join the list —
+# a bump or a changelog entry waits for the morning.
+frozen="$(rw_frozen_globs "$root")"
+[ -n "$globs" ] || [ -n "$frozen" ] || exit 0
 
 relative="$target"
 case "$target" in

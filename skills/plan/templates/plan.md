@@ -2,6 +2,7 @@
 
 project: ~/<path of the repository this plan belongs to, written from your home>
 base: <git ref this plan is written against — omit when it is the working tree>
+report: <how this front reports to you, agreed before the plan is submitted — omit for the default>
 status: proposed
 <!-- status: use the word your project declares under "status" in .roadworthy/docs.json.
      Left in English here because this template is copied by hand, with no script to fill it;
@@ -17,6 +18,15 @@ yours and the reviewer's — is done with `git show <base>:<path>` and `git grep
 instead of the working tree, so the review does not report divergences that only exist against
 HEAD. The gate refuses a base that does not resolve, and refuses a review that declares a
 different base from the plan's.
+
+`report:` is the reporting form AGREED with the person for this front — ask, in one question and
+offering the default, before the plan is submitted; whoever approves the plan approves the form.
+It travels with the front: `scope-write.sh` copies it into the approval snapshot, the session
+start shows it, and it is put back in front of the agent at every prompt while the front is open.
+Leave the line out and the default holds: **one line with the conclusion first; then one table —
+item, expected result, proof (command → output), state — only when there are items to report;
+then what is left for each side.** A form is a few words, not a policy: "prose, the conclusion
+first; a table only at the end of a phase" is one.
 
 ## Context
 Why this change, what prompted it, the intended outcome.

@@ -1,0 +1,89 @@
+{
+ "name": "every honest way of undoing a change outside the scope is open",
+ "setup": {
+  "front": "open"
+ },
+ "steps": [
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"import os; os.makedirs('dist/assets'); [open('dist/assets/f%d.js' % i,'w').write('x') for i in range(5)]\""
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 1",
+   "expect": "allow",
+   "expect_note": "outside the approved scope"
+  },
+  {
+   "tool": "Bash",
+   "command": "rm -rf dist",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"import os; os.makedirs('dist'); open('dist/x.js','w').write('x')\""
+  },
+  {
+   "tool": "Bash",
+   "command": "git clean -fdq dist",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"open('outside/.DS_Store','w').write('x')\""
+  },
+  {
+   "tool": "Bash",
+   "command": "find . -name .DS_Store -delete",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"import os; os.rename('outside/b.py','outside/z.py')\""
+  },
+  {
+   "tool": "Bash",
+   "command": "mv outside/z.py outside/b.py",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"open('outside/b.py','a').write('more\\n')\" && git add outside/b.py"
+  },
+  {
+   "tool": "Bash",
+   "command": "git restore --staged --worktree -- outside/b.py",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"open('new-outside.txt','w').write('x')\""
+  },
+  {
+   "tool": "Bash",
+   "command": "git stash push -q -u -- new-outside.txt",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 2",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git commit -q -am 'inside' && bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow",
+   "expect_rc": 0
+  }
+ ]
+}

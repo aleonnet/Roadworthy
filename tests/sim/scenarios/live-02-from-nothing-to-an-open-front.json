@@ -1,0 +1,69 @@
+{
+ "name": "no front: the plan is written, approved, and the front opens from it",
+ "setup": {
+  "front": "none"
+ },
+ "steps": [
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 2",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "echo x > src/a.py",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "git status --short && ls -la && cat README.md",
+   "expect": "allow"
+  },
+  {
+   "tool": "Read",
+   "file_path": "@T@/src/a.py",
+   "expect": "allow"
+  },
+  {
+   "tool": "Write",
+   "file_path": "@PLANS@/a-plan.md",
+   "content": "# A plan\n\nproject: @T@\nstatus: proposed\n\n## Context\nA toy.\n\n## Scope\n```\nsrc/**\n```\n\n## Verification\n```\ntest -f src/a.py\n```\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "ExitPlanMode",
+   "plan_file": "@PLANS@/a-plan.md",
+   "owner": "approve",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/a-plan.md",
+   "expect": "allow"
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 2",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git add -A && git commit -q -m 'the front: gates and the change'",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow"
+  },
+  {
+   "tool": "Stop",
+   "message": "Done: the front closed passed.",
+   "expect": "allow"
+  }
+ ]
+}

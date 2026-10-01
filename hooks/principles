@@ -19,6 +19,11 @@
 # resolver planted in the writer (hooks/lib.sh) -> red with `the writer and the reader disagree on
 # the ledger`; the one resolver moved to CLAUDE_PLUGIN_DATA -> red with `the denial went to the
 # shared plugin directory`. Each green again on the clean file, restored with its SHA-256 verified.
+# Refuted 2026-10-01 (0.7.0), against tests/hooks/principles.sh: the session and subagent filter
+# removed -> red with `a subagent denial was charged to the front`; the reporting form not injected
+# -> red with `the agreed reporting form did not reach the prompt`; the owner's line in the prompt
+# not read -> red with `the owner's answer in the prompt was not recorded`. Each green again on the
+# clean file, restored with its SHA-256 verified.
 export RW_HOOK="principles"
 export RW_ON_CRASH=allow
 source "$(dirname "$0")/lib.sh"
@@ -46,6 +51,41 @@ data="${ROADWORTHY_DATA:-${CLAUDE_PLUGIN_DATA:-$HOME/.roadworthy}}"
 project_data=""
 [ -n "$root" ] && project_data="$(rw_data_dir "$root")"
 
+# A PERSON'S ANSWER, READ FROM THE PERSON'S OWN PROMPT (0.7.0). A human verification is the one
+# act of the rite an agent cannot perform, and until now the only way to record its answer was a
+# command -- which the agent could type as easily as the owner. The entry gate now denies that
+# command to the agent; the owner answers by writing a line in the chat:
+#     rw-human: all approved
+#     rw-human: <item or id> rejected <note>
+# This hook fires on the prompt the person submitted, so the line cannot have been written by the
+# agent. Whatever fails here is said and never blocks the prompt.
+human_notice=""
+prompt="$(rw_field prompt)"
+if [ -n "$root" ] && printf '%s\n' "$prompt" | grep -q -i -E '^[[:space:]]*rw-human:'; then
+  closer="$(cd "$(dirname "$0")/.." && pwd)/skills/close/scripts/close.sh"
+  while IFS= read -r line; do
+    spec="$(printf '%s' "$line" | sed -E 's/^[[:space:]]*[Rr][Ww]-[Hh][Uu][Mm][Aa][Nn]:[[:space:]]*//')"
+    verdict="$(printf '%s' "$spec" | grep -o -i -E '(^|[[:space:]])(approved|rejected|aprovado|aprovada|reprovado|reprovada)([[:space:]]|$)' | head -1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]' || true)"
+    [ -n "$verdict" ] || { human_notice="${human_notice}A 'rw-human:' line carried no verdict (approved | rejected): $line"$'\n'; continue; }
+    item="$(printf '%s' "$spec" | sed -E "s/[[:space:]]*${verdict}.*//I" | sed 's/[[:space:]]*$//')"
+    note="$(printf '%s' "$spec" | sed -E "s/^.*${verdict}[[:space:]]*//I")"
+    case "$verdict" in aprovad*) verdict=approved ;; reprovad*) verdict=rejected ;; esac
+    [ -n "$item" ] || item=all
+    case "$item" in tudo|todas|todos) item=all ;; esac
+    # A refusal from the closing script is an ANSWER here (no such item), not an internal error:
+    # errtrace is lifted for the call so the ERR trap does not fire inside the substitution.
+    set +o errtrace
+    if answer="$(cd "$root" && ROADWORTHY_DATA="${ROADWORTHY_DATA:-}" bash "$closer" --human "$item" "$verdict" --by "the owner, in the prompt" --note "$note" 2>&1)"; then
+      set -o errtrace
+      human_notice="${human_notice}THE OWNER ANSWERED A HUMAN VERIFICATION IN THIS PROMPT, and it is recorded: $answer"$'\n'
+    else
+      set -o errtrace
+      human_notice="${human_notice}The owner's 'rw-human:' line could not be recorded: $answer"$'\n'
+    fi
+  done <<< "$(printf '%s\n' "$prompt" | grep -i -E '^[[:space:]]*rw-human:')"
+fi
+
+RW_HUMAN_NOTICE="$human_notice" RW_SESSION="$(rw_field session_id)" \
 python3 - "$principles" "$project_rules" "$transcript" "$data" "$root" "$project_data" <<'PY'
 import hashlib, json, os, re, sys, time
 principles, project_rules, transcript = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -106,13 +146,21 @@ if data:
 # fact about how this session is behaving, and putting it back into the prompt is the only kind of
 # consequence that reaches the next turn. It is NOT a numbered line: those are the principles, and
 # the suite counts them.
-if root and project_data:
+# WHAT IS COUNTED (0.7.0): the denials of THIS session's main agent, with a scope open, since the
+# front opened. A subagent's, another session's, the suite's own fixtures and anything from before
+# the front are not this agent's three strikes; and with no scope on disk -- the front closed --
+# there is nothing to warn about. Nothing is deleted for it to expire.
+snapshot = {}
+if root:
+    try:
+        snapshot = json.load(open(os.path.join(root, ".roadworthy", "plan.snapshot"), encoding="utf-8")) or {}
+    except Exception:
+        snapshot = {}
+session = os.environ.get("RW_SESSION", "")
+if root and project_data and os.path.exists(os.path.join(root, ".roadworthy", "scope")):
     try:
         ledger = os.path.join(project_data, "denials.jsonl")
-        snap = os.path.join(root, ".roadworthy", "plan.snapshot")
-        front = ""
-        if os.path.exists(snap):
-            front = (json.load(open(snap, encoding="utf-8")) or {}).get("plan_name", "")
+        opened = snapshot.get("ts", "")
         counts = {}
         if os.path.exists(ledger):
             for line in open(ledger, encoding="utf-8"):
@@ -120,10 +168,17 @@ if root and project_data:
                     r = json.loads(line)
                 except Exception:
                     continue
-                if front and r.get("front") != front:
+                if r.get("session") != session or r.get("agent") or not r.get("scope_open"):
                     continue
-                counts[r.get("hook", "?")] = counts.get(r.get("hook", "?"), 0) + 1
-        repeated = sorted((n, h) for h, n in counts.items() if n >= 3)
+                if r.get("ts", "") < opened:
+                    continue
+                key = (r.get("hook", "?"), r.get("kind", ""))
+                counts[key] = counts.get(key, 0) + 1
+        per_hook = {}
+        for (h, _), n in counts.items():
+            if n >= 3:
+                per_hook[h] = max(per_hook.get(h, 0), n)
+        repeated = sorted((n, h) for h, n in per_hook.items())
         if repeated:
             lines = ["A FENCE HAS DENIED THE SAME WAY MORE THAN TWICE IN THIS FRONT:"]
             for n, h in reversed(repeated):
@@ -133,6 +188,15 @@ if root and project_data:
             notices.append("\n".join(lines))
     except Exception:
         pass
+
+# The reporting form the owner agreed for THIS front, from the plan's `report:` line, which
+# scope-write.sh copied into the approval snapshot. An agent does not remember an agreement; it
+# reads one. While the scope is on disk the form is said at every prompt; closed, it stops.
+if root and snapshot.get("report") and os.path.exists(os.path.join(root, ".roadworthy", "scope")):
+    notices.append("REPORTING FORM AGREED WITH THE OWNER FOR THIS FRONT (%s):\n  %s"
+                   % (snapshot.get("plan_name", "the plan"), snapshot["report"]))
+if os.environ.get("RW_HUMAN_NOTICE", "").strip():
+    notices.append(os.environ["RW_HUMAN_NOTICE"].strip())
 
 if notices:
     text += "\n\n" + "\n\n".join(notices)

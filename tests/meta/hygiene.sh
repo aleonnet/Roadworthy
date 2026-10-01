@@ -9,7 +9,7 @@
 # because there the glob is the point: a case that exists must be checked, and tests/cases.txt is
 # what refuses a case file nobody declared.
 section "shell syntax"
-RW_FENCES="hooks/lib.sh hooks/principles hooks/protect-paths hooks/scope-lock hooks/guard-commit hooks/plan-review-gate hooks/overnight-guard hooks/rite-gate hooks/stop-gate hooks/session-state"
+RW_FENCES="hooks/lib.sh hooks/principles hooks/protect-paths hooks/scope-lock hooks/guard-commit hooks/plan-review-gate hooks/overnight-guard hooks/rite-gate hooks/stop-gate hooks/session-state hooks/review-record"
 # shellcheck disable=SC2086  # the two lists are deliberately word-split into arguments.
 RW_SUITE="tests/run.sh tests/lib.sh tests/attack.sh $(echo tests/fixtures/*.sh tests/hooks/*.sh tests/scripts/*.sh tests/meta/*.sh)"
 for f in $RW_FENCES skills/*/scripts/*.sh $RW_SUITE; do
@@ -73,7 +73,7 @@ for path in sys.argv[1:]:
 sys.exit(1 if problems else 0)
 PY
 # shellcheck disable=SC2086
-if python3 "$TMP/pycheck.py" $RW_FENCES skills/*/scripts/*.sh bin/rw-metrics hooks/globmatch.py hooks/shellread.py tests/goldens/check.py > "$TMP/py.out" 2>&1; then
+if python3 "$TMP/pycheck.py" $RW_FENCES skills/*/scripts/*.sh bin/rw-metrics hooks/globmatch.py hooks/shellread.py hooks/planblocks.py hooks/frontcheck.py tests/sim/rite-sim.py tests/goldens/check.py > "$TMP/py.out" 2>&1; then
   ok "every embedded block and standalone script compiles, and no import is dead"
 else
   fail "python hygiene"; cat "$TMP/py.out"

@@ -1,0 +1,92 @@
+{
+ "name": "a change outside the scope, by an interpreter, a script and a tool: said to the agent, never committed, never closed over",
+ "setup": {
+  "front": "open",
+  "files": {
+   "src/tool.py": "open('outside/b.py','w').write('b = 9\\n')\n"
+  }
+ },
+ "steps": [
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"open('outside/b.py','w').write('b = 2\\n')\""
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 2",
+   "expect": "allow",
+   "expect_note": "outside the approved scope"
+  },
+  {
+   "tool": "Bash",
+   "command": "git add -A && git commit -q -m 'sneak it in'",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "git commit -q -a -m 'sneak it in'",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "git add outside/b.py; git commit -q -m 'sneak it in'",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "git add src && git commit -q -m 'inside only'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow",
+   "expect_rc": 1
+  },
+  {
+   "tool": "Bash",
+   "command": "git checkout -- outside/b.py",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 src/tool.py"
+  },
+  {
+   "tool": "Bash",
+   "command": "touch outside/new-file.txt",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "echo x > outside/b.py",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "python3 -c \"open('outside/n.txt','w').write('n')\""
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow",
+   "expect_rc": 1
+  },
+  {
+   "tool": "Bash",
+   "command": "git restore outside/b.py && rm outside/n.txt",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow",
+   "expect_rc": 0
+  }
+ ]
+}

@@ -1,0 +1,76 @@
+{
+ "name": "a colleague's commit outside the scope arrives by pull and by merge; the front goes on and closes",
+ "setup": {
+  "front": "open"
+ },
+ "steps": [
+  {
+   "tool": "Bash",
+   "command": "git clone -q . @SCRATCH@/up && (cd @SCRATCH@/up && git config user.email c@c && git config user.name colleague && echo 'b = 7' > outside/b.py && git commit -q -am 'a colleague, outside this scope')",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "git pull -q @SCRATCH@/up main",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 2",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git commit -q -am 'mine, inside the scope'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "(cd @SCRATCH@/up && echo 'b = 8' > outside/b.py && echo 'a = 9' > src/a.py && git commit -q -am 'the colleague again, both files')",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "git pull -q --no-rebase --no-edit @SCRATCH@/up main",
+   "expect": "allow",
+   "expect_rc": 1
+  },
+  {
+   "tool": "Write",
+   "file_path": "@T@/src/a.py",
+   "content": "a = 9  # resolved\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git add src/a.py && git commit -q --no-edit",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "# resolved",
+   "new_string": "# resolved, and on",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git commit -q -am 'after the merge'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow",
+   "expect_rc": 0
+  }
+ ]
+}

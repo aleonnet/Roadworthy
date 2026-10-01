@@ -22,9 +22,11 @@ tree that will be shipped, and the evidence is on disk.
    result. Read the exit code of the command itself, never of a pipe that follows it.
 4. **Refutation ledger.** Every new check has a refutation entry (see `/roadworthy:refute`).
    A check without one is not counted as a gate.
-5. **Record.** Append the closing note to the plan or the project's dated record:
-   fingerprint, gates with outputs, what was left out and why. Then remove
-   `.roadworthy/scope`.
+5. **Record.** The hand-off (what was done, what was left out and why) is written and committed
+   BEFORE the gates run: it is a `.md` in the plans directory, which needs no scope, and a commit
+   made after the closing changes the tree the gates measured — the stop gate then calls them
+   stale, rightly. The gates' own outputs need no copying: the closing records each command, its
+   exit and the tree fingerprint in the evidence ledger, and releases `.roadworthy/scope`.
 
 `scripts/close.sh` does steps 1 to 3 and the ledger mechanically: gates come from
 `.roadworthy/gates`, every run is recorded with the content fingerprint of the tree, and

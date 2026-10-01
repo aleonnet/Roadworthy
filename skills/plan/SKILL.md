@@ -37,6 +37,21 @@ scope**.
 Wherever a premise is missing, write `[NEEDS CLARIFICATION: <question>]` instead of assuming.
 A plan with open clarifications is not submitted; it is asked.
 
+**Agree how this front reports, before submitting.** One question, with the default on offer
+(the conclusion in one line, then one table of item, expected result, proof and state, then what
+is left for each side): "how do you want me to report on this front?" Write the answer in the
+plan's `report:` header line. It is not decoration: `scope-write.sh` copies it into the approval
+snapshot and the `principles` hook puts it back in front of you at every prompt while the front
+is open, so the form the person asked for does not depend on your remembering it. No answer, or
+"the usual": leave the line out and the default holds.
+
+**What the project requires is not yours to relax.** If the repository has a `.roadworthy/rites`
+file, it is the owner's and it says what this project demands beyond the plugin's defaults — for
+instance `plan_gate: both` (a plan is submitted only with the pre-flight green AND an approved
+review) or `diff_review: required` (a front closes only with an approved review of its diff). The
+session start lists it. The hooks enforce it whatever you conclude about it; read it first and
+you will not meet it as a refusal.
+
 The template ends with an **Overnight policy** section: what is decided at night with a source
 and what is reserved for the user. It is read only when the user orders unattended execution
 (`/roadworthy:overnight`), and that skill refuses a plan without it — so write it for every plan

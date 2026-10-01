@@ -1,0 +1,88 @@
+{
+ "name": "a non-ASCII name inside the scope; a vendored repository with no rite of its own; a refusal leaves nothing behind",
+ "setup": {
+  "front": "open",
+  "ignore": [
+   ".roadworthy/scope",
+   ".roadworthy/plan.snapshot",
+   ".roadworthy/state",
+   ".roadworthy/*.jsonl",
+   ".roadworthy/stop-latch/",
+   "vendor/"
+  ]
+ },
+ "steps": [
+  {
+   "tool": "Write",
+   "file_path": "@T@/src/ação e visão.py",
+   "content": "x = 1\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git add -A && git commit -q -m 'a name with accents and a space'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "mkdir -p vendor && git init -q vendor/lib && echo v > vendor/lib/v.txt",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "echo w > vendor/lib/w.txt && rm -rf vendor/lib",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "git init -q src/sub && test -d src/sub/.git",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Write",
+   "file_path": "@T@/src/sub/x.txt",
+   "content": "in the scope of the repository that holds it\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "rm -rf src/sub",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "git init -q outside/nested && test -d outside/nested/.git",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Write",
+   "file_path": "@T@/outside/nested/n.txt",
+   "content": "n\n",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "test ! -e outside/nested/.roadworthy",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "rm -rf outside/nested",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow",
+   "expect_rc": 0
+  }
+ ]
+}

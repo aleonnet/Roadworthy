@@ -1,0 +1,30 @@
+{
+ "name": "the owner's loose files at the opening are not the front's; a new stray is said, not a wall; abandoning and replanning works",
+ "setup": {
+  "front": "open",
+  "loose": {
+   "notes-of-the-owner.txt": "mine\n",
+   "outside/b.py": "b = 5  # the owner was here\n"
+  }
+ },
+ "steps": [
+  {"tool": "Edit", "file_path": "@T@/src/a.py", "old_string": "a = 1", "new_string": "a = 2", "expect": "allow"},
+  {"tool": "Bash", "command": "git add src && git commit -q -m 'inside the scope'", "expect": "allow", "expect_rc": 0},
+  {"tool": "Bash", "command": "python3 -c \"open('generated.lock','w').write('x')\""},
+  {"tool": "Edit", "file_path": "@T@/src/a.py", "old_string": "a = 2", "new_string": "a = 3", "expect": "allow", "expect_note": "generated.lock"},
+  {"tool": "Edit", "file_path": "@T@/src/a.py", "old_string": "a = 3", "new_string": "a = 4", "expect": "allow"},
+  {"tool": "Bash", "command": "git status --short", "expect": "allow"},
+  {"tool": "Bash", "command": "git commit -q -am 'everything, the file of the owner too'", "expect": "deny"},
+  {"tool": "Bash", "command": "git add src && git commit -q -m 'more, inside'", "expect": "allow", "expect_rc": 0},
+  {"tool": "Bash", "command": "bash @PLUGIN@/skills/close/scripts/close.sh", "expect": "allow", "expect_rc": 1},
+  {"tool": "Bash", "command": "rm generated.lock", "expect": "allow", "expect_rc": 0},
+  {"tool": "Bash", "command": "python3 -c \"open('outside/b.py','a').write('more\\n')\""},
+  {"tool": "Bash", "command": "bash @PLUGIN@/skills/close/scripts/close.sh --abandon 'the approach needs a wider scope; replanning'", "expect": "allow", "expect_rc": 0},
+  {"tool": "Edit", "file_path": "@T@/src/a.py", "old_string": "a = 4", "new_string": "a = 5", "expect": "deny"},
+  {"tool": "Write", "file_path": "@PLANS@/wider.md", "content": "# Wider\n\nproject: @T@\nstatus: proposed\n\n## Context\nA toy.\n\n## Scope\n```\nsrc/**\noutside/**\n```\n\n## Verification\n```\ntest -f src/a.py\n```\n", "expect": "allow"},
+  {"tool": "ExitPlanMode", "plan_file": "@PLANS@/wider.md", "owner": "approve", "expect": "allow"},
+  {"tool": "Bash", "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/wider.md", "expect": "allow", "expect_rc": 0},
+  {"tool": "Edit", "file_path": "@T@/src/a.py", "old_string": "a = 4", "new_string": "a = 5", "expect": "allow"},
+  {"tool": "Edit", "file_path": "@T@/outside/b.py", "old_string": "more", "new_string": "less", "expect": "allow"}
+ ]
+}
