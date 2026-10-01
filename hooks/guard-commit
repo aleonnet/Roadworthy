@@ -35,6 +35,13 @@
 # outside the scope reached the history (a protected one)`; a merge in progress judged like a
 # commit of the front -> tests/meta/rite-liveness.sh red with `the rite has a dead end`. Each green
 # again on the clean file, restored with its SHA-256 verified.
+# Refuted 2026-10-01, after the cold review of the whole diff (the set is judged by one process
+# now, commit_verdict in hooks/frontcheck.py, and the defects are planted there): the scope check
+# and the protected check removed -> the same two texts; a cost per path put back -> red with `the
+# guard ran out of time on a large commit`; the process dying -> red with `an in-scope commit was
+# denied`, which is the guard failing CLOSED; the night's diary and hand-off not recognised -> red
+# with `the night could not commit its own diary` and `the hand-off of the night could not be
+# committed`.
 export RW_HOOK="guard-commit"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -139,27 +146,23 @@ while IFS= read -r dir; do
   free="$(rw_free_globs "$root")"
   scope=""
   if [ -f "$root/.roadworthy/scope" ]; then scope="$(rw_list_globs "$root/.roadworthy/scope")"; fi
-  outside=""; n=0
-  while IFS= read -r rel; do
-    [ -n "$rel" ] || continue
-    if [ -n "$protected" ] && rw_glob_match "$rel" "$protected"; then
-      deny PreToolUse "this commit would take '$rel', which is a protected path (protected_paths: $protected). However it was changed, it does not enter the history: put it back (git restore --staged --worktree -- '$rel') and report the change you needed. (commit_scope)"
-    fi
-    if [ -n "$frozen" ] && rw_glob_match "$rel" "$frozen"; then
-      deny PreToolUse "this commit would take '$rel', which is frozen for the night (overnight mode, freeze: $frozen). Unstage it (git restore --staged -- '$rel'); version bumps and release notes wait for the morning. (commit_scope)"
-    fi
-    # What needs no front: the rite's own artefacts, the owner's files, what the owner freed.
-    # Nothing under .roadworthy/ is the front's subject: the gates are committed with the front,
-    # the owner's files are the owner's, and the local state is the rite's bookkeeping (a project
-    # that does not ignore it must not have every `git add -A` refused). The closing counts the
-    # same way.
-    case "$rel" in .roadworthy/*) continue ;; esac
-    if rw_is_plan_file "$root/$rel" "$root"; then continue; fi
-    if [ -n "$free" ] && rw_glob_match "$rel" "$free"; then continue; fi
-    if [ -n "$scope" ] && rw_glob_match "$rel" "$scope"; then continue; fi
-    n=$((n + 1)); [ "$n" -gt 5 ] || outside="${outside}${outside:+, }$rel"
-  done <<< "$taking"
-  [ "$n" -gt 0 ] || continue
+  # The whole set is judged by ONE process (hooks/frontcheck.py, commit_verdict): a python3 per
+  # path and per list ran past this hook's time limit on a commit of 2,200 paths, and a hook that
+  # runs out of time does not deny. What needs no front is decided there too: the rite's own
+  # artefacts (everything under .roadworthy/, the plan, the night's diary and hand-off) and what
+  # the owner freed.
+  homes=()
+  while IFS= read -r home; do [ -z "$home" ] || homes+=("$home"); done <<< "$(rw_plan_homes "$root")"
+  said="$(printf '%s\n' "$taking" | python3 "$(dirname "$0")/frontcheck.py" --commit "$root" "$protected" "$frozen" "$free" "$scope" ${homes[@]+"${homes[@]}"})"
+  [ -n "$said" ] || continue
+  IFS=$'\t' read -r what first rest <<< "$said"
+  if [ "$what" = PROTECTED ]; then
+    deny PreToolUse "this commit would take '$first', which is a protected path (protected_paths: $protected). However it was changed, it does not enter the history: put it back (git restore --staged --worktree -- '$first') and report the change you needed. (commit_scope)"
+  fi
+  if [ "$what" = FROZEN ]; then
+    deny PreToolUse "this commit would take '$first', which is frozen for the night (overnight mode, freeze: $frozen). Unstage it (git restore --staged -- '$first'); version bumps and release notes wait for the morning. (commit_scope)"
+  fi
+  n="$first"; outside="$rest"
   if [ -n "$scope" ]; then
     deny PreToolUse "this commit would take $n path(s) outside the approved scope ($root/.roadworthy/scope): $outside. A file outside the scope does not reach the history, however it was written. Unstage it (git restore --staged -- <path>) and commit what the front declared; if the change is needed, it belongs in the plan's scope, which is the owner's to approve. (commit_scope)"
   fi

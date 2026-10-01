@@ -308,19 +308,29 @@ except Exception:
 # repository (field note, 2026-09-18). A home that IS the repository root, or outside it, is not
 # a home.
 rw_is_plan_file() {
-  local t="$1" root="$2" tdir plans project
+  local t="$1" root="$2" tdir home
   case "$t" in *.md) ;; *) return 1 ;; esac
   tdir="$(dirname "$t")"
   tdir="$(cd "$tdir" 2>/dev/null && pwd -P || printf '%s' "$tdir")"
+  while IFS= read -r home; do
+    if [ -n "$home" ] && [ "$home" = "$tdir" ]; then return 0; fi
+  done <<< "$(rw_plan_homes "$root")"
+  return 1
+}
+
+# rw_plan_homes <root> — the plan's homes, resolved, one per line: plans_dir unless it IS the
+# repository root, and the project's own plans directory when it lies inside the repository.
+# The list rw_is_plan_file walks, and the one guard-commit hands to the process that judges a
+# whole commit at once (hooks/frontcheck.py): one rule for what a home is, read by both.
+rw_plan_homes() {
+  local root="$1" plans project
   plans="$(rw_option PLANS_DIR "")"
   [ -n "$plans" ] || plans="$HOME/.claude/plans"
   plans="$(rw_realpath "${plans%/}")"
-  if [ "$tdir" = "$plans" ] && [ "$plans" != "$root" ]; then return 0; fi
+  if [ "$plans" != "$root" ]; then printf '%s\n' "$plans"; fi
   project="$(rw_project_plans_dir "$root")"
-  if [ -n "$project" ] && [ "$tdir" = "$project" ]; then
-    case "$project" in "$root"/*) return 0 ;; esac
-  fi
-  return 1
+  case "$project" in "$root"/*) printf '%s\n' "$project" ;; esac
+  return 0
 }
 
 # rw_root <dir> — the repository the directory belongs to, resolved, or the directory itself.

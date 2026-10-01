@@ -69,8 +69,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(os.path.dirname(HERE))
-RITE_SCRIPTS = ("scope-write.sh", "close.sh", "refute.sh", "plan-preflight.sh", "overnight-entry.sh",
-                "overnight-open.sh", "overnight-close.sh", "docs-init.sh")
+RITE_SCRIPTS = ("scope-write.sh", "close.sh", "refute.sh", "plan-preflight.sh", "overnight-start.sh",
+                "overnight-entry.sh", "overnight-close.sh", "docs-init.sh")
 FOUNDATION = ("scope", "gates", "plan.snapshot", "state", "protected", "overnight-rules", "free",
               "docs.json", "rites", "overnight", "evidence.jsonl", "denials.jsonl", "refutations.jsonl")
 
@@ -414,15 +414,20 @@ class Sim:
             self.forged_live = False             # the rite's own script wrote the foundation again
         # What a commit took, judged by the scope that was live when it was made.
         if head1 != head0:
-            # Only what was committed HERE: a commit a pull or a merge brought is somebody
-            # else's, and git's reflog says which is which.
+            # Only what was committed HERE: a commit a pull, a merge or a rebase brought is somebody
+            # else's, and git's reflog says which is which -- by what each entry moved HEAD over.
+            # A fast-forward, a merge made and the FIRST step of a rebase stand on the other
+            # side's history; every other step of a rebase records one of the commits made here
+            # again, and is not an arrival.
             arrived, made = set(), set()
-            for line in self.git("reflog", "--format=%H%x09%gs")[1].splitlines():
-                sha, _, subject = line.partition("\t")
-                if subject.startswith(("pull", "merge")):
-                    arrived |= set(self.git("rev-list", "--no-merges", head0 + ".." + sha)[1].split())
-                elif subject.startswith(("commit", "cherry-pick", "revert", "rebase")):
+            entries = [l.partition("\t")[::2] for l in self.git("reflog", "--format=%H%x09%gs")[1].splitlines()]
+            for i, (sha, subject) in enumerate(entries):
+                if subject.startswith(("commit", "cherry-pick", "revert", "am:")):
                     made.add(sha)
+                elif subject.startswith(("pull", "merge", "rebase")) and i + 1 < len(entries):
+                    step = re.search(r"\((\w+)\)$", subject.split(": ", 1)[0])
+                    if step is None or step.group(1) == "start":
+                        arrived |= set(self.git("rev-list", "--no-merges", entries[i + 1][0] + ".." + sha)[1].split())
             for merge in self.git("rev-list", "--merges", head0 + ".." + head1)[1].split():
                 arrived |= set(self.git("rev-list", "--no-merges", merge + "^1.." + merge + "^2")[1].split())
             names = ""
@@ -495,6 +500,15 @@ class Sim:
         plans = (self.s.get("setup", {}).get("docs_json") or {}).get("plans")
         if plans and rel.endswith(".md") and os.path.dirname(rel) == plans.rstrip("/"):
             return True                          # the plan, in the project's own plans directory
+        # The night's own files: the diary overnight-start.sh opens and the hand-off
+        # overnight-close.sh leaves, in the homes those scripts use.
+        name, dj = os.path.basename(rel), self.s.get("setup", {}).get("docs_json") or {}
+        if name.endswith(".md") and "-handoff-overnight-" in name:
+            if os.path.dirname(rel) == (dj.get("plans") or "docs/plans").rstrip("/"):
+                return True
+        elif name.endswith(".md") and "-overnight-" in name:
+            if os.path.dirname(rel) == (dj.get("decisions") or "docs/decisions").rstrip("/"):
+                return True
         return self.globs_match(rel, self.s.get("setup", {}).get("free") or [])
 
     def gates_fresh(self):

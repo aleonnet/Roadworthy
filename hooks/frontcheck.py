@@ -26,10 +26,14 @@ by hand, as toy repositories and projects from before 0.6.0 have, carries no sna
 against and is left to the closing).
 
 Usage: frontcheck.py <root> <ledger> <review required: true|false> [<plans dir>...]
+       frontcheck.py --commit <root> <protected> <frozen> <free> <scope> [<plan home>...]
+           the paths a commit would take on standard input, one per line; each list is
+           comma-separated globs, empty for none. Prints the commit guard's verdict (commit_verdict).
 """
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -105,7 +109,9 @@ def broken(root, ledger, review_required):
                            sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         if hashlib.sha256(again.encode("utf-8")).hexdigest() != fp:
             return "the snapshot's fingerprint is not the fingerprint of its own scope, gates and base", snap
-        if review_required and not approved(fp, ledger):
+        # A front the owner opened himself (`scope-write.sh --owner`, a person's act the entry gate
+        # denies the agent) stands with no approval: the owner running the script is the approval.
+        if review_required and snap.get("opened_by") != "owner" and not approved(fp, ledger):
             return "no approval is on record for the scope, the gates and the base this front enforces", snap
     return None, snap
 
@@ -116,14 +122,25 @@ history = []
 def front_paths(root, base):
     """The paths THIS front changed in the history since its base: in the difference between the
     base and HEAD, and touched by a commit made here. A commit that arrived from somewhere else --
-    a pull, a merge of the upstream, a rebase onto it -- is somebody else's work. Git's own reflog
-    says which is which: a commit made in this clone is recorded there as `commit`, `cherry-pick`,
-    `revert` or a `rebase` step; what a `pull` or a `merge` brought is everything reachable from
-    the tip it moved to (a fast-forward) or from the second parent of the merge it made.
-    Counting those charged the front for a colleague's file and told the agent to take the
-    colleague's commit out of the history (adversarial simulation, 2026-10-01). Names are read
-    NUL-separated: git quotes a name with a non-ASCII character otherwise, and a quoted name
-    matches no glob."""
+    a pull, a merge of the upstream, a rebase onto it -- is somebody else's work. Counting those
+    charged the front for a colleague's file and told the agent to take the colleague's commit out
+    of the history (adversarial simulation, 2026-10-01).
+
+    Git's own reflog says which is which, and it is read for what each entry MOVED HEAD OVER, never
+    for the word it starts with. What arrived is exactly the commits between the entry before and
+    the entry itself, for the three moves that bring somebody else's history: a fast-forward and a
+    merge made (`pull ...: Fast-forward`, `merge x: Merge made by ...`), and the first step of a
+    rebase (`pull --rebase ... (start): checkout <sha>`, `rebase (start): checkout FETCH_HEAD`),
+    which stands on the upstream's tip. Every OTHER step of a rebase -- `(pick)` and the like --
+    records one of the front's own commits again, with a new name: it is the front's. Until the
+    cold review of 2026-10-01 every entry starting with `pull` counted as arrived, so `git pull
+    --rebase` made the front's own commits invisible to the closing; and `rebase (start)` counted
+    as made here, so `git fetch` + `git rebase` charged the colleague's commit to the front.
+    (Subjects measured on git 2.55.0, 2026-10-01.) A commit this clone recorded making
+    (`commit`, `cherry-pick`, `revert`, `am`) stays the front's however it comes back.
+
+    Names are read NUL-separated: git quotes a name with a non-ASCII character otherwise, and a
+    quoted name matches no glob."""
     def git(*args):
         r = subprocess.run(["git", "-C", root] + list(args), capture_output=True)
         return r.stdout.decode("utf-8", errors="replace") if r.returncode == 0 else ""
@@ -134,20 +151,84 @@ def front_paths(root, base):
         return set()
     commits = [c for c in git("rev-list", "--no-merges", base + "..HEAD").split() if c]
     made_here, arrived = set(), set()
-    for line in git("reflog", "--format=%H%x09%gs").splitlines():
-        sha, _, subject = line.partition("\t")
-        if subject.startswith(("commit", "cherry-pick", "revert", "rebase")):
+    entries = [line.partition("\t")[::2] for line in git("reflog", "--format=%H%x09%gs").splitlines()]
+    for i, (sha, subject) in enumerate(entries):
+        if subject.startswith(("commit", "cherry-pick", "revert", "am:")):
             made_here.add(sha)
-        elif subject.startswith(("pull", "merge")):
-            arrived |= set(git("rev-list", "--no-merges", base + ".." + sha).split())
+            continue
+        if not subject.startswith(("pull", "merge", "rebase")) or i + 1 >= len(entries):
+            continue
+        step = re.search(r"\((\w+)\)$", subject.split(": ", 1)[0])
+        if step is None or step.group(1) == "start":
+            arrived |= set(git("rev-list", "--no-merges", entries[i + 1][0] + ".." + sha).split())
     for merge in git("rev-list", "--merges", base + "..HEAD").split():
         arrived |= set(git("rev-list", "--no-merges", merge + "^1.." + merge + "^2").split())
     touched = set()
     for c in commits:
         if c in arrived and c not in made_here:
-            continue                            # brought by a pull or a merge: not this front's
+            continue                            # brought by a pull, a merge or a rebase: not this front's
         touched |= {p for p in git("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "--root", c).split("\0") if p}
     return endpoint & touched
+
+
+def night_file(root, rel):
+    """Whether `rel` is one of the two files the NIGHT's own scripts write in the project: the
+    diary (`<stamp>-overnight-<topic>.md`, which overnight-start.sh creates in the decisions
+    directory and overnight-entry.sh appends to) and the hand-off overnight-close.sh leaves in the
+    plans directory (`<stamp>-handoff-overnight-<topic>.md`). The homes are the ones those
+    scripts use: `decisions` and `plans` of .roadworthy/docs.json, else docs/decisions and
+    docs/plans. They are the rite's own artefacts, like the plan: the scope does not have to name
+    them. Measured on 2026-10-01 with the commit judged against the scope: a night whose plan did
+    not name the diary's directory could not commit the diary, so it could not end; and the
+    hand-off, written after the closing, could not be committed in a project with no docs.json.
+    Only the commit, the closing and the note read this -- EDITING such a file by hand still
+    answers to the scope, like any file: the diary is written through its script."""
+    name = os.path.basename(rel)
+    if not name.endswith(".md"):
+        return False
+    if "-handoff-overnight-" in name:
+        key, default = "plans", "docs/plans"
+    elif "-overnight-" in name:
+        key, default = "decisions", "docs/decisions"
+    else:
+        return False
+    try:
+        declared = json.load(open(os.path.join(root, ".roadworthy", "docs.json"), encoding="utf-8")).get(key) or ""
+    except Exception:
+        declared = ""
+    home = os.path.normpath(declared or default)
+    return home not in (".", "") and os.path.normpath(os.path.dirname(rel)) == home
+
+
+def commit_verdict(root, paths, protected, frozen, free, scope, plan_homes):
+    """What the commit guard says about the WHOLE set a commit would take, in one process. It was
+    one python3 per path and per list, and a hook that runs out of its time limit does not deny:
+    2,200 paths with a protected list declared went past 60 s and the commit went ahead unjudged
+    (cold review, 2026-10-01). One line: `PROTECTED <TAB> path`, `FROZEN <TAB> path`,
+    `OUTSIDE <TAB> count <TAB> the first five`, or nothing."""
+    outside = []
+    for rel in paths:
+        if protected and matches(rel, protected):
+            return "PROTECTED\t" + rel
+        if frozen and matches(rel, frozen):
+            return "FROZEN\t" + rel
+        # What needs no front: the rite's own artefacts, the owner's files, what the owner freed.
+        # Nothing under .roadworthy/ is the front's subject: the gates are committed with the
+        # front, the owner's files are the owner's, and the local state is the rite's bookkeeping
+        # (a project that does not ignore it must not have every `git add -A` refused). The
+        # closing counts the same way.
+        if rel.startswith(".roadworthy/"):
+            continue
+        if rel.endswith(".md") and os.path.realpath(os.path.dirname(os.path.join(root, rel))) in plan_homes:
+            continue                            # the plan: a .md directly in one of its homes
+        if night_file(root, rel):
+            continue
+        if free and matches(rel, free):
+            continue
+        if scope and matches(rel, scope):
+            continue
+        outside.append(rel)
+    return "OUTSIDE\t%d\t%s" % (len(outside), ", ".join(outside[:5])) if outside else ""
 
 
 def in_progress(root):
@@ -181,6 +262,8 @@ def drift(root, snap, plan_dirs):
         full = os.path.join(root, p)
         if p.endswith(".md") and os.path.dirname(os.path.realpath(full)) in plan_dirs:
             continue
+        if night_file(root, p):
+            continue
         history.append(p)
     # Mid-merge, mid-rebase: what sits in the index came from the other side, and the conflict in
     # a file of the scope has to be resolvable. The tree is measured again when git is done.
@@ -205,6 +288,8 @@ def drift(root, snap, plan_dirs):
             full = os.path.join(root, p)
             if p.endswith(".md") and os.path.dirname(os.path.realpath(full)) in plan_dirs:
                 continue                                # the plan is the rite's own artefact
+            if night_file(root, p):
+                continue                                # and so are the night's diary and hand-off
             if p in before and before[p] == sha(full):
                 continue                                # it was like that when the front opened
             out.append(p)
@@ -212,6 +297,14 @@ def drift(root, snap, plan_dirs):
 
 
 def main(argv):
+    if len(argv) >= 7 and argv[1] == "--commit":
+        split = lambda s: [g for g in s.split(",") if g.strip()]
+        paths = [l for l in sys.stdin.read().split("\n") if l]
+        line = commit_verdict(argv[2], paths, split(argv[3]), split(argv[4]), split(argv[5]), split(argv[6]),
+                              {os.path.realpath(d) for d in argv[7:] if d})
+        if line:
+            print(line)
+        return 0
     if len(argv) < 4:
         sys.stderr.write(__doc__)
         return 2

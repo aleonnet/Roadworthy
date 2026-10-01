@@ -44,7 +44,9 @@ What it emits, one per line, as KIND <TAB> DIRECTORY <TAB> PATH:
      or the command names that directory and writes to something this could not read (PATH is
      then the bare `.roadworthy`)
   S  skills/plan/scripts/scope-write.sh run on the plan PATH (DIRECTORY: where the front opens)
-  H  skills/close/scripts/close.sh recording a PERSON's answer (`--human <item> approved|rejected`)
+  H  a PERSON's act typed in a command: skills/close/scripts/close.sh recording an answer
+     (`--human <item> approved|rejected`, PATH `human`), or scope-write.sh opening a front as the
+     owner (`--owner`, PATH `owner`)
   C  a `git commit` in the repository DIRECTORY; PATH is `-` (what is staged), `-a` (every tracked
      change too) or a pathspec the commit names
   A  a `git add` in DIRECTORY, in the same command as a commit; PATH is the pathspec, or `*`
@@ -1135,7 +1137,10 @@ def _close_script(texts, cwd, out):
 def _scope_write(args, cwd, env, out, here):
     """The rite's own script that opens a front: S, with the repository the front opens in as the
     directory and the plan as an absolute path. A plan or a root only known at run time is `?`,
-    which the gate cannot look an approval up for."""
+    which the gate cannot look an approval up for. `--owner` is the owner saying the front is his
+    to open with no approval on record: a person's act, like the answer to a human verification."""
+    if any(a.text == "--owner" for a in args):
+        out.append(("H", cwd, "owner"))
     ops = _plain(args, ("--root", "--base"))
     root = [args[i + 1] for i, a in enumerate(args[:-1]) if a.text == "--root"]
     where = cwd

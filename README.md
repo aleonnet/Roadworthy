@@ -92,7 +92,8 @@ front. An **empty** scope file does not count. Shell commands are read by `hooks
 way the shell reads them — quoting, heredocs, substitutions, every separator, wrappers, `bash -c`,
 the directory in force — and its grammar is a table of cases (`tests/scripts/shellread.sh`).
 **The front opens only from what you approved:** when the agent runs `scope-write.sh`, the plan's
-scope, gates and base must match an approval on record. **The rite's own directory is closed to
+scope, gates and base must match an approval on record; the owner opens one himself, in a shell of
+his own, with `scope-write.sh <plan.md> --owner`, which the agent is denied. **The rite's own directory is closed to
 everything but its scripts:** a path under `.roadworthy/` may only be handed to a command known to
 read; writing, removing, sweeping (`find -delete`, `git clean`), an interpreter whose code writes
 there, and the same directory spelled in another case are denied. The owner's five files —
@@ -151,7 +152,8 @@ the base needs a new one.
 **`review-record`.** When the `cold-reviewer` agent finishes with a `VERDICT:` line, the verdict is
 recorded with the commit and tree it was given about. With `diff_review: required` in
 `.roadworthy/rites`, the closing only passes with an APPROVED verdict for the commit being closed;
-with `review_record: required`, a review written in a file needs a recorded verdict behind it.
+wherever a plan needs a review (`plan_gate` in `review` or `both`), the review file needs the
+reviewer's own recorded verdict behind it.
 
 **`stop-gate`.** A turn that says the work is finished is blocked while `close.sh --check` does not
 report every declared gate FRESH, and the block shows the state of each one — in the repository the
@@ -293,7 +295,7 @@ line, `#` starts a comment):
 | `.roadworthy/gates` | The commands a closing runs, one per line. Written by `scope-write.sh` from the plan's Verification block and versioned like a test. |
 | `.roadworthy/protected` | Globs nobody edits, through any door: the edit tools, the shell, the commit, the closing. |
 | `.roadworthy/free` | Globs that need no front and no scope: private notes, drafts, a scratch area inside the repository. |
-| `.roadworthy/rites` | What this project demands beyond the plugin's defaults: `plan_gate: preflight\|review\|both`, `review_record: required`, `diff_review: required`. A word it does not know refuses instead of meaning "no requirement". |
+| `.roadworthy/rites` | What this project demands beyond the plugin's defaults: `plan_gate: preflight\|review\|both`, `diff_review: required`. A word it does not know refuses instead of meaning "no requirement". |
 | `.roadworthy/overnight-rules` | `deny: <regex>` for commands and `freeze: <glob>` for files while the night marker exists. |
 | `.roadworthy/docs.json` | The documentation map, the status words, and the `plans` directory. |
 
@@ -306,9 +308,9 @@ edited by hand.
 ## Testing
 
 ```bash
-bash tests/run.sh              # the whole gate: 33 cases, ~8 min
+bash tests/run.sh              # the whole gate: 34 cases, ~9 min
 bash tests/hooks/scope-lock.sh # one fence, alone, in seconds
-bash tests/attack.sh           # the cheating suite: 146 attacks, 131 refused, 15 declared
+bash tests/attack.sh           # the cheating suite: 148 attacks, 132 refused, 16 declared
 bash tests/bench/bench.sh      # the fences met by a REAL session, headless (spends a few cents)
 ```
 

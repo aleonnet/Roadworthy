@@ -39,17 +39,27 @@
 # the front; and what was ALREADY changed outside the scope when the front opened, so the fence
 # that measures the tree against the scope does not charge the front for it.
 #
-# Usage: scope-write.sh <plan.md> [--root <repository>] [--base <ref>]
+# WHO OPENS IT. The agent opens a front from an approval on record: the entry gate looks it up
+# before it lets the agent run this script, and every write afterwards asks for it again
+# (hooks/frontcheck.py). The OWNER opens one himself, in a shell of his own, by saying so:
+# `--owner` is written in the snapshot and stands where the approval would. It is a person's act --
+# the entry gate denies the agent a command that carries it, as it denies `close.sh --human`.
+#
+# Usage: scope-write.sh <plan.md> [--root <repository>] [--base <ref>] [--owner]
 set -euo pipefail
-plan="${1:?usage: scope-write.sh <plan.md> [--root <repository>] [--base <ref>]}"; shift || true
-root=""; base=""
+usage="usage: scope-write.sh <plan.md> [--root <repository>] [--base <ref>] [--owner]"
+plan=""; root=""; base=""; owner=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --root) root="${2:?--root needs a directory}"; shift 2 ;;
     --base) base="${2:?--base needs a ref}"; shift 2 ;;
-    *) echo "scope-write: unknown argument $1" >&2; exit 1 ;;
+    --owner) owner="owner"; shift ;;
+    -*) echo "scope-write: unknown argument $1" >&2; exit 1 ;;
+    *) [ -z "$plan" ] || { echo "scope-write: unknown argument $1" >&2; exit 1; }
+       plan="$1"; shift ;;
   esac
 done
+[ -n "$plan" ] || { echo "$usage" >&2; exit 1; }
 [ -f "$plan" ] || { echo "scope-write: plan not found: $plan" >&2; exit 1; }
 plan="$(cd "$(dirname "$plan")" && pwd -P)/$(basename "$plan")"
 [ -n "$root" ] || root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
@@ -58,11 +68,12 @@ plan="$(cd "$(dirname "$plan")" && pwd -P)/$(basename "$plan")"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$root"
 
-python3 - "$plan" "$base" "$here/../../../hooks" <<'PY'
+python3 - "$plan" "$base" "$here/../../../hooks" "$owner" <<'PY'
 import hashlib, json, os, subprocess, sys, time
 
 plan = sys.argv[1]
 base_arg = sys.argv[2] if len(sys.argv) > 2 else ""
+opened_by = sys.argv[4] if len(sys.argv) > 4 else ""
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[3])
 from globmatch import matches
@@ -163,6 +174,8 @@ snap = {"ts": live["ts"] if reopened and live.get("ts") else time.strftime("%Y-%
         "base_head": head, "scope_globs": globs, "gates": gates,
         "declared_base": declared_base, "fingerprint": fingerprint(text),
         "report": header(text, "report|relato"), "preexisting": preexisting}
+if opened_by:
+    snap["opened_by"] = opened_by
 canonical = json.dumps(snap, sort_keys=True, separators=(",", ":"))
 snap["digests"] = {"scope": sha(".roadworthy/scope"),
                    "gates": sha(".roadworthy/gates"),
@@ -197,6 +210,8 @@ print(f"  base HEAD  {head[:12] or '(no commits)'}{'  (kept from when the front 
 print(f"  scope      {len(globs)} glob(s) -> .roadworthy/scope")
 print(f"  gates      {len(gates)} command(s) -> .roadworthy/gates")
 print(f"  snapshot   .roadworthy/plan.snapshot")
+if opened_by:
+    print(f"  opened by the owner, outside the agent: it stands with no approval on record")
 if snap["report"]:
     print(f"  report     {snap['report']}")
 if preexisting:

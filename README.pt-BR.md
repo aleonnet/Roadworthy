@@ -95,7 +95,8 @@ são lidos por `hooks/shellread.py` do jeito que o shell os lê — aspas, hered
 separador, invólucros, `bash -c`, o diretório em vigor — e a gramática dele é uma tabela de casos
 (`tests/scripts/shellread.sh`). **A frente só abre do que você aprovou:** quando o agente roda
 `scope-write.sh`, o escopo, os portões e a base do plano precisam casar com uma aprovação
-registrada. **O diretório do próprio rito é fechado a tudo que não sejam os scripts dele:** um
+registrada; o dono abre uma ele mesmo, num shell dele, com `scope-write.sh <plano.md> --owner`, que
+é negado ao agente. **O diretório do próprio rito é fechado a tudo que não sejam os scripts dele:** um
 caminho sob `.roadworthy/` só pode ser entregue a um comando conhecido por ler; escrever, remover,
 varrer (`find -delete`, `git clean`), um interpretador cujo código escreve ali, e o mesmo diretório
 escrito com outra caixa são negados. Os cinco arquivos do dono — `protected`, `free`, `rites`,
@@ -157,8 +158,8 @@ mantém a aprovação; mudar um glob, um portão ou a base pede outra.
 **`review-record`.** Quando o agente `cold-reviewer` termina com uma linha `VERDICT:`, o veredito é
 gravado com o commit e a árvore sobre os quais foi dado. Com `diff_review: required` em
 `.roadworthy/rites`, o fechamento só passa com um veredito APPROVED para o commit que está sendo
-fechado; com `review_record: required`, uma banca escrita em arquivo precisa de um veredito gravado
-por trás.
+fechado; onde um plano precisa de banca (`plan_gate` em `review` ou `both`), o arquivo da banca
+precisa ter por trás o veredito do próprio revisor, gravado pelo plugin.
 
 **`stop-gate`.** Um turno que diz que o trabalho terminou é bloqueado enquanto `close.sh --check`
 não reporta todo portão declarado como FRESH, e o bloqueio mostra o estado de cada um — no
@@ -304,7 +305,7 @@ arquivos que o agente lê e não consegue editar nem remover (um glob ou um `cha
 | `.roadworthy/gates` | Os comandos que um fechamento roda, um por linha. Escrito por `scope-write.sh` a partir do bloco de Verificação do plano e versionado como um teste. |
 | `.roadworthy/protected` | Globs que ninguém edita, por nenhuma porta: as ferramentas de edição, o shell, o commit, o fechamento. |
 | `.roadworthy/free` | Globs que não pedem frente nem escopo: notas privadas, rascunhos, uma área de rascunho dentro do repositório. |
-| `.roadworthy/rites` | O que este projeto exige além dos padrões do plugin: `plan_gate: preflight\|review\|both`, `review_record: required`, `diff_review: required`. Uma palavra que ele não conhece recusa, em vez de significar "sem exigência". |
+| `.roadworthy/rites` | O que este projeto exige além dos padrões do plugin: `plan_gate: preflight\|review\|both`, `diff_review: required`. Uma palavra que ele não conhece recusa, em vez de significar "sem exigência". |
 | `.roadworthy/overnight-rules` | `deny: <regex>` para comandos e `freeze: <glob>` para arquivos enquanto o marcador da madrugada existe. |
 | `.roadworthy/docs.json` | O mapa da documentação, as palavras de status e o diretório `plans`. |
 
@@ -317,9 +318,9 @@ abre, e nunca editado à mão.
 ## Testes
 
 ```bash
-bash tests/run.sh              # o portão inteiro: 33 casos, ~8 min
+bash tests/run.sh              # o portão inteiro: 34 casos, ~9 min
 bash tests/hooks/scope-lock.sh # uma cerca, sozinha, em segundos
-bash tests/attack.sh           # a suíte de trapaças: 146 ataques, 131 recusados, 15 declarados
+bash tests/attack.sh           # a suíte de trapaças: 148 ataques, 132 recusados, 16 declarados
 bash tests/bench/bench.sh      # as cercas diante de uma sessão REAL, sem interface (gasta alguns centavos)
 ```
 

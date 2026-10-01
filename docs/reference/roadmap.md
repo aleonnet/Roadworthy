@@ -42,7 +42,11 @@ Living document (undated name by design). One line per item, with the measured r
   is told the state on disk when it starts; the stop gate judges a claim, not a word; a denial knows
   who was denied, and **the third one says so in its own reason** — which closes the item that stood
   here about the three-strikes line reaching only the next prompt. `tests/sim/rite-sim.py` walks
-  the whole rite through the real hooks, honest sessions and attempts to get past it.
+  the whole rite through the real hooks: eleven honest sessions (a linked worktree and a night
+  among them) and four attempts to get past it. The cold review of the whole diff, on the last
+  day, rejected it with four blockers — a closing that passed after `git pull --rebase`, a front
+  the owner opened himself that was never honoured, two states of the rite nobody had walked, and
+  the reviewer's recorded verdict left optional — and each was fixed with a failing test first.
 
 ## Pending
 - **Beyond carelessness: the three classes the adversarial simulation of 2026-10-01 proved.** Each
@@ -162,8 +166,22 @@ being refused is reported as the fence growing, and a hole nobody declared fails
   the agent is told at its next write that a path outside the scope is changed.
 - **A commit by a route the reader does not recognise.** `guard-commit` is asked when the command
   reads as a `git commit`. A commit made by a script on disk, by git's own plumbing or by an alias
-  is not, and a file outside the scope staged that way enters the history. The closing still
-  refuses the front over it. Proved by the simulation; exercised in `tests/attack.sh` as DECLARED.
+  is not, and a file outside the scope staged that way enters the history — with a forbidden flag,
+  if the alias carries one: from 0.7.0 the flag is looked for in a command that commits, by its own
+  word (0.6.2 looked in every command, and refused a `grep` for the flag). The closing still
+  refuses the front over a path outside the scope. Proved by the simulation; exercised in
+  `tests/attack.sh` as DECLARED.
+- **Whose commit it is, is read from the reflog of this clone.** A commit that arrived by a pull, a
+  merge or a rebase onto the upstream is somebody else's and is not charged to the front; charging
+  it told the agent to take a colleague's commit out of the history. The same reading cannot tell a
+  colleague from the agent committing in ANOTHER clone and pulling the result in: several
+  deliberate steps, each visible in the transcript, and the class of the item above. A commit this
+  clone recorded making stays the front's however it comes back, a rebase included.
+- **A linked worktree is a repository of its own to the rite.** `git worktree add` gives a directory
+  with its own `.roadworthy/`: its own front, its own ledger. The simulated session opens a front
+  there from the plan approved in the same session, works and closes it, and the first tree's front
+  is untouched. Read in the code and not measured: in a LATER session that ledger holds no approval,
+  so a front there needs the plan approved again, or the owner's `scope-write.sh <plan> --owner`.
 - **The rite's directory is closed to what can be read, not to a program that hides the name.**
   Only a command known to read is handed a path under `.roadworthy/`, an interpreter whose inline
   code writes there is denied, and a forged scope, gates or snapshot is caught afterwards by its

@@ -346,6 +346,47 @@ MANY="$(python3 -c 'print("rm " + " ".join("src/gen/f%d.txt" % i for i in range(
 rgc "$MANY"
 denied && printf '%s' "$OUT" | grep -q 'more than 400 separate targets' && ok "a command naming more than 400 targets is refused whole, and told to split" || fail "a command with more targets than the gate can judge was let through: $(printf '%s' "$OUT" | cut -c1-120)"
 
+# ── 0.7.0: who opens a front (cold review of 2026-10-01) ─────────────────────────────────────
+# The agent opens a front from an approval on record. The OWNER opens one himself, outside the
+# agent, by saying so (`--owner`): the plan promised that whoever runs the script outside the
+# agent is not affected, and a front the owner had opened denied every write with "no approval is
+# on record" while pointing at a reopening that was denied too.
+OW="$TMP/rite-owner"; fx_repo_committed "$OW"; OW="$(cd "$OW" && pwd -P)"; mkdir -p "$OW/src"; printf 'a\n' > "$OW/src/a.py"
+printf '# P\n## Scope\n```\nsrc/**\n```\n## Verification\n```\ntrue\n```\n' > "$OW/plan.md"
+git -C "$OW" add -A; git -C "$OW" commit -q -m base
+ow() { run_hook rite-gate "$(python3 -c 'import json,sys; print(json.dumps({"tool_name":sys.argv[2],"cwd":sys.argv[1],"session_id":"s","tool_input":json.loads(sys.argv[3])}))' "$OW" "$1" "$2")"; }
+SWS="$ROOT/skills/plan/scripts/scope-write.sh"
+ow Bash "{\"command\":\"bash $SWS plan.md\"}"
+denied && printf '%s' "$OUT" | grep -q 'no approval is on record' && printf '%s' "$OUT" | grep -q -- '--owner' \
+  && ok "the agent opening a front with no approval on record is denied, and told the two ways one opens" || fail "a front opened from an unapproved scope (the agent ran scope-write.sh with nothing on record): $OUT"
+CLAUDE_PLUGIN_OPTION_PLAN_REVIEW_REQUIRED=false ow Bash "{\"command\":\"bash $SWS plan.md\"}"
+! denied && ok "with plan_review_required=false the approval is not asked for" || fail "plan_review_required=false did not switch the approval off: $OUT"
+ow Bash "{\"command\":\"bash $SWS plan.md --owner\"}"
+denied && printf '%s' "$OUT" | grep -q "the owner's act" \
+  && ok "the agent typing --owner is denied: opening a front as the owner is the owner's act" || fail "the agent opened a front as the owner: $OUT"
+ow Bash "{\"command\":\"cd $OW && bash -c 'bash $SWS --owner plan.md'\"}"
+denied && printf '%s' "$OUT" | grep -q "the owner's act" && ok "inside bash -c too" || fail "the agent opened a front as the owner (inside bash -c): $OUT"
+# A front opened with nothing on record and nobody vouching for it -- by a route no reader saw.
+(cd "$OW" && bash "$SWS" plan.md) >/dev/null
+ow Edit "{\"file_path\":\"$OW/src/a.py\"}"
+denied && printf '%s' "$OUT" | grep -q 'no approval is on record' \
+  && ok "a front on disk that nobody approved and the owner did not open is not honoured" || fail "a front opened from an unapproved scope was honoured at the next write: $OUT"
+printf '%s' "$OUT" | grep -q -- '--owner' && ! printf '%s' "$OUT" | grep -q 'Both are open to you now' \
+  && ok "and the refusal names the exits that exist: an approval, the owner, or abandoning it" || fail "the refusal of a front nobody approved names an exit that is refused: $OUT"
+# The owner, in a shell of his own.
+(cd "$OW" && bash "$SWS" plan.md --owner) > "$TMP/ow.out" 2>&1 || true
+grep -q 'opened by the owner' "$TMP/ow.out" && [ "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("opened_by",""))' "$OW/.roadworthy/plan.snapshot")" = "owner" ] \
+  && ok "scope-write.sh --owner says so and writes it in the snapshot" || fail "--owner left no mark in the snapshot: $(cat "$TMP/ow.out")"
+ow Edit "{\"file_path\":\"$OW/src/a.py\"}"
+! denied && ok "a front the owner opened himself is honoured: an edit inside its scope passes" || fail "a front the owner opened himself was not honoured: $OUT"
+ow Bash "{\"command\":\"echo x > $OW/f\"}"
+denied && printf '%s' "$OUT" | grep -q 'outside the approved scope' && ok "and it is a front like any other: a shell write outside its scope is denied by the scope" || fail "the owner's front does not enforce its scope: $OUT"
+# With the approval on record, the agent opens it -- and the owner's mark is not carried over.
+(cd "$OW" && bash "$ROOT/skills/close/scripts/close.sh" --abandon "the test moves on") >/dev/null 2>&1
+printf '{"kind": "approval", "fingerprint": "%s"}\n' "$(python3 "$ROOT/hooks/planblocks.py" fingerprint "$OW/plan.md")" >> "$OW/.roadworthy/evidence.jsonl"
+ow Bash "{\"command\":\"bash $SWS plan.md\"}"
+! denied && ok "with an approval on record for its scope, gates and base, the agent opens the front" || fail "an approved plan could not open its front (a dead end): $OUT"
+
 CLAUDE_PLUGIN_OPTION_RITE_GATE=false rg Edit "{\"file_path\":\"$RG/src/a.py\"}"
 ! denied && ok "rite_gate=false honoured" || fail "rite_gate=false ignored"
 

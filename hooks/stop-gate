@@ -44,8 +44,10 @@
 # (24). A status report was being blocked as a finished claim, by the very gate whose message asks
 # the agent to "say plainly what is left". So a word does not count: in a table row; in a legend
 # (a line with three or more status marks); negated within the three words before it; or followed
-# by "to/para/when/if". And a tail that declares an open item (`stop_gate_open_markers`, default
-# ⬜,🟡,📍,TODO) is not a claim that the work is finished. Measured with the same corpus: 700 turn
+# by "to/para/when/if". And a tail that declares an open item (`stop_gate_open_markers`; the
+# default is ten markers: ⬜, 🟡, 📍, TODO, "still have to", "still need to", "ainda falta",
+# "falta fazer", "in progress", "em andamento") is not a claim that the work is finished. Measured
+# with the same corpus, when the default was the first four: 700 turn
 # ends judged become 422, and 91 of the 177 blocks stay. Widening the vocabulary instead (feito,
 # fechado, aprovado, ✅ -- the proposal of the field note of 2026-09-18) takes 422 to 976 and was
 # refused by that number.

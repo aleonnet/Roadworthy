@@ -43,7 +43,7 @@ $(printf '%s\n' "$out" | grep -E 'FLAG|UNEXPECTED|RESULT|Traceback|Error' | cut 
   fi
 done
 if [ -n "${RW_SIM_ONLY:-}" ]; then rw_end; fi
-[ "$count" -ge 13 ] && ok "$count scenarios ran" || fail "only $count scenarios ran: the directory is not the one the case expects"
+[ "$count" -ge 15 ] && ok "$count scenarios ran" || fail "only $count scenarios ran: the directory is not the one the case expects"
 
 # The simulator itself can fail: a scenario in which the rite IS got round has to come back red,
 # or every "held" above means nothing. Here the commit guard is switched off by its own option --

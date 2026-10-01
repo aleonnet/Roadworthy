@@ -308,6 +308,8 @@ TABLE = [
     (EXACT, "bash x/scope-write.sh --root /r docs/plans/p.md", ["S /r /repo/docs/plans/p.md"]),
     (EXACT, "cd /r && bash /p/scope-write.sh ~/.claude/plans/p.md", ["S /r /h/.claude/plans/p.md"]),
     (EXACT, 'bash x/scope-write.sh "$PLAN_UNSET"', ["S /repo ?"]),
+    (EXACT, "bash x/scope-write.sh docs/plans/p.md --owner", ["H /repo owner", "S /repo /repo/docs/plans/p.md"]),
+    (EXACT, "x/scope-write.sh --owner --root /r docs/plans/p.md", ["H /repo owner", "S /r /repo/docs/plans/p.md"]),
     (EXACT, "bash skills/close/scripts/close.sh --human all approved --by owner", ["H /repo human"]),
     (EXACT, "skills/close/scripts/close.sh --human 'the label' rejected --by me --note no", ["H /repo human"]),
     (READS, "bash skills/close/scripts/close.sh --human", []),

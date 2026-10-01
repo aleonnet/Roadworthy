@@ -131,6 +131,12 @@
 # owner requires`; the scope not held through the shell, and the note not said -> `a change outside
 # the scope was committed, closed over, or never said`; the undo refused with no front -> `the rite
 # has a dead end`.
+# Refuted 2026-10-01, after the cold review of the whole diff, against tests/hooks/rite-gate.sh:
+# the denial of `--owner` typed by the agent off (here, and in the reader) -> `the agent opened a
+# front as the owner`; the owner's mark not honoured by hooks/frontcheck.py -> `a front the owner
+# opened himself was not honoured`; the approval not asked for at each write -> `a front opened from
+# an unapproved scope was honoured at the next write`; the refusal saying "both are open to you now"
+# again -> `the refusal of a front nobody approved names an exit that is refused`.
 export RW_HOOK="rite-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -194,7 +200,7 @@ judge_open() {
   if python3 "$(dirname "$0")/planblocks.py" approved "$plan" "$(rw_data_dir "$oroot")/evidence.jsonl" "$(rw_field transcript_path)" >/dev/null 2>&1; then
     return 0
   fi
-  deny PreToolUse "no approval is on record for what '$(basename "$plan")' would make this front enforce (its Scope, its Verification and its base). A front opens from an approved plan: submit the plan through plan mode and have it approved -- the approval is recorded then, and editing the prose afterwards does not void it; changing a glob, a gate or the base does. The owner can also open the front himself, outside the agent. (rite_gate)"
+  deny PreToolUse "no approval is on record for what '$(basename "$plan")' would make this front enforce (its Scope, its Verification and its base). A front opens from an approved plan: submit the plan through plan mode and have it approved -- the approval is recorded then, and editing the prose afterwards does not void it; changing a glob, a gate or the base does. The other way is the owner's: he opens the front himself, outside the agent, with 'skills/plan/scripts/scope-write.sh <plan.md> --owner'. Ask for one of the two and stop there. (rite_gate)"
 }
 
 deny_owner() {  # deny_owner <relative path>
@@ -377,8 +383,11 @@ front_facts() {
   FRONT_HISTORY="$(printf '%s\n' "$facts" | sed -n 's/^HISTORY	//p')"
 }
 
+# The exits it names have to exist (cold review of 2026-10-01: it said "both are open to you now"
+# about a reopening that the same gate denied). Reopening is open to the agent exactly when
+# opening was: with an approval on record for what the plan declares now. Abandoning always is.
 deny_broken() {  # deny_broken <root> <reason>
-  deny PreToolUse "the front open in $1 is not the front that was approved: $2. Nothing is written over it. Reopen it from the approved plan (skills/plan/scripts/scope-write.sh <plan.md>), which writes the scope, the gates and the snapshot again, or abandon it with its reason (skills/close/scripts/close.sh --abandon \"<reason>\"). Both are open to you now. (rite_gate)"
+  deny PreToolUse "the front open in $1 is not the front that was approved: $2. Nothing is written over it. Three ways out. Reopen it from the plan (skills/plan/scripts/scope-write.sh <plan.md>), which writes the scope, the gates and the snapshot again: that is open to you when an approval is on record for what the plan declares -- if none is, submit the plan through plan mode first. Or the owner reopens it himself, outside the agent, with 'scope-write.sh <plan.md> --owner'. Or abandon it with its reason (skills/close/scripts/close.sh --abandon \"<reason>\"), which is open to you now. (rite_gate)"
 }
 
 # front_note <root> — what the agent is told, once, about changes outside the scope.
@@ -474,6 +483,11 @@ case "$tool" in
       case "$one" in /*) ;; *) abs="${dir:-$cwd}/$one" ;; esac
       judge "$kind" "$(rw_realpath "$abs")" shell
     done <<< "$target"
+    # A front with no approval on record is opened by the owner, in a shell of his own. An agent
+    # that types `--owner` has made itself the owner.
+    if printf '%s\n' "$target" | grep -q '^H	.*	owner$'; then
+      deny PreToolUse "opening a front with --owner is the owner's act, not the agent's: it says a person opened this front himself, with no approval on record. A front the agent opens comes from an approved plan: submit the plan through plan mode and, once it is approved, run skills/plan/scripts/scope-write.sh <plan.md> without --owner. If the owner wants to open it himself, he runs the command outside the agent. (rite_gate)"
+    fi
     # The answer of a person is recorded by the person. A human verification exists because a
     # machine cannot make it; an agent that types `--human all approved --by owner` has made it.
     if printf '%s\n' "$target" | grep -q '^H	'; then

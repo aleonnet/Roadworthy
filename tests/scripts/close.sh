@@ -261,4 +261,41 @@ printf '%s' "$RS_OUT" | grep -q 'no front is open here' && [ "$(rs --state)" = "
 printf 'dirt\n' >> "$RS/src/a.py"
 printf '%s' "$(rs)" | grep -q "git stash push -u" && ok "a dirty tree is told how to set aside what is not the front's" || fail "the dirty-tree refusal does not say the way forward"
 
+# ── 0.7.0: whose commit it is, after a rebase rewrote the history ────────────────────────────
+# `git pull --rebase` records the front's OWN commits again, as `pull --rebase (pick)`. Every
+# reflog entry starting with `pull` used to count as "arrived from somewhere else", so a commit of
+# the front outside its scope disappeared from the closing the moment the upstream was pulled
+# (cold review of 2026-10-01; 0.6.2 refused it, by looking at the whole difference).
+rb_front() {  # rb_front <dir> <upstream dir> — a front on src/**, and a clone where a colleague commits outside it
+  fx_repo_committed "$1"; mkdir -p "$1/src" "$1/outside"
+  printf 'a\n' > "$1/src/a.py"; printf 'b\n' > "$1/outside/b.py"; printf 'c\n' > "$1/outside/c.py"
+  printf '# P\n## Scope\n```\nsrc/**\n```\n## Verification\n```\ntrue\n```\n' > "$1/plan.md"
+  git -C "$1" add -A; git -C "$1" commit -q -m base
+  git clone -q "$1" "$2"; git -C "$2" config user.email c@c; git -C "$2" config user.name colleague
+  printf 'b2\n' > "$2/outside/b.py"; git -C "$2" commit -q -am 'a colleague, outside this scope'
+  (cd "$1" && bash "$ROOT/skills/plan/scripts/scope-write.sh" plan.md) >/dev/null
+  git -C "$1" add -A; git -C "$1" commit -q -m 'the gates of the front'
+}
+RB="$TMP/rebase-pull"; rb_front "$RB" "$TMP/rebase-pull-up"
+rb() { (cd "$RB" && env -u ROADWORTHY_DATA bash "$CLOSE") 2>&1 || true; }
+RB_BRANCH="$(git -C "$RB" rev-parse --abbrev-ref HEAD)"
+printf 'c2\n' > "$RB/outside/c.py"; git -C "$RB" commit -q -am 'the front, outside its scope'
+git -C "$RB" pull -q --rebase "$TMP/rebase-pull-up" "$RB_BRANCH" >/dev/null 2>&1
+RB_LOG="$(git -C "$RB" reflog --format=%gs)"
+case "$RB_LOG" in *"(pick)"*) : ;; *) fail "the fixture did not rebase the front's commit: $RB_LOG" ;; esac
+RB_OUT="$(rb)"
+printf '%s' "$RB_OUT" | grep -q 'outside its declared scope' && printf '%s' "$RB_OUT" | grep -q 'outside/c.py' && [ -f "$RB/.roadworthy/scope" ] \
+  && ok "a commit of the front outside its scope is still the front's after 'git pull --rebase' rewrote it" || fail "the closing passed over a commit the rebase rewrote: $RB_OUT"
+printf '%s' "$RB_OUT" | grep -q 'outside/b.py' && fail "a colleague's commit that arrived by pull --rebase was charged to the front: $RB_OUT" || ok "and the colleague's file, which arrived in the same pull, is not charged to it"
+printf 'c\n' > "$RB/outside/c.py"; git -C "$RB" commit -q -am 'put back'
+printf '%s' "$(rb)" | grep -q 'close: passed' && ok "put back, the front closes over the colleague's commit" || fail "a colleague's commit that arrived by pull --rebase was charged to the front (after the put back): $(rb)"
+# The same arrival in two acts: `git fetch`, then `git rebase`. Nothing in the reflog says `pull`.
+RF="$TMP/rebase-fetch"; rb_front "$RF" "$TMP/rebase-fetch-up"
+printf 'a2\n' > "$RF/src/a.py"; git -C "$RF" commit -q -am 'the front, inside its scope'
+git -C "$RF" fetch -q "$TMP/rebase-fetch-up" "$(git -C "$RF" rev-parse --abbrev-ref HEAD)" >/dev/null 2>&1
+git -C "$RF" rebase -q FETCH_HEAD >/dev/null 2>&1
+RF_OUT="$( (cd "$RF" && env -u ROADWORTHY_DATA bash "$CLOSE") 2>&1 || true )"
+[ "$(git -C "$RF" show HEAD:outside/b.py)" = "b2" ] && printf '%s' "$RF_OUT" | grep -q 'close: passed' \
+  && ok "a colleague's commit that arrived by fetch and rebase is not charged to the front" || fail "a colleague's commit that arrived by fetch and rebase was charged to the front: $RF_OUT"
+
 rw_end

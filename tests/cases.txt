@@ -6,6 +6,7 @@ tests/hooks/paths-and-commits.sh
 tests/hooks/plan-review-gate.sh
 tests/hooks/principles.sh
 tests/hooks/protect-paths.sh
+tests/hooks/review-record.sh
 tests/hooks/rite-gate.sh
 tests/hooks/scope-lock.sh
 tests/hooks/session-state.sh

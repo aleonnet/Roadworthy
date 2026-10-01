@@ -1,0 +1,92 @@
+{
+ "name": "overnight mode on and off, in a project that declares neither a decisions nor a plans directory and whose scope names only the code: the night starts, works, commits its diary, is refused what waits for the morning, closes, commits its hand-off, and the morning is free again",
+ "setup": {
+  "front": "open",
+  "scope": ["src/**"]
+ },
+ "steps": [
+  {
+   "tool": "Bash",
+   "command": "git tag before-the-night",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Write",
+   "file_path": "@PLANS@/the-plan.md",
+   "content": "# The plan\n\nproject: @T@\nstatus: proposed\n\n## Context\nA toy.\n\n## Scope\n```\nsrc/**\n```\n\n## Verification\n```\ntrue\n```\n\n## Overnight policy\n- Decided at night, with a source: the names inside src/.\n- Reserved for the owner: publishing.\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "Write",
+   "file_path": "@PLANS@/the-plan.review.md",
+   "content": "plan: the-plan.md\nround: 1\nVERDICT: APPROVED\n",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/overnight/scripts/overnight-start.sh @PLANS@/the-plan.md toy",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "git push origin main",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "git tag in-the-night",
+   "expect": "deny"
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 2",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/overnight/scripts/overnight-entry.sh --phase 1 --decision 'kept the name a' --reason 'the file already calls it that' --source src/a.py",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "git add -A && git commit -q -m 'phase 1, with the diary of the night'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/overnight/scripts/overnight-entry.sh --phase-done 1 --sha HEAD --gates 'true: green'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "git commit -q -am 'the diary, phase 1 done'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/overnight/scripts/overnight-close.sh --run",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "git add -A && git commit -q -m 'the hand-off of the night'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "git tag in-the-morning",
+   "expect": "allow",
+   "expect_rc": 0
+  }
+ ]
+}

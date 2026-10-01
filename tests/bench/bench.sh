@@ -46,10 +46,10 @@ git -C "$TOY" add -A; git -C "$TOY" commit -q -m base
 # ask <name> <prompt> — one real session, one exact act. Writes the stream to $OUT/<name>.jsonl and
 # leaves the final result object in $OUT/<name>.result.json. Never trusts stdout beyond that.
 ask() {
-  local name="$1" prompt="$2"
+  local name="$1" prompt="$2" tools="${3:-Edit,Write,Bash}"
   ( cd "$TOY" && claude -p "$prompt" --plugin-dir "$ROOT" --model "$MODEL" \
       --output-format stream-json --verbose --max-turns 6 \
-      --permission-mode acceptEdits --allowedTools "Edit,Write,Bash" \
+      --permission-mode acceptEdits --allowedTools "$tools" \
       > "$OUT/$name.jsonl" 2> "$OUT/$name.err" ) || true
   python3 - "$OUT/$name.jsonl" "$OUT/$name.result.json" <<'PY'
 import json, sys
@@ -78,7 +78,7 @@ sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 
 step "no front open: an edit of the repository is denied by the entry gate"
 before="$(sha "$TOY/src/a.py")"
-ask s1 "Use the Edit tool to change the file src/a.py so that the line 'x = 1' becomes 'x = 2'. Do nothing else. If the edit is denied, stop and reply with the single word DENIED."
+ask s1 "Use the Edit tool to change the file $TOY/src/a.py so that the line 'x = 1' becomes 'x = 2'. Do nothing else. If the edit is denied, stop and reply with the single word DENIED."
 [ "$(sha "$TOY/src/a.py")" = "$before" ] && ok "src/a.py is byte-identical" || fail "src/a.py changed with no front open"
 [ "$(denials s1 Edit)" -ge 1 ] && ok "the harness recorded a denial of Edit ($(denials s1 Edit))" || fail "no Edit denial recorded: $(cat "$OUT/s1.result.json")"
 
@@ -95,11 +95,19 @@ ask s2 "Run exactly this shell command and nothing else: bash $ROOT/skills/plan/
 
 step "the owner opens the front outside the agent (scope, gates, snapshot in one act)"
 # Approving a plan in plan mode needs a person at the interface; headless, the front is opened the
-# other way the rite allows: by the owner, in a shell of their own.
-( cd "$TOY" && bash "$ROOT/skills/plan/scripts/scope-write.sh" docs/plans/p.md ) > "$OUT/open.txt" 2>&1 || true
+# other way the rite allows: by the owner, in a shell of their own, saying so (--owner).
+( cd "$TOY" && bash "$ROOT/skills/plan/scripts/scope-write.sh" docs/plans/p.md --owner ) > "$OUT/open.txt" 2>&1 || true
 [ -f "$TOY/.roadworthy/scope" ] && [ -f "$TOY/.roadworthy/plan.snapshot" ] && [ -f "$TOY/.roadworthy/gates" ] \
   && ok "scope, snapshot and gates exist" || fail "the rite did not open the front: $(tail -3 "$OUT/open.txt")"
 head -1 "$TOY/.roadworthy/scope" | grep -q 'Written by scope-write.sh' && ok "the scope carries the rite's banner" || fail "scope without banner"
+
+step "0.7.0: the front the owner opened is HONOURED: an edit inside its scope goes through"
+# The steps below count denials, and a front the fences refuse to honour denies everything: until
+# the cold review of 2026-10-01 they passed for that reason, with the owner's front never usable.
+before="$(sha "$TOY/src/a.py")"
+ask s2a "Use the Edit tool to change the file $TOY/src/a.py so that the line 'x = 1' becomes 'x = 2'. Do nothing else. If the edit is denied, stop and reply with the single word DENIED."
+[ "$(sha "$TOY/src/a.py")" != "$before" ] && grep -q 'x = 2' "$TOY/src/a.py" && ok "src/a.py was edited" || fail "an edit inside the scope of the owner's front did not go through: $(cut -c1-600 "$OUT/s2a.result.json")"
+[ "$(denials s2a Edit)" -eq 0 ] && ok "and no Edit was denied" || fail "the owner's front denied an edit inside its scope ($(denials s2a Edit))"
 
 step "0.7.0: front open, a shell write outside the declared globs is denied by the entry gate"
 before="$(sha "$TOY/outside/b.py")"
@@ -109,7 +117,9 @@ ask s2b "Run exactly this shell command and nothing else: echo 'y = 3' > outside
 
 step "front open: an edit outside the declared globs is denied by the scope lock"
 before="$(sha "$TOY/outside/b.py")"
-ask s3 "Use the Edit tool to change the file outside/b.py so that 'y = 1' becomes 'y = 2'. Do nothing else. If the edit is denied, stop and reply with the single word DENIED."
+# The path is given whole: a smaller model resolved `outside/b.py` against the wrong directory,
+# was refused the Read by the harness and never tried the edit (measured 2026-10-01).
+ask s3 "Use the Edit tool to change the file $TOY/outside/b.py so that 'y = 1' becomes 'y = 2'. Do nothing else. If the edit is denied, stop and reply with the single word DENIED."
 [ "$(sha "$TOY/outside/b.py")" = "$before" ] && ok "outside/b.py is byte-identical" || fail "an edit outside the scope went through"
 [ "$(denials s3 Edit)" -ge 1 ] && ok "the harness recorded the denial" || fail "no denial recorded: $(cat "$OUT/s3.result.json")"
 
@@ -127,6 +137,29 @@ grep -q 'FRESH     true' "$OUT/check2.txt" && ok "close.sh --check reports the g
 ask s5 "Reply with exactly these two words and nothing else: All done."
 latches="$(find "$TOY/.roadworthy" "$HOME/.claude/plugins/data" -maxdepth 3 -path '*stop-latch*' -type f -newer "$OUT/check2.txt" 2>/dev/null | wc -l | tr -d ' ')"
 [ "$latches" = 0 ] && ok "no stop latch was written: the claim on fresh gates was not blocked" || fail "the stop gate blocked a claim on FRESH gates ($latches latch file(s) written)"
+
+step "0.7.0: a reviewer that ends with a verdict leaves it on record (the end of a REAL subagent)"
+# What the suite can only fake: that the harness hands hooks/review-record the reviewer's type and
+# its final text when a real subagent ends. The plan gate and the closing both rest on that record
+# (plan_gate: review|both, diff_review: required); if it were never written, a project that asks
+# for a review could never submit a plan. Any verdict proves the mechanism; the model's judgement
+# of the toy plan is not what is measured.
+ask s6 "Use the Agent tool with subagent_type 'roadworthy:cold-reviewer' to review the plan docs/plans/p.md of this repository. Pass it this prompt: 'Review the plan docs/plans/p.md. Keep it to five lines and end your report with a VERDICT line.' When it reports back, reply with the single word DONE and do nothing else." "Agent,Task,Read,Grep,Glob,Bash"
+python3 - "$TOY/.roadworthy/evidence.jsonl" > "$OUT/review.txt" 2>&1 <<'PY' || true
+import json, sys
+found = []
+try:
+    for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+        try: r = json.loads(line)
+        except Exception: continue
+        if r.get("kind") == "review": found.append(r)
+except Exception as e:
+    print("no ledger: %s" % e)
+for r in found:
+    print("review record: verdict=%s agent=%r plans=%r head=%s" % (r.get("verdict"), r.get("agent"), r.get("plans"), (r.get("head") or "")[:12]))
+PY
+grep -q 'review record: verdict=' "$OUT/review.txt" && ok "the plugin recorded the reviewer's verdict: $(head -1 "$OUT/review.txt")" || fail "a real reviewer ended and no verdict was recorded: $(cat "$OUT/review.txt") / $(tail -c 400 "$OUT/s6.result.json")"
+grep -q "agent='[^']*cold-reviewer" "$OUT/review.txt" && ok "and the record names the reviewer's type, which is what the plan gate and the closing look for" || fail "the record does not carry the reviewer's type: $(cat "$OUT/review.txt")"
 
 step "denials are recorded in the PROJECT ledger, in the harness's own environment"
 n="$(python3 -c 'import sys

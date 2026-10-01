@@ -1,0 +1,88 @@
+{
+ "name": "a linked worktree (git worktree): its own front, opened from the approved plan, worked, closed, and the first one untouched",
+ "setup": {
+  "front": "open"
+ },
+ "steps": [
+  {
+   "tool": "Bash",
+   "command": "git worktree add -q ../wt -b side",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/../wt/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 2",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "echo 'a = 2' > @T@/../wt/src/a.py",
+   "expect": "deny"
+  },
+  {
+   "tool": "ExitPlanMode",
+   "plan_file": "@PLANS@/the-plan.md",
+   "owner": "approve",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/the-plan.md --root @T@/../wt",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/../wt/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 2",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "echo 'b = 2' > @T@/../wt/outside/b.py",
+   "expect": "deny"
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/../wt/outside/b.py",
+   "old_string": "b = 1",
+   "new_string": "b = 2",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "git -C @T@/../wt commit -q -am 'in the worktree, inside its scope'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "(cd @T@/../wt && bash @PLUGIN@/skills/close/scripts/close.sh)",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "a = 1",
+   "new_string": "a = 3",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git commit -q -am 'in the first tree, whose front never moved'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
+   "expect": "allow",
+   "expect_rc": 0
+  }
+ ]
+}

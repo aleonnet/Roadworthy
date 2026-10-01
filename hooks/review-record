@@ -11,8 +11,9 @@
 # Who reads it:
 #   * skills/close/scripts/close.sh, when the owner's .roadworthy/rites says `diff_review: required`:
 #     the closing only records `passed` with an APPROVED verdict for the commit it is closing;
-#   * hooks/plan-review-gate, when the rites say `review_record: required`: a review written in a
-#     file needs a recorded verdict behind it.
+#   * hooks/plan-review-gate, wherever a plan needs a review (`plan_gate` in `review` or `both`, by
+#     the option or by the owner's rites): a review written in a file needs this recorded verdict
+#     behind it.
 #
 # The verdict line is the one the cold reviewer of this plugin already ends with
 # (`VERDICT: APPROVED | REJECTED | ESCALATE`; `VEREDITO:` and the Portuguese words are read too).
@@ -27,8 +28,12 @@
 # Refuted 2026-10-01 through its two readers: the closing no longer asking for the verdict ->
 # tests/scripts/close.sh red with `the closing passed without the review the project requires`; the
 # plan gate no longer asking -> tests/hooks/plan-review-gate.sh red with `a review nobody ran was
-# accepted`. What is NOT measured outside a synthetic event: that the harness hands this hook the
-# reviewer's type and final text when a real subagent ends. That is the owner's bench.
+# accepted`. And in its own case, tests/hooks/review-record.sh: the first verdict line taken
+# instead of the last -> red with `a quoted verdict was taken for the reviewer's own`; the type of
+# the subagent left out of the record -> red with `the reviewer's verdict was not recorded`.
+# Measured in a REAL session on 2026-10-01 (tests/bench/bench.sh, CLI 2.1.286): the harness hands
+# this hook the reviewer's type and final text when a real `roadworthy:cold-reviewer` subagent
+# ends, and the record is written -- `agent='roadworthy:cold-reviewer'`, with its verdict.
 export RW_HOOK="review-record"
 export RW_ON_CRASH=warn
 source "$(dirname "$0")/lib.sh"

@@ -25,8 +25,9 @@ and the numbers refuted, and what stays a declared limit are in
   `passed` over it. `--abandon "<reason>"` ends a front with no way forward, on record.
 - The closing refuses a front whose diff touched a protected path, records `gaps_found` when it
   refuses before the gates, says so when nothing is open instead of speaking of a changed scope,
-  and counts only the commits made here: a colleague's commit that arrived by pull or merge is not
-  the front's. A name with a non-ASCII character is the name the globs see.
+  and counts only the commits made here: a colleague's commit that arrived by pull, by merge or by
+  a rebase onto the upstream is not the front's, and a commit of the front that a rebase recorded
+  again still is. A name with a non-ASCII character is the name the globs see.
 
 ### Fixed — the entry gate
 - `hooks/shellread.py` reads a command the way the shell reads it — quoting, heredocs,
@@ -51,13 +52,20 @@ and the numbers refuted, and what stays a declared limit are in
 ### Added
 - **A front opens only from what was approved.** Approving a plan in plan mode records the
   fingerprint of its scope, gates and base; the agent running `scope-write.sh` on anything else is
-  denied. Reopening keeps the base; a second front over a live one is refused, naming it.
+  denied, and a front on disk with no such approval is not honoured. The owner opens one himself,
+  outside the agent, with `scope-write.sh <plan.md> --owner` — a person's act, denied to the agent.
+  Reopening keeps the base; a second front over a live one is refused, naming it.
 - **A commit takes only what the front declared** (`commit_scope`): the set is read from git's own
-  index, so it holds however the file was written.
+  index, so it holds however the file was written, and it is judged whole by one process, so a
+  commit of thousands of paths is answered inside the hook's time limit. The diary and the hand-off
+  the night's own scripts write commit like the plan does: the scope does not have to name them.
 - **`.roadworthy/rites`**, the owner's file for what a project demands beyond the defaults:
-  `plan_gate`, `review_record`, `diff_review`. And **`.roadworthy/free`**, for paths outside the rite.
+  `plan_gate`, `diff_review`. And **`.roadworthy/free`**, for paths outside the rite.
 - **`session-state`** (SessionStart): the state on disk at the top of every session.
-- **`review-record`** (SubagentStop): the cold reviewer's verdict, recorded by the plugin.
+- **`review-record`** (SubagentStop): the cold reviewer's verdict, recorded by the plugin. Wherever
+  a plan needs a review (`plan_gate` in `review` or `both`, by the option or by the rites), the
+  review file needs that recorded verdict behind it; the user's `owner:` decision unlocks it after
+  an escalation, as it unlocks the round ceiling.
 - **The reporting form is agreed at the start of the rite**: a `report:` line in the plan, carried
   in the snapshot, repeated at every prompt while the front is open.
 - **A person answers a human verification in their own prompt** (`rw-human: all approved`); the
@@ -72,6 +80,10 @@ and the numbers refuted, and what stays a declared limit are in
 - The stop gate judges a claim, not a word (`stop_gate_open_markers`), and asks for the gates of
   every repository the turn wrote in.
 - A guard that dies answers with a denial; the event is parsed once per hook call.
+- The forbidden commit flags are looked for in a command that commits, by its own word; 0.6.2
+  looked in every Bash command and refused `grep -rn -- '--trailer' docs/`. The price, declared in
+  the attack suite: a commit made through a git alias is judged neither for the flag nor for what
+  it takes.
 
 ## [0.6.2] - 2026-09-14
 

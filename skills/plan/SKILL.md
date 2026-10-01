@@ -69,6 +69,13 @@ plan's **Scope** and **Verification** fenced blocks and writes, in one act, `.ro
 HEAD, the globs, the gates, and the digests of all three. From that moment `scope-lock` denies
 edits outside the globs. Widen only with a written reason in the plan, by reopening the front.
 
+**It opens from an approval on record.** The plugin records the approval when the user approves
+the plan in plan mode, and the entry gate looks it up before it lets you run the script; a front
+with no approval behind it is not honoured afterwards either. If the gate says none is on record,
+there are two ways and both are the user's: approve the plan in plan mode, or open the front
+himself, outside the agent, with `scripts/scope-write.sh <plan.md> --owner`. Ask for one and stop.
+`--owner` is a person's act: typing it yourself is denied.
+
 **Why a snapshot.** `close.sh` used to re-read `.roadworthy/gates` at closing time, so editing
 the Verification section after approval silently changed what "the gates passed" proves. The
 closing now compares against the snapshot and refuses when a digest disagrees, and it refuses
@@ -127,6 +134,12 @@ no foreground to ask for. So do nothing else while it runs, and **write the verd
 moment it arrives, before analysing it** — a review that lives only in the conversation is one
 context boundary from being lost (measured 2026-09-13: ten minutes of review, twelve blockers,
 gone if the session had been compacted).
+
+**The review has to be the reviewer's.** When the `cold-reviewer` agent ends, the plugin records
+the verdict line of its report, and the plan gate asks for that record behind what you write
+down: a review file with no reviewer behind it is refused, and so is one that says APPROVED when
+the reviewer's last verdict was not. You cannot write that record, and you do not need to: run the
+agent, and let it end with its verdict.
 
 Where to write it — two forms, same fields:
 

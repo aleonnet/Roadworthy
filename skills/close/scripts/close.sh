@@ -41,6 +41,12 @@
 # with `a large gate output left no evidence`; the declared-against-ran comparison removed -> red
 # with `the closing passed with gates that never ran`; the derived state ignoring open items -> red
 # with `a later closing erased the pending human verification`. Each green again on the clean file.
+# Refuted 2026-10-01, after the cold review of the whole diff (whose commit it is lives in
+# hooks/frontcheck.py, front_paths): a replayed commit of the front counted as arrived -> red with
+# `the closing passed over a commit the rebase rewrote`; the first step of a rebase not counted as
+# an arrival -> red with `a colleague's commit that arrived by fetch and rebase was charged to the
+# front`; the night's own files not recognised here -> tests/meta/rite-liveness.sh red with `the
+# rite has a dead end`.
 #
 # Usage:
 #   close.sh               run all gates (requires a clean tree); exit 0 = passed
@@ -424,7 +430,7 @@ base = snap.get("base_head") or ""
 # alike -- the difference between the base and HEAD, restricted to the commits made here. A
 # commit that arrived by a pull or a merge of the upstream is somebody else's and is not counted;
 # names are read NUL-separated, so one with a non-ASCII character is the name the globs see.
-from frontcheck import front_paths
+from frontcheck import front_paths, night_file
 touched = set(front_paths(os.getcwd(), base))
 u = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "-z"], capture_output=True)
 touched |= {l for l in u.stdout.decode("utf-8", errors="replace").split("\0") if l}
@@ -441,9 +447,10 @@ def listed(path):
         return [l.strip() for l in open(path, encoding="utf-8", errors="replace") if l.strip() and not l.strip().startswith("#")]
     except Exception:
         return []
-# What needs no scope, the same three things the commit guard lets through (hooks/guard-commit):
-# the rite's own files, a plan kept in the project's plans directory -- this front's and the
-# hand-off written while it was open -- and what the owner declared outside the rite.
+# What needs no scope, the same things the commit guard lets through (hooks/guard-commit): the
+# rite's own files, a plan kept in the project's plans directory -- this front's and the hand-off
+# written while it was open --, the diary and the hand-off the night's scripts write
+# (hooks/frontcheck.py, night_file), and what the owner declared outside the rite.
 free = listed(".roadworthy/free")
 plans_home = ""
 try:
@@ -454,6 +461,8 @@ def local(p):
     if p.startswith(".roadworthy/") or (own_plan and os.path.normpath(p) == own_plan):
         return True
     if plans_home and plans_home != "." and p.endswith(".md") and os.path.dirname(os.path.normpath(p)) == os.path.normpath(plans_home):
+        return True
+    if night_file(os.getcwd(), p):
         return True
     return bool(free) and matches(p, free)
 # A protected path in the front's diff: the fences deny it at the edit, at the shell and at the

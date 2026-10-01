@@ -11,11 +11,29 @@ section "plan-review-gate"
 export CLAUDE_PLUGIN_OPTION_PLAN_GATE=review
 P="$HOME_SANDBOX/.claude/plans"; printf '# plan\n\n## Goal\n' > "$P/my-plan.md"
 export CLAUDE_PLUGIN_OPTION_PLANS_DIR="$P"
+# 0.7.0: where a review is asked for, the gate wants the reviewer's OWN verdict on record -- the
+# one the plugin writes when a `cold-reviewer` subagent ends (hooks/review-record) -- behind the
+# review file, which is the reviewed party's account of it. These three sections share one ledger;
+# `reviewed <VERDICT> [<agent type>]` is the end of a subagent that said so.
+export ROADWORTHY_DATA="$TMP/review-ledger"; mkdir -p "$ROADWORTHY_DATA"
+reviewed() { python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"SubagentStop","session_id":"s","cwd":sys.argv[1],"agent_type":sys.argv[3],"last_assistant_message":"The report.\n\nVERDICT: " + sys.argv[2]}))' "$ROOT" "$1" "${2:-roadworthy:cold-reviewer}" | bash "$ROOT/hooks/run-hook.cmd" review-record; }
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
 denied && ok "no review → denied" || fail "no review passed"
 printf 'plan: my-plan.md\nround: 1\nVERDICT: APPROVED\n' > "$P/my-plan.review.md"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
-! denied && ok "approved review by name → allowed" || fail "approved review denied"
+denied && printf '%s' "$OUT" | grep -q 'none is on record' \
+  && ok "a review file that says APPROVED, with no reviewer's verdict on record → denied" || fail "a review nobody ran was accepted: $OUT"
+reviewed APPROVED general-purpose
+run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
+denied && printf '%s' "$OUT" | grep -q 'none is on record' \
+  && ok "a verdict from a subagent that is not the reviewer does not count" || fail "a review nobody ran was accepted (another kind of subagent said APPROVED): $OUT"
+reviewed REJECTED
+run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
+denied && printf '%s' "$OUT" | grep -q 'says REJECTED' \
+  && ok "the file says APPROVED and the reviewer's last verdict was REJECTED → denied" || fail "a review nobody ran was accepted (the reviewer had said REJECTED): $OUT"
+reviewed APPROVED
+run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
+! denied && ok "approved review by name, with the reviewer's verdict on record → allowed" || fail "approved review denied (a dead end): $OUT"
 printf '# plan edited\n\n## Goal\n' > "$P/my-plan.md"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
 ! denied && ok "editing the plan keeps the approval (what the user approved is what counts, no hash)" || fail "edit voided the approval"
@@ -35,9 +53,13 @@ denied && printf '%s' "$OUT" | grep -q "malformed" && ok "ESCALATE without recom
 printf 'plan: my-plan.md\nround: 3\nVERDICT: APPROVED\n' > "$P/my-plan.review.md"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
 denied && printf '%s' "$OUT" | grep -q "ceiling" && ok "round 3 approved without the owner → denied (ceiling of 2)" || fail "round 3 passed without owner"
+# The owner's written decision unlocks what the reviewer left locked: the record on file is then
+# the escalation itself, and it proves a reviewer ran.
+reviewed ESCALATE
 printf 'plan: my-plan.md\nround: 3\nowner: keep the plan, drop item 4\nVERDICT: APPROVED\n' > "$P/my-plan.review.md"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
-! denied && ok "round 3 with the owner's decision → allowed" || fail "owner decision not honoured"
+! denied && ok "round 3 with the owner's decision → allowed, over the reviewer's ESCALATE on record" || fail "owner decision not honoured (a dead end after an escalation): $OUT"
+reviewed APPROVED
 printf 'plan: my-plan.md\nround: 2\nsections-round1: Goal\nVERDICT: APPROVED\n' > "$P/my-plan.review.md"
 printf '# plan\n\n## Goal\n\n## Overnight policy\n' > "$P/my-plan.md"
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
@@ -167,6 +189,7 @@ CLAUDE_PLUGIN_OPTION_REVIEW_SUFFIX=.banca.md run_hook plan-review-gate '{"tool_n
 run_hook plan-review-gate '{"tool_name":"ExitPlanMode","tool_input":{}}'
 denied && ok "default suffix ignores the .banca.md review" || fail "default suffix accepted wrong file"
 unset CLAUDE_PLUGIN_OPTION_PLANS_DIR
+unset ROADWORTHY_DATA
 
 # ── docs-init: idempotent tree by role ──────────────────────────────────────
 unset CLAUDE_PLUGIN_OPTION_PLAN_GATE
@@ -297,19 +320,19 @@ printf 'plan_gate: both\n' > "$RP/.roadworthy/rites"
 rpg PreToolUse
 denied && printf '%s' "$OUT" | grep -q 'no review for the current plan' \
   && ok "the project's rites ask for both, the user's option says preflight: the review is required" || fail "the project asked for a review and the plan went without one: $OUT"
+# A review written in a file, with nobody behind it: asking for the review IS asking for the
+# reviewer. (Until the cold review of 2026-10-01 this needed a second line in the rites,
+# `review_record: required`, which the plan never had: with `plan_gate: both` alone, a review file
+# the agent wrote for itself was accepted.)
 printf 'plan: p.md\nround: 1\nVERDICT: APPROVED\n' > "$RPP/p.review.md"
 rpg PreToolUse
-! denied && ok "with the review approved (and the pre-flight green), the plan is submitted" || fail "an approved review under the project's rites was denied (a dead end): $OUT"
+denied && printf '%s' "$OUT" | grep -q 'none is on record' && ok "plan_gate: both in the rites: a review file with no recorded verdict behind it is refused" || fail "a review nobody ran was accepted (under the project's rites): $OUT"
+python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"SubagentStop","session_id":"s","cwd":sys.argv[1],"agent_type":"roadworthy:cold-reviewer","last_assistant_message":"Reviewed p.md against its base.\n\nVERDICT: APPROVED"}))' "$RP" | bash "$ROOT/hooks/run-hook.cmd" review-record
+rpg PreToolUse
+! denied && ok "once a reviewer finished with APPROVED about that plan, recorded by the plugin (and the pre-flight is green), the plan is submitted" || fail "an approved review under the project's rites was denied (a dead end): $OUT"
 printf 'plan_gate: sometimes\n' > "$RP/.roadworthy/rites"
 rpg PreToolUse
 denied && printf '%s' "$OUT" | grep -q "is the owner's" && ok "a word the rites do not know is refused and sent to the owner, never read as 'no requirement'" || fail "an unknown plan_gate in the rites was ignored: $OUT"
-# A review written in a file, with nobody behind it.
-printf 'plan_gate: both\nreview_record: required\n' > "$RP/.roadworthy/rites"
-rpg PreToolUse
-denied && printf '%s' "$OUT" | grep -q 'none is on record' && ok "review_record required: a review file with no recorded verdict behind it is refused" || fail "a review nobody ran was accepted: $OUT"
-python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"SubagentStop","session_id":"s","cwd":sys.argv[1],"agent_type":"roadworthy:cold-reviewer","last_assistant_message":"Reviewed p.md against its base.\n\nVERDICT: APPROVED"}))' "$RP" | bash "$ROOT/hooks/run-hook.cmd" review-record
-rpg PreToolUse
-! denied && ok "once a reviewer finished with APPROVED about that plan, recorded by the plugin, it passes" || fail "a recorded approval was not found (a dead end): $OUT"
 rm -f "$RP/.roadworthy/rites"
 # The approval: written by the plugin when the plan-mode exit SUCCEEDS.
 rm -f "$RP/.roadworthy/evidence.jsonl"

@@ -366,6 +366,37 @@ leitor de comandos não reconhece; evidência e estado gravados por programa; af
 fora do vocabulário) entram como limite declarado, com os números, no registro de decisão. O
 conserto delas é de uma frente seguinte. O aceite 42 foi reescrito de acordo.
 
+### Resposta ao leitor frio de 2026-10-01 (rodada 2, o teto) — o que mudou em relação ao texto acima
+
+O leitor frio sobre o diff inteiro (`d2bdb65..57868fa`) reprovou com quatro bloqueios e cinco
+avisos. Todos tratados com teste que reprova antes e contraprova; nenhum escopo de arquivos mudou.
+O que difere do que as fases acima dizem ao pé da letra:
+
+- **Fase 5, "quem roda o script fora do agente não é afetado".** A conferência de aprovação a cada
+  escrita (emenda de 2026-10-01) deixava a frente aberta pelo dono sem valer. O dono passa a abrir
+  com um ato explícito de pessoa: `scope-write.sh <plano.md> --owner`, gravado na fotografia e
+  negado ao agente como o `--human` do fecho. Sem `--owner` e sem aprovação registrada, a frente
+  continua não valendo, e a recusa diz as saídas que existem.
+- **Fase 6 e fase 7, de quem é o commit.** O fecho e a nota leem o reflog pelo que cada entrada
+  moveu: chegou de fora o que veio por avanço rápido, por merge ou pelo primeiro passo de um
+  rebase; os commits da própria frente regravados por um rebase continuam dela. Antes, todo
+  `pull` contava como chegada, e `git pull --rebase` escondia do fecho os commits da frente.
+- **Fase 6, o conjunto do commit.** É julgado inteiro por um processo só: um commit de 2.200
+  caminhos estourava o tempo do gancho, e gancho que estoura o tempo não nega.
+- **Fase 13, os dezesseis estados.** Os dois que faltavam viraram cenários: árvore de trabalho
+  ligada e madrugada ligada e desligada. O da madrugada achou dois becos sem saída, consertados: o
+  diário e o handoff que os scripts da noite escrevem são artefatos do rito, como o plano, e o
+  escopo não precisa nomeá-los (commit, fecho e nota; editar à mão continua respondendo ao escopo).
+- **Emenda de 2026-10-01, o veredito do revisor.** Ficou como a emenda escreveu: com `plan_gate`
+  em `review` ou `both` o portão exige o registro gravado pelo plugin, sem chave à parte
+  (`review_record` saiu). A inferência "o evento traz o tipo do agente e o texto final numa sessão
+  real" foi medida na bancada: traz. A linha `owner:` destrava também esse ponto, senão uma
+  escalada decidida pelo dono não teria saída. O aceite 37 ganhou o caso que ele cita,
+  `tests/hooks/review-record.sh`.
+- **Fase 6, flags proibidas.** São procuradas no comando que commita pela própria palavra; commit
+  por apelido do git não é julgado, nem pela flag nem pelo conjunto. Limite declarado, com o ataque
+  na suíte.
+
 ## Escopo
 ```
 hooks/**

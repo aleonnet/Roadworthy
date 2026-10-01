@@ -1,5 +1,5 @@
 {
- "name": "a colleague's commit outside the scope arrives by pull and by merge; the front goes on and closes",
+ "name": "a colleague's commit outside the scope arrives by pull, by merge, by pull --rebase and by fetch and rebase; the front goes on and closes",
  "setup": {
   "front": "open"
  },
@@ -63,6 +63,56 @@
   {
    "tool": "Bash",
    "command": "git commit -q -am 'after the merge'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "(cd @SCRATCH@/up && git pull -q --no-rebase @T@ main && echo 'b = 10' > outside/b.py && git commit -q -am 'the colleague, a third time')",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "and on",
+   "new_string": "and on, and on",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git commit -q -am 'mine again, before a rebase'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "git pull -q --rebase @SCRATCH@/up main",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "(cd @SCRATCH@/up && git pull -q --no-rebase @T@ main && echo 'b = 11' > outside/b.py && git commit -q -am 'the colleague, a fourth time')",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Edit",
+   "file_path": "@T@/src/a.py",
+   "old_string": "and on, and on",
+   "new_string": "and on, and on, and on",
+   "expect": "allow"
+  },
+  {
+   "tool": "Bash",
+   "command": "git commit -q -am 'mine, before a fetch and a rebase'",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "git fetch -q @SCRATCH@/up main && git rebase -q FETCH_HEAD",
    "expect": "allow",
    "expect_rc": 0
   },

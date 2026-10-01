@@ -70,8 +70,17 @@
 # Refuted 2026-10-01 (0.7.0), against tests/hooks/plan-review-gate.sh: the approval record not
 # written -> red with `an approved plan left no approval record`; the project's rites not joined
 # with the option -> red with `the project asked for a review and the plan went without one`; the
-# recorded verdict not asked for -> red with `a review nobody ran was accepted`. Each green again on
-# the clean file, restored with its SHA-256 verified.
+# recorded verdict not asked for -> red with `a review nobody ran was accepted`; a verdict from any
+# kind of subagent accepted -> red with `a review nobody ran was accepted (another kind of subagent
+# said APPROVED)`; the user's `owner:` decision not unlocking the record -> red with `owner decision
+# not honoured (a dead end after an escalation)`. Each green again on the clean file, restored with
+# its SHA-256 verified.
+#
+# A REVIEW IS A REVIEWER (0.7.0). Wherever a review is asked for -- `plan_gate` in `review` or
+# `both` -- the review file needs behind it the verdict hooks/review-record wrote when a
+# `cold-reviewer` subagent ended. Until the cold review of 2026-10-01 that was a separate line in
+# the rites (`review_record: required`) which the plan never had, so `plan_gate: both` alone took a
+# review file the agent had written for itself.
 export RW_HOOK="plan-review-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -158,14 +167,7 @@ project_plans="$(rw_project_plans_dir "$root")"
 # NOTE: bash counts quotes while scanning this $( ... ), heredoc body included. An apostrophe
 # with no pair ("the project's") desynchronises the scan and breaks the `case` below with a
 # syntax error far from the cause. Keep every ' paired inside the block; `bash -n` catches it.
-# `review_record: required` in the owner's rites: a review written in a file needs a verdict the
-# PLUGIN recorded when a reviewer finished (hooks/review-record) behind it.
-review_record="$(rw_rite "$root" review_record)"
-case "$review_record" in
-  ""|required) : ;;
-  *) deny PreToolUse ".roadworthy/rites says review_record is '$review_record'; the only word it knows is 'required'. That file is the owner's: report it. A requirement that cannot be read is not read as no requirement." ;;
-esac
-verdict="$(RW_SUBMITTED="$submitted" RW_SUBMITTED_PATH="$submitted_path" RW_REVIEW_RECORD="$review_record" RW_LEDGER="$(rw_data_dir "${root:-.}")/evidence.jsonl" python3 - "$plans" "$suffix" "$max_rounds" "$root" "$mode" "$project_plans" "$tp" <<'PY'
+verdict="$(RW_SUBMITTED="$submitted" RW_SUBMITTED_PATH="$submitted_path" RW_LEDGER="$(rw_data_dir "${root:-.}")/evidence.jsonl" python3 - "$plans" "$suffix" "$max_rounds" "$root" "$mode" "$project_plans" "$tp" <<'PY'
 import json, os, re, subprocess, sys
 d, suffix, max_rounds = sys.argv[1], sys.argv[2], int(sys.argv[3])
 root = sys.argv[4] if len(sys.argv) > 4 else ""
@@ -395,23 +397,28 @@ if snap and not owner:
     grown = [s for s in now if s not in round1]
     if grown:
         out("DENY", f"the plan grew {len(grown)} section(s) after round 1 ({'; '.join(grown)}): a plan that grows to satisfy the reviewer is the failure mode this gate exists for. Stop and report to the user; only an 'owner:' decision in the review unlocks it.")
-if os.environ.get("RW_REVIEW_RECORD") == "required":
-    # The last verdict a reviewer left on record about this plan (or about no plan in particular).
+# A REVIEW IS A REVIEWER (0.7.0). The file above is the account the reviewed party gives of its
+# review; behind it the gate wants the verdict the PLUGIN recorded when a cold-reviewer subagent
+# ended (hooks/review-record): the last one about this plan, or about no plan in particular.
+# Asking for the review -- plan_gate in review or both, by the option or by the rites of the
+# owner -- is asking for this. The written decision of the owner (an owner: line) unlocks here
+# what it unlocks above: the record is then the escalation itself, and what it proves is that a
+# reviewer ran. (No apostrophe and no backquote in this comment: see the NOTE above the heredoc.)
+last = None
+try:
+    for line in open(os.environ.get("RW_LEDGER", ""), encoding="utf-8", errors="replace"):
+        try:
+            r = json.loads(line)
+        except Exception:
+            continue
+        if (r.get("kind") == "review" and "cold-reviewer" in (r.get("agent") or "")
+                and (not r.get("plans") or name in r["plans"])):
+            last = r
+except Exception:
     last = None
-    try:
-        for line in open(os.environ.get("RW_LEDGER", ""), encoding="utf-8", errors="replace"):
-            try:
-                r = json.loads(line)
-            except Exception:
-                continue
-            if (r.get("kind") == "review" and "cold-reviewer" in (r.get("agent") or "")
-                    and (not r.get("plans") or name in r["plans"])):
-                last = r
-    except Exception:
-        last = None
-    if last is None or last.get("verdict") != "APPROVED":
-        said = "none is on record" if last is None else "the last one on record says " + str(last.get("verdict"))
-        out("DENY", f"{rname} says the plan is approved, and this project requires a reviewer's own verdict behind it (.roadworthy/rites: review_record: required): {said}. Run the cold reviewer on {name}; it ends its report with a VERDICT line, which the plugin records when it finishes. A review file with no reviewer behind it is the reviewed party describing its own review.")
+if last is None or (last.get("verdict") != "APPROVED" and not owner):
+    said = "none is on record" if last is None else "the last one on record says " + str(last.get("verdict"))
+    out("DENY", f"{rname} says the plan is approved, and a review needs the reviewer's own verdict behind it: {said}. Run the cold reviewer on {name} (the roadworthy:cold-reviewer agent); it ends its report with a VERDICT line, which the plugin records when it finishes. A review file with no reviewer behind it is the reviewed party describing its own review. After an escalation, the written decision of the user goes in the review as an owner: line.")
 out("ALLOW", plan + "\t" + base + ("\tDATE" if elected_by_date else ""))
 PY
 )"
