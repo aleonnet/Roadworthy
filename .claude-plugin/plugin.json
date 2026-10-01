@@ -56,6 +56,12 @@
       "description": "When a turn says the work is finished and the project declares gates, block it while close.sh --check does not report every gate FRESH. Never blocks a project with no gates file, never blocks twice on the same tree, and fails open on any error.",
       "default": true
     },
+    "session_state": {
+      "type": "boolean",
+      "title": "Say the state at session start",
+      "description": "When a session starts, resumes, is cleared or is compacted inside a git repository, add to the context what the rite left on disk: branch and distance from its upstream, tree, open front and its plan, recorded state, what is waiting for a person, the night marker, and whether the declared gates are fresh. Facts, never a verdict; it cannot block.",
+      "default": true
+    },
     "forbidden_commit_flags": {
       "type": "string",
       "title": "Forbidden commit flags",

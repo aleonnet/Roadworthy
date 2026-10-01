@@ -8,6 +8,7 @@ tests/hooks/principles.sh
 tests/hooks/protect-paths.sh
 tests/hooks/rite-gate.sh
 tests/hooks/scope-lock.sh
+tests/hooks/session-state.sh
 tests/hooks/stop-gate.sh
 tests/meta/hygiene.sh
 tests/meta/privacy.sh

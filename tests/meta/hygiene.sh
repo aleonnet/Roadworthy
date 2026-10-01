@@ -9,7 +9,7 @@
 # because there the glob is the point: a case that exists must be checked, and tests/cases.txt is
 # what refuses a case file nobody declared.
 section "shell syntax"
-RW_FENCES="hooks/lib.sh hooks/principles hooks/protect-paths hooks/scope-lock hooks/guard-commit hooks/plan-review-gate hooks/overnight-guard hooks/rite-gate hooks/stop-gate"
+RW_FENCES="hooks/lib.sh hooks/principles hooks/protect-paths hooks/scope-lock hooks/guard-commit hooks/plan-review-gate hooks/overnight-guard hooks/rite-gate hooks/stop-gate hooks/session-state"
 # shellcheck disable=SC2086  # the two lists are deliberately word-split into arguments.
 RW_SUITE="tests/run.sh tests/lib.sh tests/attack.sh $(echo tests/fixtures/*.sh tests/hooks/*.sh tests/scripts/*.sh tests/meta/*.sh)"
 for f in $RW_FENCES skills/*/scripts/*.sh $RW_SUITE; do
@@ -101,7 +101,8 @@ printf '%s' "$batch" | grep -q 'exit /b 0' \
   && fail "run-hook.cmd fails open without bash (exit /b 0 in the batch half)" || ok "no exit /b 0 anywhere in the batch half"
 printf '%s' "$batch" | grep -q 'no bash' && printf '%s' "$batch" | grep -q '^exit /b 2' \
   && printf '%s' "$batch" | grep -q -i '"principles" exit /b 1' && printf '%s' "$batch" | grep -q -i '"stop-gate" exit /b 1' \
-  && ok "the no-bash branch warns, refuses with 2 for guards and warns with 1 for principles and stop-gate" || fail "the no-bash policy is not per hook"
+  && printf '%s' "$batch" | grep -q -i '"session-state" exit /b 1' \
+  && ok "the no-bash branch warns, refuses with 2 for guards and warns with 1 for principles, stop-gate and session-state" || fail "the no-bash policy is not per hook"
 grep -q 'windows-no-bash' .github/workflows/ci.yml && ok "and the CI executes that branch on a Windows runner" || fail "no Windows job executes the no-bash branch"
 
 rw_end

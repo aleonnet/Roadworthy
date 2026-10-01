@@ -1,0 +1,7 @@
+{
+  "_what": "The exact envelope the session-start hook returns inside a repository. `{{text}}` means: a non-empty string.",
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "{{text}}"
+  }
+}

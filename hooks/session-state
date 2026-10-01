@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# session-state — SessionStart hook. What the rite left on disk, said out loud at the first line.
+#
+# Every other hook here is reactive: it answers when the agent tries something. So state that
+# expired in silence was found the hard way. Measured in the field on 2026-09-22: a night marker
+# left on since 04:52 the day before surfaced at 16:2x, when it denied the merge of the day's
+# front; a scope left by the previous front denied 35 writes before anyone asked whose it was. And
+# on 2026-09-30 a session resumed on a branch nobody had mentioned, and nothing said so.
+#
+# This says it, once, when a session starts, resumes, is cleared or is compacted: the branch and
+# how far it is from its upstream (as of the last fetch -- nothing here touches the network), the
+# tree, the open front and the plan it came from, the reporting form agreed for it, the recorded
+# state, what is waiting for a person, the night marker, and whether the declared gates are fresh.
+# FACTS, NEVER A VERDICT: it does not say what to do about any of it.
+#
+# The hooks reference documents the event ("`SessionStart` | When a session begins or resumes";
+# matchers startup, resume, clear, compact, fork) and its output ("`additionalContext` | String
+# added to Claude's context at the start of the conversation, before the first prompt"), and that
+# exit 2 there only "shows stderr to user": this event cannot block, and this hook never tries to.
+#
+# Fails open, by declaration (RW_ON_CRASH=allow): a session that cannot start because a status
+# line crashed would be the plugin breaking the thing it reports on. Outside a git repository it
+# says nothing.
+#
+# Refuted 2026-09-30, against tests/hooks/session-state.sh: the line that names the open front and
+# its plan removed -> red with `the session started blind: the open front was not named`; green
+# again on the clean file, restored with its SHA-256 verified (skills/refute/scripts/refute.sh).
+export RW_HOOK="session-state"
+export RW_ON_CRASH=allow
+source "$(dirname "$0")/lib.sh"
+rw_read_event
+
+rw_bool "$(rw_option SESSION_STATE true)" || exit 0
+
+cwd="$(rw_realpath "$(rw_field cwd)")"
+[ -n "$cwd" ] || exit 0
+root="$(rw_root "$cwd")"
+git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+
+here="$(cd "$(dirname "$0")" && pwd)"
+RW_CLOSE="$here/../skills/close/scripts/close.sh" python3 - "$root" "$(rw_field source)" "$(rw_data_dir "$root")" <<'PY'
+import json, os, subprocess, sys
+root, source, data = sys.argv[1], sys.argv[2], sys.argv[3]
+close = os.environ["RW_CLOSE"]
+
+def git(*args):
+    r = subprocess.run(["git", "-C", root] + list(args), capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+def closing(*args, timeout=8):
+    # close.sh resolves its ledger the way this hook does, so the two cannot disagree; a
+    # repository too large to fingerprint in time is said to be unmeasured, never guessed at.
+    env = dict(os.environ, ROADWORTHY_DATA=data)
+    try:
+        r = subprocess.run(["bash", close] + list(args), cwd=root, capture_output=True, text=True,
+                           timeout=timeout, env=env)
+        return r.returncode, (r.stdout + r.stderr)
+    except subprocess.TimeoutExpired:
+        return None, ""
+
+lines = []
+branch = git("rev-parse", "--abbrev-ref", "HEAD") or "(no commits)"
+head = git("rev-parse", "--short", "HEAD")
+where = "%s @ %s" % (branch, head) if head else branch
+upstream = git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+if upstream:
+    counts = git("rev-list", "--left-right", "--count", upstream + "...HEAD").split()
+    if len(counts) == 2:
+        where += " · %s ahead, %s behind of %s (as of the last fetch)" % (counts[1], counts[0], upstream)
+else:
+    where += " · no upstream"
+lines.append("  branch     " + where)
+
+TRANSIENT = (".roadworthy/scope", ".roadworthy/state", ".roadworthy/plan.snapshot", ".roadworthy/overnight",
+             ".roadworthy/evidence.jsonl", ".roadworthy/denials.jsonl", ".roadworthy/refutations.jsonl",
+             ".roadworthy/preflight.jsonl", ".roadworthy/readings.jsonl", ".roadworthy/stop-latch")
+changed = [l for l in git("status", "--porcelain").splitlines()
+           if l.strip() and not l[3:].strip('"').startswith(TRANSIENT)]
+lines.append("  tree       " + ("clean" if not changed else "%d file(s) changed or untracked" % len(changed)))
+
+rw = os.path.join(root, ".roadworthy")
+scope, snap_path = os.path.join(rw, "scope"), os.path.join(rw, "plan.snapshot")
+snap = {}
+if os.path.exists(snap_path):
+    try:
+        snap = json.load(open(snap_path, encoding="utf-8")) or {}
+    except Exception:
+        snap = {}
+usable = False
+if os.path.exists(scope):
+    globs = [l for l in open(scope, encoding="utf-8", errors="replace").read().splitlines()
+             if l.strip() and not l.strip().startswith("#")]
+    usable = bool(globs)
+    if not usable:
+        lines.append("  front      a scope file exists and declares nothing: it opens no front and locks every edit")
+    elif snap:
+        lines.append("  front      open from %s since %s, base %s, %d glob(s)"
+                     % (snap.get("plan_name", "?"), snap.get("ts", "?"), (snap.get("base_head") or "?")[:12], len(globs)))
+    else:
+        lines.append("  front      open, %d glob(s), written by hand (no approval snapshot)" % len(globs))
+else:
+    lines.append("  front      none open")
+if usable and snap.get("report"):
+    lines.append("  report     " + snap["report"])
+
+rc, out = closing("--state")
+state = out.strip().splitlines()[-1] if out.strip() else "none"
+lines.append("  state      " + (state if rc == 0 else "not read"))
+rc, out = closing("--human")
+waiting = [l for l in out.splitlines() if l.startswith("  ")]
+if waiting:
+    lines.append("  waiting for a person: %d" % len(waiting))
+    lines += ["  " + l for l in waiting[:8]]
+
+marker = os.path.join(rw, "overnight")
+if os.path.exists(marker):
+    try:
+        m = json.load(open(marker, encoding="utf-8")) or {}
+    except Exception:
+        m = {}
+    lines.append("  overnight  ON since %s%s — push, merge and tag are frozen until the night is closed"
+                 % (m.get("started_iso", "an unreadable marker"), (" (%s)" % m["topic"]) if m.get("topic") else ""))
+else:
+    lines.append("  overnight  off")
+
+if os.path.exists(os.path.join(rw, "gates")):
+    rc, out = closing("--check")
+    if rc is None:
+        lines.append("  gates      not measured: the tree took too long to fingerprint")
+    else:
+        tally = {}
+        for l in out.splitlines():
+            word = l.split()[0] if l.split() else ""
+            if word in ("FRESH", "STALE", "MISSING", "FRESH-RED"):
+                tally[word] = tally.get(word, 0) + 1
+        total = sum(tally.values())
+        if total:
+            lines.append("  gates      %d declared: %s" % (total, ", ".join("%d %s" % (n, w) for w, n in sorted(tally.items()))))
+        else:
+            lines.append("  gates      " + (out.strip().splitlines()[-1] if out.strip() else "declared, not readable")[:160])
+else:
+    lines.append("  gates      none declared")
+
+text = ("ROADWORTHY STATE at session start%s — %s\n" % ((" (%s)" % source) if source else "", os.path.basename(root))
+        + "\n".join(lines)
+        + "\nThese are facts read from disk when the session started, not a verdict.")
+print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}},
+                 ensure_ascii=False))
+PY

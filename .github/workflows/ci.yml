@@ -46,15 +46,18 @@ jobs:
           echo {} | hooks\run-hook.cmd rite-gate 2> err.txt
           if not "%ERRORLEVEL%"=="2" ( type err.txt & exit /b 1 )
           findstr /C:"no bash" err.txt
-      - name: principles and stop-gate warn with exit 1 and never block
+      - name: principles, stop-gate and session-state warn with exit 1 and never block
         shell: cmd
         run: |
           echo {} | hooks\run-hook.cmd principles 2> err1.txt
           if not "%ERRORLEVEL%"=="1" ( type err1.txt & exit /b 1 )
           echo {} | hooks\run-hook.cmd stop-gate 2> err2.txt
           if not "%ERRORLEVEL%"=="1" ( type err2.txt & exit /b 1 )
+          echo {} | hooks\run-hook.cmd session-state 2> err3.txt
+          if not "%ERRORLEVEL%"=="1" ( type err3.txt & exit /b 1 )
           findstr /C:"no bash" err1.txt
           findstr /C:"no bash" err2.txt
+          findstr /C:"no bash" err3.txt
 
   # The one eval case that needs Bash (`overnight`) cannot run on a macOS host whose Docker
   # credential store holds symbolic links (Docker Desktop keeps its CLI plugins that way), where
