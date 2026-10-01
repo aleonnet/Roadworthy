@@ -75,6 +75,10 @@
 # said APPROVED)`; the user's `owner:` decision not unlocking the record -> red with `owner decision
 # not honoured (a dead end after an escalation)`. Each green again on the clean file, restored with
 # its SHA-256 verified.
+# Refuted 2026-10-01 (0.7.1), against tests/hooks/plan-review-gate.sh: the documented result of an
+# approved plan-mode exit (an object holding the plan and its path) made to need the word
+# "approved" again -> red with `an approval in the documented shape left no record`; green again on
+# the clean file, restored with its SHA-256 verified.
 #
 # A REVIEW IS A REVIEWER (0.7.0). Wherever a review is asked for -- `plan_gate` in `review` or
 # `both` -- the review file needs behind it the verdict hooks/review-record wrote when a
@@ -108,8 +112,22 @@ path = os.environ.get("RW_PATH", "")
 if not text.strip() and path and os.path.isfile(path):
     text = open(path, encoding="utf-8", errors="replace").read()
 response = os.environ.get("RW_RESPONSE", "")
-# PostToolUse fires when the call succeeded. Where the result is visible, it has to say so too.
-if response.strip() and "approved" not in response.lower():
+# PostToolUse fires when the call succeeded, and the harness documents what it hands over then:
+# "In PostToolUse, tool_response is an object with plan and filePath fields holding the approved
+# plan, plus internal status flags. Read tool_response.plan for the plan content rather than
+# re-reading the file from disk." (hooks reference, ExitPlanMode, read 2026-10-01). That object IS
+# the approval, and no sentence in it says so: until 0.7.1 this looked for the word "approved" in
+# it, and wrote the approval down only when the PLAN happened to contain the word. A result that
+# is a sentence -- what older versions and the simulator hand over -- still has to say it.
+approved = None
+try:
+    approved = json.loads(response) if response.strip().startswith("{") else None
+except Exception:
+    approved = None
+if isinstance(approved, dict):
+    text = str(approved.get("plan") or "") or text
+    path = str(approved.get("filePath") or "") or path
+elif response.strip() and "approved" not in response.lower():
     sys.exit(0)
 fp = fingerprint(text)
 if not fp:

@@ -34,7 +34,10 @@ python3 -c 'import json; json.load(open(".claude-plugin/plugin.json")); json.loa
 section "python: every embedded block compiles, and no import is dead"
 cat > "$TMP/pycheck.py" <<'PY'
 import ast, re, sys
-OPEN = re.compile(r"python3?\s+-\s.*<<\s*'?([A-Z][A-Z0-9_]*)'?\s*$")
+# A heredoc handed to python, whatever follows the tag on its opening line (a redirection, `|| true`,
+# `|| { ...; }`), and a program handed inline with -c, up to the quote that closes it.
+OPEN = re.compile(r"python3?\s+-\s.*<<\s*'?([A-Z][A-Z0-9_]*)'?")
+INLINE = re.compile(r"python3?\s+(?:-B\s+)?-c\s+'")
 def blocks(path):
     text = open(path, encoding="utf-8", errors="replace").read()
     if path.endswith((".py",)) or open(path, "rb").read(2) == b"#!" and "python" in text.splitlines()[0]:
@@ -52,6 +55,10 @@ def blocks(path):
             yield "%s:%d" % (path, start + 1), "\n".join(lines[start:j]), start + 1
             i = j
         i += 1
+    for m in INLINE.finditer(text):
+        first = text.count("\n", 0, m.start()) + 1
+        end = text.find("'", m.end())
+        yield "%s:%d" % (path, first), text[m.end():(end if end != -1 else len(text))], first
 def dead_imports(tree):
     imported = {}
     for node in ast.walk(tree):
@@ -61,20 +68,22 @@ def dead_imports(tree):
             for a in node.names: imported[a.asname or a.name] = node.lineno
     used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     return sorted(n for n in imported if n not in used)
-problems = 0
+problems = checked = 0
 for path in sys.argv[1:]:
     for name, src, first in blocks(path):
+        checked += 1
         try:
             tree = ast.parse(src, name)
         except SyntaxError as e:
             print("  [FAIL] %s does not compile: %s" % (name, e)); problems += 1; continue
         for dead in dead_imports(tree):
             print("  [FAIL] %s: import nobody uses: %s" % (name, dead)); problems += 1
+print("%d program(s) checked" % checked)
 sys.exit(1 if problems else 0)
 PY
 # shellcheck disable=SC2086
 if python3 "$TMP/pycheck.py" $RW_FENCES skills/*/scripts/*.sh bin/rw-metrics hooks/globmatch.py hooks/shellread.py hooks/planblocks.py hooks/frontcheck.py tests/sim/rite-sim.py tests/goldens/check.py > "$TMP/py.out" 2>&1; then
-  ok "every embedded block and standalone script compiles, and no import is dead"
+  ok "every embedded block and standalone script compiles, and no import is dead ($(tail -1 "$TMP/py.out"))"
 else
   fail "python hygiene"; cat "$TMP/py.out"
 fi
@@ -83,6 +92,22 @@ printf 'x=1\npython3 - <<'"'"'PY'"'"'\nimport os, sys\nprint(sys.argv)\nPY\n' > 
 python3 "$TMP/pycheck.py" "$TMP/planted.sh" > "$TMP/planted.out" 2>&1 \
   && fail "a dead import passed (planted os in an embedded block)" \
   || { grep -q 'import nobody uses: os' "$TMP/planted.out" && ok "a dead import in an embedded block is named" || fail "a dead import passed: wrong reason: $(cat "$TMP/planted.out")"; }
+# 0.7.1: the two forms the pattern did not see. It only matched a heredoc whose tag ENDS the line,
+# so an opener followed by a redirection or by `|| true` was skipped, and Python handed inline with
+# `-c` was never looked at: measured on 2026-10-01, 22 of 49 embedded programs were checked while
+# the README said every one of them was.
+printf 'x=1\nout="$(python3 - "$x" <<'"'"'PY'"'"' 2>/dev/null || true\nimport os, sys\nprint(sys.argv)\nPY\n)"\n' > "$TMP/planted-redir.sh"
+python3 "$TMP/pycheck.py" "$TMP/planted-redir.sh" > "$TMP/planted-redir.out" 2>&1 \
+  && fail "a dead import behind a redirection passed (planted os in a heredoc whose opening line goes on after the tag)" \
+  || { grep -q 'import nobody uses: os' "$TMP/planted-redir.out" && ok "a dead import in a heredoc whose opening line goes on after the tag is named" || fail "a dead import behind a redirection passed: wrong reason: $(cat "$TMP/planted-redir.out")"; }
+printf 'y="$(python3 -c '"'"'import json, sys\nprint(sys.argv)'"'"' "$1")"\n' > "$TMP/planted-inline.sh"
+python3 "$TMP/pycheck.py" "$TMP/planted-inline.sh" > "$TMP/planted-inline.out" 2>&1 \
+  && fail "a dead import in an inline program passed (planted json in a python3 -c string)" \
+  || { grep -q 'import nobody uses: json' "$TMP/planted-inline.out" && ok "a dead import in a program handed inline with -c is named" || fail "a dead import in an inline program passed: wrong reason: $(cat "$TMP/planted-inline.out")"; }
+printf 'z="$(python3 -c '"'"'import sys\nprint(sys.argv'"'"' "$1")"\n' > "$TMP/planted-inline-broken.sh"
+python3 "$TMP/pycheck.py" "$TMP/planted-inline-broken.sh" > "$TMP/planted-inline-broken.out" 2>&1 \
+  && fail "an inline program that does not compile passed" \
+  || { grep -q 'does not compile' "$TMP/planted-inline-broken.out" && ok "an inline program that does not compile is named" || fail "an inline program that does not compile passed: wrong reason"; }
 printf 'import json\nprint(1\n' > "$TMP/broken.py"
 python3 "$TMP/pycheck.py" "$TMP/broken.py" > "$TMP/broken.out" 2>&1 \
   && fail "a script that does not compile passed" \

@@ -17,24 +17,28 @@ set -u
 #   warn  — Stop: on internal error the turn is NOT blocked. Exit 2 blocks a turn,
 #           and a guard that decides whether work may end must never trap a session.
 # No default: a hook without a policy is itself an internal error.
+#
+# rw_crash <where> [<what happened> [<what to do about it>]] — with <where> alone it is an
+# internal error of the hook, said as one. An event the hook cannot read is not the hook breaking:
+# the caller says what happened in its own words (0.7.1), and the policy is the same.
 rw_crash() {
-  local where="$1"
+  local what="${2:-internal error at $1}" advice="${3:-Fix the hook or disable it in /plugin.}"
   case "${RW_ON_CRASH:-}" in
     deny)
-      python3 - "${RW_HOOK:-hook}" "$where" <<'PY'
+      python3 - "${RW_HOOK:-hook}" "$what" "$advice" <<'PY'
 import json, sys
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
   "permissionDecision": "deny",
-  "permissionDecisionReason": f"Roadworthy/{sys.argv[1]}: internal error at {sys.argv[2]}; failing closed. Fix the hook or disable it in /plugin."}}))
+  "permissionDecisionReason": f"Roadworthy/{sys.argv[1]}: {sys.argv[2]}; failing closed. {sys.argv[3]}"}}))
 PY
       exit 0 ;;
     allow)
-      echo "roadworthy/${RW_HOOK:-hook}: internal error at $where; guardrail skipped for this call" >&2
+      echo "roadworthy/${RW_HOOK:-hook}: $what; guardrail skipped for this call" >&2
       exit 1 ;;
     warn)
       # Stop: exit 2 BLOCKS the turn, so an internal error there would trap the session in a
       # wall it cannot argue with. A hook that decides whether work may END fails open, loudly.
-      echo "roadworthy/${RW_HOOK:-hook}: internal error at $where; not blocking the turn" >&2
+      echo "roadworthy/${RW_HOOK:-hook}: $what; not blocking the turn" >&2
       exit 1 ;;
     *)
       echo "roadworthy/${RW_HOOK:-hook}: no crash policy declared (RW_ON_CRASH)" >&2
@@ -69,17 +73,42 @@ trap rw_on_exit EXIT
 # clock, nearly all of it interpreter start-up, on every single tool call of a session. The fields
 # the hooks read are extracted here in the same process that validates the JSON, and handed to the
 # shell as quoted assignments (shlex.quote, so a command with quotes and newlines survives `eval`).
-RW_FIELDS="cwd tool_name session_id transcript_path scratchpad_dir agent_id agent_type hook_event_name permission_mode last_assistant_message stop_hook_active source prompt tool_response tool_input.command tool_input.file_path tool_input.notebook_path tool_input.plan tool_input.planFilePath"
+#
+# An event that is not JSON is ANSWERED, not tripped over (0.7.1). The parse runs inside a command
+# substitution, and with errtrace the ERR trap is inherited there: when python left with a failure
+# the trap fired INSIDE the substitution, printed a denial, and that denial was captured as if it
+# were the parsed fields and handed to `eval` below. The guard still denied -- over `command not
+# found`, with `internal error at line 95` for a reason (measured 2026-10-01). The failure is
+# swallowed inside the substitution now, and what comes out of it says what happened.
+#
+# ALL OF THE EVENT OR NONE OF IT. The parser writes once, at its end: every assignment, then a last
+# line that marks the event as read. Printing field by field, a parse that died on a LATER field
+# left the earlier ones behind, and with the failure swallowed they were taken for the event: a
+# guard saw a Bash call with no command and passed it (cold review of this very fix, 2026-10-01,
+# with a lone surrogate in the command -- valid JSON, and text nothing can write). So the shell
+# accepts only an output that ends with the mark; the one word `not-json` is an input that is not
+# JSON; anything else -- nothing at all, a field that cannot be written as text -- is an event that
+# could not be read. A guard denies in both cases. (With no python3 that runs, nothing here can
+# answer at all: the denial itself is written by python3, and the guard leaves with status 0 and
+# no output. Measured 2026-10-01, the same on the version before this fix.)
+# Refuted 2026-10-01 (0.7.1), against tests/hooks/crash-policy.sh: the failure let out of the
+# substitution again -> red with `invalid input was reported as an internal error`; the fields
+# printed one by one again and any output taken for an event -> red with `a guard passed an event
+# it could only read in part`. Each green again on the clean file, restored with its SHA-256
+# verified.
+RW_FIELDS="cwd tool_name session_id transcript_path scratchpad_dir agent_id agent_type agent_transcript_path hook_event_name permission_mode last_assistant_message stop_hook_active source prompt tool_response tool_input.command tool_input.file_path tool_input.notebook_path tool_input.plan tool_input.planFilePath tool_input.message"
 rw_read_event() {
   local parsed
   RW_EVENT="$(cat)"
-  [ -n "$RW_EVENT" ] || rw_crash "empty stdin"
+  [ -n "$RW_EVENT" ] || rw_crash "empty stdin" "the hook was handed no event (empty stdin)" "A guard that cannot read the call does not pass it."
   parsed="$(printf '%s' "$RW_EVENT" | python3 -c '
 import json, re, shlex, sys
 try:
     event = json.load(sys.stdin)
 except Exception:
+    sys.stdout.write("not-json")
     sys.exit(3)
+lines = []
 for path in sys.argv[1].split():
     obj = event
     for key in path.split("."):
@@ -90,10 +119,18 @@ for path in sys.argv[1].split():
         obj = json.dumps(obj)
     elif obj is None:
         obj = ""
-    print("RW_F_%s=%s" % (re.sub(r"[^A-Za-z0-9]", "_", path), shlex.quote(str(obj))))
-' "$RW_FIELDS" 2>/dev/null)" || rw_crash "invalid JSON on stdin"
-  eval "$parsed"
-  RW_EVENT_PARSED=1
+    lines.append("RW_F_%s=%s" % (re.sub(r"[^A-Za-z0-9]", "_", path), shlex.quote(str(obj))))
+lines.append("RW_EVENT_PARSED=1")
+# Encoded BEFORE anything is written, as print would have encoded it: a field that cannot be
+# written leaves the output empty instead of cut short.
+out = "\n".join(lines).encode(sys.stdout.encoding or "utf-8", sys.stdout.errors or "strict")
+sys.stdout.buffer.write(out)
+' "$RW_FIELDS" 2>/dev/null || true)"
+  case "$parsed" in
+    *$'\n'RW_EVENT_PARSED=1) eval "$parsed" ;;
+    not-json) rw_crash "invalid JSON on stdin" "the event handed to the hook is not JSON (invalid JSON on stdin)" "A guard that cannot read the call does not pass it." ;;
+    *) rw_crash "an event that could not be read" "the event handed to the hook could not be read (a field that cannot be written as text, or a parse that did not finish)" "A guard that cannot read the call does not pass it." ;;
+  esac
 }
 
 # rw_field <jq-like dotted path> — prints the value or empty. A field parsed by rw_read_event is

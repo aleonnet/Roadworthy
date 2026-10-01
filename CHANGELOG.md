@@ -5,7 +5,49 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-01
+
+**Four defects found while the developer guide was being written, and the guide itself.** Writing
+down how the plugin works meant measuring each sentence against the code, and four of them did not
+hold. Each is fixed with an assertion that failed first and a refutation with the defect planted.
+
+### Fixed
+- **A reviewer's verdict was not recorded in an interactive session.** From Claude Code 2.1.271 a
+  subagent may deliver its report through the `SubagentHandback` tool, and its closing text is then
+  not the report; `review-record` read only the closing text. Measured on 2026-10-01: two cold
+  reviews, each ending with its verdict inside the hand-back, and no record of either — a project
+  with `diff_review: required`, or a plan gate that asks for a review, would have waited for a
+  verdict nobody wrote down. The hook is registered for the hand-back as well and reads the report
+  there; at the end of a subagent whose closing text carries no verdict it reads the last hand-back
+  in the subagent's own transcript. The record says which event brought it (`event`) and from which
+  subagent (`agent_id`), and a hand-back on record is not recorded again when that subagent ends.
+  A hand-back event that does not name its subagent writes nothing: the end of the subagent, which
+  names it, records the review.
+- **A plan's approval was written down at approval time only when the plan contained the word
+  "approved".** The hook looked for the word in the tool's result, and the documented result is an
+  object holding the plan and its path. That object is the approval now, and the plan is read from
+  it. A result in words still has to say so.
+- **A guard handed an event that is not JSON denied by accident.** The parse failed inside a
+  command substitution, where the inherited ERR trap printed a denial that was captured as the
+  parsed fields and then run as a command; the reason said `internal error at line 95`. It says
+  the event is not JSON now, and nothing captured is executed. The parser hands the shell all of
+  the event or none of it: an event it can read only in part — a field that cannot be written as
+  text — is denied as one that could not be read, and an empty one as no event at all.
+- **The suite checked 22 of the 49 Python programs embedded in the hooks and scripts** while the
+  README said every embedded block was compiled. Its pattern only saw a heredoc whose tag ends the
+  line (22 of 27), and never a program handed inline with `-c` (22 more). It sees both forms now;
+  all 49 compile and none carries a dead import.
+
+### Not yet seen in a real interactive session
+- The hand-back path was fed the real reports of the two reviews of 2026-10-01 and recorded both,
+  and a headless session records through the closing text as before. The hook being CALLED for the
+  hand-back tool in an interactive session, and the approval being recorded at approval time rather
+  than read back from the transcript (four approvals on 2026-10-01, four records from the
+  transcript), are measured by the owner's bench once this version is installed.
+
 ### Added
+- `CONTRIBUTING.md`, a few lines pointing at the developer guide and the runbook: GitHub shows a
+  link to a file of that name to whoever opens a pull request or an issue.
 - `README_DEV.md`, with `README_DEV.pt-BR.md` as the same page in Brazilian Portuguese: a guide
   for whoever CHANGES the plugin — the idea, a code map, the invariants, the cross-cutting
   concerns and what to touch together — in the shape of an `ARCHITECTURE.md`, short on purpose,

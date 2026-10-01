@@ -166,6 +166,8 @@ tool prints an error of its own, which says nothing about the hook.
 
 - `internal error at line N; failing closed`: the hook itself broke. `bash -n hooks/<hook>`,
   then its case under `tests/hooks/`. A guard that breaks denies; that is by design.
+- `the event handed to the hook is not JSON`, or `could not be read`: the input was at fault,
+  not the hook. By hand, it is usually the quoting of the `printf` above.
 - The same denial three times: the third says so. It is the front telling you the act is not
   what was approved, not an obstacle to route around.
 - An option you changed has no effect: the session read it at start. `/reload-plugins`.

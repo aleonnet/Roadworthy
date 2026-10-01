@@ -156,10 +156,15 @@ try:
 except Exception as e:
     print("no ledger: %s" % e)
 for r in found:
-    print("review record: verdict=%s agent=%r plans=%r head=%s" % (r.get("verdict"), r.get("agent"), r.get("plans"), (r.get("head") or "")[:12]))
+    print("review record: verdict=%s agent=%r event=%r agent_id=%s plans=%r head=%s" % (r.get("verdict"), r.get("agent"), r.get("event"), "yes" if r.get("agent_id") else "no", r.get("plans"), (r.get("head") or "")[:12]))
 PY
 grep -q 'review record: verdict=' "$OUT/review.txt" && ok "the plugin recorded the reviewer's verdict: $(head -1 "$OUT/review.txt")" || fail "a real reviewer ended and no verdict was recorded: $(cat "$OUT/review.txt") / $(tail -c 400 "$OUT/s6.result.json")"
 grep -q "agent='[^']*cold-reviewer" "$OUT/review.txt" && ok "and the record names the reviewer's type, which is what the plan gate and the closing look for" || fail "the record does not carry the reviewer's type: $(cat "$OUT/review.txt")"
+# 0.7.1: the record says which event brought the report. A session that hands the report back
+# through the SubagentHandback tool (interactive, from Claude Code 2.1.271) writes it at
+# PostToolUse; this headless run was measured to deliver it as the subagent's closing text, at
+# SubagentStop (2026-10-01). Either is a report read from where it came; an empty event is not.
+grep -q -E "event='(SubagentStop|PostToolUse)' agent_id=yes" "$OUT/review.txt" && ok "and the event that brought it, with the subagent it came from: $(grep -o "event='[A-Za-z]*'" "$OUT/review.txt" | head -1)" || fail "the record does not say which event brought the report: $(cat "$OUT/review.txt")"
 
 step "denials are recorded in the PROJECT ledger, in the harness's own environment"
 n="$(python3 -c 'import sys

@@ -1,4 +1,4 @@
-status: accepted
+status: superado por 2026-10-01-1807-handoff-0-7-1.md
 
 # Handoff — guia do dev e runbook — 2026-10-01 14:22
 

@@ -52,8 +52,8 @@ where the set is exact**: a reader of shell commands cannot see what an interpre
 so for an ordinary file the entry gate denies only a target it can name, and the commit
 (git's own index) and the closing (the front's diff) refuse what slipped past. **Evidence
 has a source that is not the agent**: an approval comes from the person approving the plan
-in plan mode, a review from the reviewer's own last line, a gate from the script that ran
-it — the last two recorded with the tree they were measured on.
+in plan mode, a review from the reviewer's own report, a gate from the script that ran it —
+the last two recorded with the tree they were measured on.
 
 ## Code map
 
@@ -73,7 +73,8 @@ it — the last two recorded with the tree they were measured on.
   being submitted and runs the pre-flight or asks for the review. After the call it records
   the approval, and that half fails open; the entry gate can read the same approval from the
   session's transcript.
-- `review-record` — SubagentStop; never blocks. Records the cold reviewer's verdict.
+- `review-record` — SubagentStop, and PostToolUse on the hand-back tool; never blocks. Records
+  the cold reviewer's verdict from wherever the report arrives.
 - `stop-gate` — Stop; never blocks on its own error. Blocks a finished claim while a gate is
   not fresh. The one hook that answers with exit 2.
 
@@ -132,7 +133,7 @@ Most of them are an absence, which is why they are hard to see from any one file
 1. **No guard fails open.** Every hook declares `RW_ON_CRASH` before it sources
    `hooks/lib.sh`. With `deny`, an internal error and an early exit of the script — an unbound
    variable, a line the shell cannot parse — answer with a denial. A hook with no declared
-   policy is itself an error.
+   policy is itself an error. The exception: with no `python3` that runs, a guard answers nothing.
 2. **A denial is JSON on stdout with exit 0.** Among the hooks only `stop-gate` exits 2,
    because that is how a Stop hook blocks. `principles` never may: it would erase the prompt.
 3. **A project's evidence never goes to `CLAUDE_PLUGIN_DATA`.** It resolves through
@@ -175,10 +176,9 @@ Most of them are an absence, which is why they are hard to see from any one file
   `tests/meta/hygiene.sh` catches it. In a case, which runs under `set -euo pipefail`, an
   abort on an unbound variable reaches the EXIT trap with status 0: hence `rw_end`. A hook
   runs under `set -u` alone, and there the trap sees the failure.
-- **Python inside the shell.** Most of the logic is Python in heredocs.
-  `tests/meta/hygiene.sh` compiles the blocks its pattern finds and fails on an import
-  nobody uses; a heredoc whose opening line carries anything after the tag is not found.
-  Keep bytecode out of the tree: `sys.dont_write_bytecode`.
+- **Python inside the shell.** Most of the logic is Python in heredocs or handed inline
+  with `-c`. `tests/meta/hygiene.sh` compiles each such program in the hooks and the scripts
+  and fails on an import nobody uses. Keep bytecode out of the tree: `sys.dont_write_bytecode`.
 - **Paths.** macOS hands a hook `/var/...` while git answers `/private/var/...`: resolve
   both sides with `rw_realpath` before comparing. A glob is anchored at the repository root.
 - **The list of local-state files is spelled out in many files**: hooks, scripts, the eval

@@ -54,7 +54,7 @@ interpretador escreve, então para um arquivo comum o portão de entrada nega s�
 consegue nomear, e o
 commit (o próprio índice do git) e o fechamento (o diff da frente) recusam o que escapou. **A
 evidência tem uma fonte que não é o agente**: a aprovação vem da pessoa aprovando o plano no
-modo de plano, a revisão vem da última linha do próprio revisor, o portão vem do script que o
+modo de plano, a revisão vem do relatório do próprio revisor, o portão vem do script que o
 rodou — as duas últimas gravadas com a árvore sobre a qual foram medidas.
 
 ## Mapa do código
@@ -76,7 +76,8 @@ rodou — as duas últimas gravadas com a árvore sobre a qual foram medidas.
   sendo submetido e roda o pré-voo ou pede a banca. Depois da chamada grava a aprovação, e
   essa metade falha aberta; o portão de entrada consegue ler a mesma aprovação na
   transcrição da sessão.
-- `review-record` — SubagentStop; nunca bloqueia. Grava o veredito do revisor frio.
+- `review-record` — SubagentStop, e PostToolUse na ferramenta de entrega; nunca bloqueia.
+  Grava o veredito do revisor frio de onde quer que o relatório chegue.
 - `stop-gate` — Stop; nunca bloqueia por erro próprio. Bloqueia uma afirmação de "pronto"
   enquanto um portão não está fresco. O único hook que responde com exit 2.
 
@@ -132,9 +133,9 @@ rodou — as duas últimas gravadas com a árvore sobre a qual foram medidas.
 A maioria é uma ausência, e por isso é difícil de ver a partir de um arquivo só.
 
 1. **Nenhuma cerca falha aberta.** Todo hook declara `RW_ON_CRASH` antes de carregar
-   `hooks/lib.sh`. Com `deny`, um erro interno e uma saída antecipada do script — uma
-   variável não definida, uma linha que o shell não consegue ler — respondem com uma negação.
-   Um hook sem política declarada é, ele mesmo, um erro.
+   `hooks/lib.sh`. Com `deny`, um erro interno e uma saída antecipada do script — variável não
+   definida, linha que o shell não lê — respondem com uma negação. Hook sem política declarada
+   é, ele mesmo, um erro. Exceção: sem `python3` que rode, a cerca não responde nada.
 2. **Uma negação é JSON no stdout com exit 0.** Entre os hooks só o `stop-gate` sai com 2,
    porque é assim que um hook de Stop bloqueia. O `principles` nunca pode: apagaria o prompt.
 3. **A evidência de um projeto nunca vai para `CLAUDE_PLUGIN_DATA`.** Ela resolve por
@@ -178,10 +179,9 @@ A maioria é uma ausência, e por isso é difícil de ver a partir de um arquivo
   `tests/meta/hygiene.sh` pega. Num caso, que roda sob `set -euo pipefail`, um aborto por
   variável não definida chega ao trap de EXIT com status 0: daí o `rw_end`. Um hook roda só
   sob `set -u`, e ali o trap vê a falha.
-- **Python dentro do shell.** A maior parte da lógica é Python em heredocs.
-  `tests/meta/hygiene.sh` compila os blocos que o padrão dele acha e falha num import que
-  ninguém usa; um heredoc cuja linha de abertura traz algo depois da etiqueta não é achado.
-  Mantenha bytecode fora da árvore: `sys.dont_write_bytecode`.
+- **Python dentro do shell.** A maior parte da lógica é Python em heredocs ou passado em linha
+  com `-c`. `tests/meta/hygiene.sh` compila cada programa desses nos hooks e nos scripts e
+  falha num import que ninguém usa. Mantenha bytecode fora da árvore: `sys.dont_write_bytecode`.
 - **Caminhos.** O macOS entrega a um hook `/var/...` enquanto o git responde
   `/private/var/...`: resolva os dois lados com `rw_realpath` antes de comparar. Um glob é
   ancorado na raiz do repositório.

@@ -48,6 +48,14 @@ Living document (undated name by design). One line per item, with the measured r
   the owner opened himself that was never honoured, two states of the rite nobody had walked, and
   the reviewer's recorded verdict left optional — and each was fixed with a failing test first.
 
+- 0.7.1 four defects found while the developer guide was being written (plan
+  `docs/plans/done/2026-10-01-1721-0-7-1-quatro-defeitos.md`). A reviewer's verdict delivered
+  through the hand-back tool is recorded; an approval in the shape the harness documents is
+  written down whatever words the plan uses; a guard handed an event that is not JSON says so
+  instead of denying over a captured error; and the suite compiles every Python program embedded
+  in the hooks and scripts, where it had been seeing 22 of 49. With it, `README_DEV.md` in two
+  languages, `docs/guides/runbook.md` and `CONTRIBUTING.md`.
+
 ## Pending
 - **Beyond carelessness: the three classes the adversarial simulation of 2026-10-01 proved.** Each
   needs a change of architecture, not another rule, and none is approved yet. (1) A commit by a

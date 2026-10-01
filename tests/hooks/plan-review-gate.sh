@@ -347,4 +347,26 @@ python3 "$ROOT/hooks/planblocks.py" approved "$RPP/p2.md" "$RP/.roadworthy/evide
 sed 's|^src/\*\*$|src/**\ndocs/**|' "$RPP/p.md" > "$RPP/p3.md"
 python3 "$ROOT/hooks/planblocks.py" approved "$RPP/p3.md" "$RP/.roadworthy/evidence.jsonl" && fail "a front opened from an unapproved scope: a widened scope kept the approval" || ok "a glob added after the approval does not"
 
+# ── 0.7.1: the approval in the shape the harness documents ─────────────────────────────────────
+# "In PostToolUse, tool_response is an object with plan and filePath fields holding the approved
+# plan, plus internal status flags. Read tool_response.plan for the plan content rather than
+# re-reading the file from disk." (hooks reference, ExitPlanMode, read 2026-10-01). No sentence in
+# that object says the plan was approved; until 0.7.1 the hook looked for the word, so an approval
+# was written down only when the PLAN happened to contain it -- and this fixture does not.
+grep -q -i 'approved' "$RPP/p.md" && fail "the fixture plan contains the very word this case is about" || true
+# rpo <tool_input json> — the PostToolUse event with tool_response as the documented object.
+rpo() { python3 -c 'import json,sys; plan=open(sys.argv[2]).read(); print(json.dumps({"hook_event_name":"PostToolUse","tool_name":"ExitPlanMode","session_id":"s","cwd":sys.argv[1],"tool_input":json.loads(sys.argv[3]),"tool_response":{"plan":plan,"filePath":sys.argv[2],"isAgent":False}}))' "$RP" "$RPP/p.md" "$1"; }
+recorded() { grep -q "\"fingerprint\": \"$FP\"" "$RP/.roadworthy/evidence.jsonl" 2>/dev/null; }
+rm -f "$RP/.roadworthy/evidence.jsonl"
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$RPP" run_hook plan-review-gate "$(rpo "$(python3 -c 'import json,sys; print(json.dumps({"plan":open(sys.argv[1]).read(),"planFilePath":sys.argv[1]}))' "$RPP/p.md")")"
+recorded && ok "an approval that arrives as the documented object is written down, whatever words the plan uses" || fail "an approval in the documented shape left no record: $OUT $ERR"
+rm -f "$RP/.roadworthy/evidence.jsonl"
+CLAUDE_PLUGIN_OPTION_PLANS_DIR="$RPP" run_hook plan-review-gate "$(rpo '{}')"
+recorded && grep -q '"plan_name": "p.md"' "$RP/.roadworthy/evidence.jsonl" \
+  && ok "and the plan is read from the response itself, with the call's own input empty" || fail "an approval in the documented shape left no record (the plan was only in tool_response): $OUT $ERR"
+# The other half: a result that is a sentence still has to say so.
+rm -f "$RP/.roadworthy/evidence.jsonl"
+rpg PostToolUse "The user doesn't want to proceed with this plan."
+recorded && fail "a plan the person refused left an approval on record" || ok "a result in words that does not say the plan was approved records nothing"
+
 rw_end

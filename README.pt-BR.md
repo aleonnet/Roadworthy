@@ -62,7 +62,7 @@ aplica uma opção alterada sem perder a conversa.
 | `protect-paths` | Edit/Write | Caminhos que casam com `protected_paths` (e com o `.roadworthy/protected` do projeto) nunca são editados. |
 | `guard-commit` | Bash | Um `git commit` é negado com flag proibida (padrão `--trailer`), sem nada em stage, ou quando levaria um caminho vedado ou um caminho fora do escopo da frente aberta. |
 | `plan-review-gate` | ExitPlanMode | Um plano sai do modo de plano só quando o pré-voo está verde e, onde o usuário ou o projeto pedem, uma banca fria diz `VERDICT: APPROVED`. Quando você aprova o plano, a aprovação é gravada. |
-| `review-record` | fim de subagente | Grava o veredito do revisor frio com o commit sobre o qual ele foi dado, para que "uma revisão aprovou isto" tenha uma fonte que não seja o agente. |
+| `review-record` | fim de subagente, e a entrega dele | Grava o veredito do revisor frio com o commit sobre o qual ele foi dado, para que "uma revisão aprovou isto" tenha uma fonte que não seja o agente. |
 | `stop-gate` | Stop | Uma afirmação de que o trabalho terminou é bloqueada enquanto `close.sh --check` não reporta todo portão declarado como FRESH, em todo repositório em que o turno escreveu. |
 | `overnight-guard` | Bash | Enquanto `.roadworthy/overnight` existe, push, merge, tag, `gh pr merge` e as regras `deny:` do projeto são negados. |
 
@@ -156,7 +156,8 @@ dele —, que é o que o portão de entrada procura antes de uma frente abrir. E
 mantém a aprovação; mudar um glob, um portão ou a base pede outra.
 
 **`review-record`.** Quando o agente `cold-reviewer` termina com uma linha `VERDICT:`, o veredito é
-gravado com o commit e a árvore sobre os quais foi dado. Com `diff_review: required` em
+gravado com o commit e a árvore sobre os quais foi dado. O relatório é lido de onde ele chega: da
+ferramenta de entrega, quando o harness o entrega por ela, senão do texto final do subagente. Com `diff_review: required` em
 `.roadworthy/rites`, o fechamento só passa com um veredito APPROVED para o commit que está sendo
 fechado; onde um plano precisa de banca (`plan_gate` em `review` ou `both`), o arquivo da banca
 precisa ter por trás o veredito do próprio revisor, gravado pelo plugin.
@@ -325,7 +326,7 @@ bash tests/bench/bench.sh      # as cercas diante de uma sessão REAL, sem inter
 ```
 
 Todo hook é exercitado com JSON real no stdin nas duas direções, todo script é refutado com uma
-verificação de brinquedo, todo bloco Python embutido no shell é compilado e conferido contra imports
+verificação de brinquedo, todo programa Python embutido nos hooks e nos scripts é compilado e conferido contra imports
 mortos, os manifestos são validados com `claude plugin validate --strict`, e uma varredura de
 privacidade falha em qualquer caminho absoluto de home. A CI roda `tests/run.sh` em macOS e Linux,
 executa o ramo sem bash do `run-hook.cmd` no Windows e pode rodar o único caso de eval que exige
@@ -374,7 +375,7 @@ refutações do `plan-preflight.sh` levaram 32 minutos de relógio. Contra um ca
 
 **Um caso que morre antes da última asserção é vermelho, por construção.** `rw_end` levanta uma
 bandeira e o handler de saída se recusa a reportar sucesso sem ela. Medido no bash 3.2, uma
-variável não definida sob `set -u` aborta o script e o trap `EXIT` vê `$?=0`, então o caso sai com
+variável não definida sob `set -eu` aborta o script e o trap `EXIT` vê `$?=0`, então o caso sai com
 **0** com metade das asserções nunca rodadas — que é o que `tests/run.sh` carregava antes de isto
 ser achado, pela suíte, nela mesma.
 

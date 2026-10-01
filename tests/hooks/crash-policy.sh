@@ -7,6 +7,27 @@
 section "crash policy"
 CLAUDE_PLUGIN_OPTION_PROTECTED_PATHS='lib/**' run_hook protect-paths 'not json'
 denied && [ "$RC" -eq 0 ] && ok "guard with invalid stdin → DENY (fails closed)" || fail "guard crash not denied (rc=$RC out=$OUT)"
+# What that denial SAYS (0.7.1). The parse failed inside a command substitution, where the ERR trap
+# is inherited: the trap fired there first, printed a denial that the substitution CAPTURED as if it
+# were the parsed fields, and the captured text was then handed to `eval` -- so the guard denied by
+# accident, with `internal error at line 95` for a reason and `command not found` on stderr
+# (measured 2026-10-01). The reason names the invalid input now, and nothing captured is executed.
+printf '%s' "$OUT" | grep -q 'invalid JSON on stdin' && ! printf '%s' "$OUT" | grep -q 'internal error' && ! printf '%s' "$ERR" | grep -q 'command not found' \
+  && ok "and the reason names the invalid input, not an internal error: nothing that was captured is run as a command" || fail "invalid input was reported as an internal error: $OUT / stderr: $ERR"
+RW_INTERNAL="$(RW_HOOK=x RW_ON_CRASH=deny bash -c 'source hooks/lib.sh; false' 2>&1 || true)"
+printf '%s' "$RW_INTERNAL" | grep -q 'internal error at line' && ok "while a failure of the hook itself is still called an internal error, with its line" || fail "an internal error lost its name: $RW_INTERNAL"
+# An event read only IN PART is not read. The first form of the fix above swallowed the failure of
+# the parse and took any output for a parsed event; when the parse died on a later field, the
+# fields already printed were kept and the rest read as empty -- so a guard saw a Bash call with no
+# command and let it through (cold review of the 0.7.1 diff, 2026-10-01, measured with a command
+# carrying a lone surrogate, which is valid JSON and cannot be written as text). The guard below
+# refuses this command on its own when it can read it.
+RW_PART='{"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"s","cwd":"/tmp","tool_input":{"command":"git commit --trailer \"X: y\" -m \"a \ud800\""}}'
+run_hook guard-commit "$RW_PART"
+denied && printf '%s' "$OUT" | grep -q 'could not be read' && ! printf '%s' "$OUT" | grep -q 'not JSON' \
+  && ok "a guard handed an event it can read only in part → DENY, and the reason says the event could not be read" || fail "a guard passed an event it could only read in part (rc=$RC out=$OUT)"
+run_hook principles "$RW_PART"
+[ "$RC" -eq 1 ] && [ -z "$OUT" ] && ok "and a context hook handed the same event → exit 1 notice, nothing injected from half an event" || fail "a context hook went on with half an event (rc=$RC out=$OUT)"
 run_hook guard-commit ''
 denied && ok "guard with empty stdin → DENY" || fail "guard empty stdin not denied"
 run_hook principles 'not json'

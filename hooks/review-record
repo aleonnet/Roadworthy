@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# review-record — SubagentStop hook: the verdict of a reviewer, written down by the plugin.
+# review-record — SubagentStop hook, and PostToolUse of the hand-back tool: the verdict of a
+# reviewer, written down by the plugin.
 #
 # A review used to exist only as what the agent wrote about it: a `.review.md` next to the plan,
 # or nothing at all for a review of the diff. Both are the reviewed party describing its own
@@ -34,13 +35,46 @@
 # Measured in a REAL session on 2026-10-01 (tests/bench/bench.sh, CLI 2.1.286): the harness hands
 # this hook the reviewer's type and final text when a real `roadworthy:cold-reviewer` subagent
 # ends, and the record is written -- `agent='roadworthy:cold-reviewer'`, with its verdict.
+#
+# WHERE THE REPORT IS (0.7.1). "On Claude Code v2.1.271 or later, a subagent that runs with the
+# SubagentHandback tool delivers its report through that tool before it stops. The
+# last_assistant_message field then holds the subagent's closing text, if any, which is not the
+# delivered report. The report is that call's message input, which a PreToolUse or PostToolUse hook
+# matched on SubagentHandback receives as tool_input.message." (hooks reference, read 2026-10-01).
+# Measured that day: two cold reviews in an interactive session, each ending with its verdict
+# inside the hand-back, and no record of either -- this hook read the closing text, which was
+# empty, and a project that requires a review would have been left waiting for a verdict nobody
+# wrote down. So the report is read from where it comes:
+#   * the hand-back itself: this hook is registered for PostToolUse of SubagentHandback
+#     (hooks/hooks.json) and reads `tool_input.message`;
+#   * the end of the subagent: the closing text, as before; when that carries no verdict, the last
+#     hand-back in the subagent's OWN transcript (`agent_transcript_path`).
+# The record says which event brought it (`event`) and which subagent (`agent_id`). A hand-back
+# already on record is the report: the end of the same subagent writes nothing more.
+#
+# Refuted 2026-10-01 (0.7.1), against tests/hooks/review-record.sh: the hand-back not read -> red
+# with `a report handed back by tool left no record`; the end of the subagent recording again ->
+# red with `the same review was recorded twice`; the subagent's transcript not read -> red with
+# `a hand-back found only in the subagent's transcript left no record`; the early exit looking for
+# another tool's name in that transcript -> red with the same text; a nameless hand-back recorded
+# -> red with `a hand-back with no reviewer's name kept the named record out`. Each green again on
+# the clean file, restored with its SHA-256 verified.
 export RW_HOOK="review-record"
 export RW_ON_CRASH=warn
 source "$(dirname "$0")/lib.sh"
 rw_read_event
 
-message="$(rw_field last_assistant_message)"
-[ -n "$message" ] || exit 0
+event="$(rw_field hook_event_name)"
+if [ "$event" = PostToolUse ]; then
+  message="$(rw_field tool_input.message)"
+else
+  message="$(rw_field last_assistant_message)"
+fi
+agent_transcript="$(rw_field agent_transcript_path)"
+agent_transcript="${agent_transcript/#\~/$HOME}"
+# Most subagents are not reviewers, and Claude Code ends internal ones of its own on this event
+# too: with no closing text, only a transcript that carries a hand-back is worth going on for.
+[ -n "$message" ] || grep -q SubagentHandback "$agent_transcript" 2>/dev/null || exit 0
 cwd="$(rw_realpath "$(rw_field cwd)")"
 [ -n "$cwd" ] || exit 0
 git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
@@ -52,12 +86,62 @@ plans="$(rw_option PLANS_DIR "")"
 [ -n "$plans" ] || plans="$HOME/.claude/plans"
 
 RW_MESSAGE="$message" RW_AGENT="$(rw_field agent_type)" RW_SESSION="$(rw_field session_id)" \
+RW_EVENT_NAME="$event" RW_AGENT_ID="$(rw_field agent_id)" RW_AGENT_TRANSCRIPT="$agent_transcript" \
   python3 - "$data" "$root" "$fp" "$plans" "$(rw_project_plans_dir "$root")" <<'PY' || true
 import json, os, re, sys, time
 data, root, fp = sys.argv[1], sys.argv[2], sys.argv[3]
 message = os.environ.get("RW_MESSAGE", "")
+event, agent_id = os.environ.get("RW_EVENT_NAME", ""), os.environ.get("RW_AGENT_ID", "")
+session = os.environ.get("RW_SESSION", "")
+ledger = os.path.join(data, "evidence.jsonl")
+VERDICT = re.compile(r"^[\s>*_#`-]*(?:VERDICT|VEREDITO)[\s*_`]*:[\s*_`]*([A-Za-zÀ-ÿ]+)", re.M | re.I)
+
+def handed_back(path):
+    """The report of the last SubagentHandback call in the subagent's own transcript, or ""."""
+    report = ""
+    try:
+        with open(os.path.expanduser(path), encoding="utf-8", errors="replace") as fh:
+            for raw in fh:
+                if "SubagentHandback" not in raw:
+                    continue
+                try:
+                    content = (json.loads(raw).get("message") or {}).get("content")
+                except Exception:
+                    continue
+                for block in content if isinstance(content, list) else []:
+                    if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("name") == "SubagentHandback":
+                        report = str((block.get("input") or {}).get("message") or "") or report
+    except Exception:
+        return ""
+    return report
+
+# A hand-back that does not name its subagent is left for the end of that subagent, which does:
+# the readers of this record ask for the reviewer by name, and a nameless record written here
+# would keep the named one out below.
+if event == "PostToolUse" and not os.environ.get("RW_AGENT", ""):
+    sys.exit(0)
+# A hand-back on record IS the report of that subagent: its end has nothing to add, whatever its
+# closing text says.
+if event != "PostToolUse" and agent_id:
+    try:
+        with open(ledger, encoding="utf-8", errors="replace") as fh:
+            for raw in fh:
+                if '"review"' not in raw:
+                    continue
+                try:
+                    r = json.loads(raw)
+                except Exception:
+                    continue
+                if (r.get("kind") == "review" and r.get("event") == "PostToolUse"
+                        and r.get("agent_id") == agent_id and r.get("session") == session):
+                    sys.exit(0)
+    except OSError:
+        pass
 # The LAST verdict line of the report: a reviewer may quote an earlier round before giving its own.
-found = re.findall(r"^[\s>*_#`-]*(?:VERDICT|VEREDITO)[\s*_`]*:[\s*_`]*([A-Za-zÀ-ÿ]+)", message, re.M | re.I)
+found = VERDICT.findall(message)
+if not found and event != "PostToolUse":
+    message = handed_back(os.environ.get("RW_AGENT_TRANSCRIPT", ""))
+    found = VERDICT.findall(message)
 if not found:
     sys.exit(0)
 word = found[-1].upper()
@@ -78,10 +162,11 @@ for d in sys.argv[4:]:
                 names.append(f)
 head, wtree = (fp.split() + ["", ""])[:2]
 os.makedirs(data, exist_ok=True)
-with open(os.path.join(data, "evidence.jsonl"), "a", encoding="utf-8") as fh:
+with open(ledger, "a", encoding="utf-8") as fh:
     fh.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "kind": "review",
                          "cmd": "review: " + verdict, "verdict": verdict, "head": head, "wtree": wtree,
-                         "agent": os.environ.get("RW_AGENT", ""), "session": os.environ.get("RW_SESSION", ""),
-                         "plans": names, "root": root, "exit": 0}, ensure_ascii=False) + "\n")
+                         "agent": os.environ.get("RW_AGENT", ""), "agent_id": agent_id, "event": event,
+                         "session": session, "plans": names, "root": root, "exit": 0},
+                        ensure_ascii=False) + "\n")
 PY
 exit 0

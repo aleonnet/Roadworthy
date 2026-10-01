@@ -70,6 +70,72 @@ ended roadworthy:cold-reviewer $'VERDICT: APPROVED' "$RO"
 chmod 755 "$RO/.roadworthy"
 [ "$RC" -eq 0 ] && ok "a ledger that cannot be written does not stop the subagent from ending" || fail "review-record failed on an unwritable ledger (exit $RC): $(cat "$TMP/err")"
 
+# ── 0.7.1: a report handed back through a tool ──────────────────────────────────────────────
+# "On Claude Code v2.1.271 or later, a subagent that runs with the SubagentHandback tool delivers
+# its report through that tool before it stops. The last_assistant_message field then holds the
+# subagent's closing text, if any, which is not the delivered report. The report is that call's
+# message input, which a PreToolUse or PostToolUse hook matched on SubagentHandback receives as
+# tool_input.message." (hooks reference, read 2026-10-01). Measured the same day: two cold reviews
+# in an interactive session, each ending `VERDICT: REJECTED` inside the hand-back, and no record
+# of either -- the hook read the closing text, which was empty.
+# handed <agent type> <agent id> <report> — the hand-back, as the PostToolUse event of that tool.
+handed() {
+  python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PostToolUse","tool_name":"SubagentHandback","session_id":"sess-1","cwd":sys.argv[4],"agent_id":sys.argv[2],"agent_type":sys.argv[1],"tool_input":{"message":sys.argv[3]},"tool_response":"delivered"}))' "$1" "$2" "$3" "$RR" > "$TMP/rr-event.json"
+  set +e
+  OUT="$(env -u ROADWORTHY_DATA CLAUDE_PLUGIN_OPTION_PLANS_DIR="$RRP" bash "$ROOT/hooks/run-hook.cmd" review-record < "$TMP/rr-event.json" 2>"$TMP/err")"; RC=$?
+  set -e
+}
+# stopped <agent type> <agent id> <closing text> [<the subagent's own transcript>] — its end.
+stopped() {
+  python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"SubagentStop","session_id":"sess-1","cwd":sys.argv[5],"agent_id":sys.argv[2],"agent_type":sys.argv[1],"last_assistant_message":sys.argv[3],"agent_transcript_path":sys.argv[4]}))' "$1" "$2" "$3" "${4:-}" "$RR" > "$TMP/rr-event.json"
+  set +e
+  OUT="$(env -u ROADWORTHY_DATA CLAUDE_PLUGIN_OPTION_PLANS_DIR="$RRP" bash "$ROOT/hooks/run-hook.cmd" review-record < "$TMP/rr-event.json" 2>"$TMP/err")"; RC=$?
+  set -e
+}
+N="$(count)"
+handed roadworthy:cold-reviewer h1 $'Reviewed the-plan.md against the criteria. Two blockers.\n\nVERDICT: REJECTED'
+[ "$RC" -eq 0 ] && [ -z "$OUT" ] && [ "$(count)" = "$((N + 1))" ] && [ "$(last verdict)" = REJECTED ] && [ "$(last agent)" = "roadworthy:cold-reviewer" ] \
+  && ok "a report handed back through the tool leaves the reviewer's verdict on record" || fail "a report handed back by tool left no record (count $(count), was $N; exit $RC): $OUT"
+[ "$(last event)" = PostToolUse ] && [ "$(last agent_id)" = h1 ] && [ "$(last plans)" = "the-plan.md" ] && [ -n "$(last wtree)" ] \
+  && ok "with the event it came by, the subagent it came from, the plan it names and the tree" || fail "the hand-back record does not say where it came from: event '$(last event)', agent_id '$(last agent_id)'"
+# The same subagent then ENDS. Its closing text is not the report, and the report is already on
+# record: nothing is written twice, whether the closing text is empty or repeats the verdict.
+N="$(count)"
+stopped roadworthy:cold-reviewer h1 ''
+stopped roadworthy:cold-reviewer h1 $'Report delivered.\n\nVERDICT: REJECTED'
+[ "$(count)" = "$N" ] && ok "the end of a subagent whose hand-back is on record writes nothing more" || fail "the same review was recorded twice (count $(count), was $N)"
+# The second way to the same report: the subagent's own transcript, which the harness names in the
+# event (`agent_transcript_path`). The shape is the one measured in the two reviews of 2026-10-01:
+# an assistant record whose content carries a `tool_use` named SubagentHandback, with the report
+# in `input.message`, and no closing text after it.
+python3 -c 'import json,sys
+rows = [{"type": "user", "message": {"role": "user", "content": "review it"}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Reading the diff."}]}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "SubagentHandback", "input": {"message": "Reviewed another.md. It holds.\n\nVERDICT: APPROVED"}}]}},
+        {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "ok"}]}}]
+open(sys.argv[1], "w").write("".join(json.dumps(r) + "\n" for r in rows))' "$TMP/agent-h2.jsonl"
+N="$(count)"
+stopped roadworthy:cold-reviewer h2 '' "$TMP/agent-h2.jsonl"
+[ "$(count)" = "$((N + 1))" ] && [ "$(last verdict)" = APPROVED ] && [ "$(last agent_id)" = h2 ] && [ "$(last plans)" = "another.md" ] \
+  && ok "a subagent that ends with no closing text is read from its own transcript: the hand-back found there is the report" || fail "a hand-back found only in the subagent's transcript left no record (count $(count), was $N)"
+N="$(count)"
+stopped roadworthy:cold-reviewer h3 '' "$TMP/does-not-exist.jsonl"
+[ "$RC" -eq 0 ] && [ "$(count)" = "$N" ] && ok "and a transcript that is not there records nothing and stops nobody" || fail "a missing transcript was recorded, or the hook failed (exit $RC)"
+# A hand-back that does not say WHO handed it back. `agent_type` is "present when ... the hook fires
+# inside a subagent" by the reference; nothing measured yet says the hand-back event carries it in
+# an interactive session. Both readers of the record ask for the reviewer by name, so a nameless
+# record is useless to them -- and, once on record, it kept the named one out when the subagent
+# ended (cold review of the 0.7.1 diff, 2026-10-01). A nameless hand-back writes nothing; the end
+# of the subagent, which names it, reads the report from the transcript.
+python3 -c 'import json,sys
+rows = [{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "SubagentHandback", "input": {"message": "Reviewed the-plan.md. It holds.\n\nVERDICT: APPROVED"}}]}}]
+open(sys.argv[1], "w").write("".join(json.dumps(r) + "\n" for r in rows))' "$TMP/agent-h4.jsonl"
+N="$(count)"
+handed '' h4 $'Reviewed the-plan.md. It holds.\n\nVERDICT: APPROVED'
+stopped roadworthy:cold-reviewer h4 '' "$TMP/agent-h4.jsonl"
+[ "$(count)" = "$((N + 1))" ] && [ "$(last agent)" = "roadworthy:cold-reviewer" ] && [ "$(last event)" = SubagentStop ] \
+  && ok "a hand-back that does not name its subagent writes nothing, and the end of that subagent records the review with the name" || fail "a hand-back with no reviewer's name kept the named record out (count $(count), was $N; agent '$(last agent)', event '$(last event)')"
+
 # The other half of the acceptance: the plan gate refuses a review file with no such record.
 section "review-record (what the plan gate does with it)"
 GP="$TMP/review-record-gate"; fx_repo_committed "$GP"; GP="$(cd "$GP" && pwd -P)"

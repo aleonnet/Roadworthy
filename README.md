@@ -61,7 +61,7 @@ idempotent; `claude plugin update roadworthy@roadworthy` picks up new versions, 
 | `protect-paths` | Edit/Write | Paths matching `protected_paths` (and the project's `.roadworthy/protected`) are never edited. |
 | `guard-commit` | Bash | A `git commit` is denied with a forbidden flag (default `--trailer`), with nothing staged, or when it would take a protected path or a path outside the open front's scope. |
 | `plan-review-gate` | ExitPlanMode | A plan leaves plan mode only when the pre-flight is green and, where the user or the project asks, a cold review says `VERDICT: APPROVED`. When you approve the plan, the approval is recorded. |
-| `review-record` | subagent end | Records the cold reviewer's verdict with the commit it was given about, so "a review approved this" has a source other than the agent. |
+| `review-record` | subagent end, and its hand-back | Records the cold reviewer's verdict with the commit it was given about, so "a review approved this" has a source other than the agent. |
 | `stop-gate` | Stop | A claim that the work is finished is blocked while `close.sh --check` does not report every declared gate FRESH, in every repository the turn wrote in. |
 | `overnight-guard` | Bash | While `.roadworthy/overnight` exists, push, merge, tag, `gh pr merge` and the project's `deny:` rules are denied. |
 
@@ -150,7 +150,8 @@ up before a front opens. Editing the prose afterwards keeps the approval; changi
 the base needs a new one.
 
 **`review-record`.** When the `cold-reviewer` agent finishes with a `VERDICT:` line, the verdict is
-recorded with the commit and tree it was given about. With `diff_review: required` in
+recorded with the commit and tree it was given about. The report is read from where it arrives:
+the hand-back tool when the harness delivers it that way, the subagent's closing text otherwise. With `diff_review: required` in
 `.roadworthy/rites`, the closing only passes with an APPROVED verdict for the commit being closed;
 wherever a plan needs a review (`plan_gate` in `review` or `both`), the review file needs the
 reviewer's own recorded verdict behind it.
@@ -315,7 +316,7 @@ bash tests/bench/bench.sh      # the fences met by a REAL session, headless (spe
 ```
 
 Every hook is exercised with real stdin JSON in both directions, every script is refuted with a
-toy check, every Python block embedded in the shell is compiled and checked for dead imports, the
+toy check, every Python program embedded in the hooks and scripts is compiled and checked for dead imports, the
 manifests are validated with `claude plugin validate --strict`, and a privacy scan fails on any
 absolute home path. CI runs `tests/run.sh` on macOS and Linux, executes the no-bash branch of
 `run-hook.cmd` on Windows, and can run the one Bash-granting eval case on Linux.
@@ -361,7 +362,7 @@ minutes of wall clock. Against one case: 5.3 seconds.
 
 **A case that dies before its last assertion is red, by construction.** `rw_end` sets a flag and the
 exit handler refuses to report success without it. Measured on bash 3.2, an unbound variable under
-`set -u` aborts the script and the `EXIT` trap sees `$?=0`, so the case exits **0** with half its
+`set -eu` aborts the script and the `EXIT` trap sees `$?=0`, so the case exits **0** with half its
 assertions never run — which is what `tests/run.sh` shipped with before this was found, by the
 suite, on itself.
 
