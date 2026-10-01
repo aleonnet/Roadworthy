@@ -26,10 +26,17 @@
 # the first write of a new front is denied. No state at all means a new project, and passes --
 # refusing there would deny the first write of every repository on earth.
 #
-# Shell writes are parsed on a best-effort basis and WHAT IT DOES NOT RECOGNISE, IT ALLOWS. That
-# is a declared limit, not an oversight: deciding whether an arbitrary command writes has no exact
-# answer, and a guard that fails closed on what it cannot parse denies nearly every command. What
-# compensates is close.sh, which refuses to close a front whose diff touched anything undeclared.
+# Shell commands are read by hooks/shellread.py, the way the shell reads them: quoting, heredocs,
+# substitutions, every separator, wrappers, `bash -c`, and the directory in force. Until 0.7.0 the
+# reader was forty lines in this file that split on spaces, and it failed in both directions
+# (measured 2026-09-30): a `>=` inside a heredoc was a write, and a removal on a second line, behind
+# `X=1`, behind `command`, inside `$( )` or inside `if ...; then` was nothing -- six of eight such
+# forms aimed at this very foundation went through.
+# WHAT IT STILL DOES NOT RECOGNISE, IT ALLOWS: an interpreter that opens the file itself
+# (`python3 -c`, `node -e`). That is a declared limit, not an oversight: 25.7% of 33,811 real
+# commands use an interpreter or a heredoc, and denying what cannot be read would deny a quarter of
+# all work. What compensates is exact and elsewhere: guard-commit reads git's own index, and
+# close.sh refuses a front whose diff touched anything undeclared.
 #
 # REMOVING IS WRITING. Until 0.6.1 the reader knew the write verbs and not the removal verbs, and
 # `mv` looked at its destination only. The chain measured on 2026-09-14: open the front, write
@@ -70,6 +77,12 @@
 # the snapshot away`; the owner's list emptied -> red with `the agent edited the owner
 # configuration`; the second home of the plan removed -> red with `the rite is denied in the home
 # the house norm uses`. Each green again on the clean file, restored with its SHA-256 verified.
+#
+# Refuted 2026-09-30 (0.7.0), with the reader in hooks/shellread.py: commands on one line no longer
+# split -> tests/hooks/rite-gate.sh red with `the reader examined the wrong word`; heredoc bodies
+# read as commands again -> tests/scripts/shellread.sh red with `a read was taken for a write`; a
+# newline treated as whitespace again -> red with `a write hid behind`. Each green again on the
+# clean file, restored with its SHA-256 verified.
 export RW_HOOK="rite-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -148,96 +161,36 @@ case "$tool" in
   Bash)
     command="$(rw_field tool_input.command)"
     [ -n "$command" ] || exit 0
-    # Everything below is a best-effort read of the command line; see the note above.
-    target="$(RW_CMD="$command" python3 - <<'PY'
-import os
-Q = chr(39) + chr(34)
-cmd = os.environ.get("RW_CMD", "")
-# Scan once, tracking quotes and $( ) depth: an operator only counts when it is bare.
-tokens, ops, cur, quote, depth = [], [], "", None, 0
-i = 0
-while i < len(cmd):
-    c = cmd[i]
-    if quote:
-        if c == quote:
-            quote = None
-        cur += c
-    elif c in Q:
-        quote = c; cur += c
-    elif c == chr(36) and i + 1 < len(cmd) and cmd[i + 1] == chr(40):
-        depth += 1; cur += cmd[i:i + 2]; i += 2; continue
-    elif c == ")" and depth:
-        depth -= 1; cur += c
-    elif depth:
-        cur += c
-    elif c.isspace():
-        if cur: tokens.append(cur); ops.append(False); cur = ""
-    elif c in ">|&;<":
-        if cur: tokens.append(cur); ops.append(False); cur = ""
-        op = c
-        while i + 1 < len(cmd) and cmd[i + 1] in ">|&;<":
-            i += 1; op += cmd[i]
-        tokens.append(op); ops.append(True)
-    else:
-        cur += c
-    i += 1
-if cur: tokens.append(cur); ops.append(False)
-
-# The verbs the reader knows, in command position. Every other word is allowed (see the note
-# above). Each target leaves with its kind: W for a write, R for a removal (the source of `mv`
-# is a removal from where it was).
-VERBS = ("tee", "cp", "mv", "install", "truncate", "dd", "sed", "rm", "unlink", "rmdir", "git")
-targets, start = [], 0
-plain_after = lambda n: [x for x, o in zip(tokens[n + 1:], ops[n + 1:]) if not o]
-for n, t in enumerate(tokens):
-    if ops[n] and t in (">", ">>"):
-        if n + 1 < len(tokens) and not ops[n + 1]:
-            targets.append(("W", tokens[n + 1]))
-    if ops[n] and t in (";", "&&", "||", "|", "&"):
-        start = n + 1
-        continue
-    if n == start and not ops[n]:
-        word = os.path.basename(t.strip(Q))
-        if word not in VERBS:
-            continue
-        rest = plain_after(n)
-        plain = [r for r in rest if not r.startswith("-")]
-        if word == "dd":
-            targets += [("W", r[3:]) for r in rest if r.startswith("of=")]
-        elif word == "tee":
-            targets += [("W", r) for r in plain]
-        elif word in ("cp", "install"):
-            if len(plain) >= 2: targets.append(("W", plain[-1]))
-        elif word == "mv":
-            if len(plain) >= 2:
-                targets += [("R", r) for r in plain[:-1]]
-                targets.append(("W", plain[-1]))
-        elif word == "truncate":
-            if plain: targets.append(("W", plain[-1]))
-        elif word == "sed":
-            if "-i" in rest and plain: targets.append(("W", plain[-1]))
-        elif word in ("rm", "unlink", "rmdir"):
-            targets += [("R", r) for r in plain]
-        elif word == "git":
-            if plain and plain[0] == "rm": targets += [("R", r) for r in plain[1:]]
-print("\n".join(k + "\t" + p.strip(Q) for k, p in targets if p.strip(Q)))
-PY
-)"
+    # The command is read by hooks/shellread.py -- one grammar, in one file, with its own table of
+    # cases (tests/scripts/shellread.sh). It answers KIND <TAB> DIRECTORY <TAB> PATH per target:
+    # W a write, R a removal, U a write somewhere under PATH, D a removal somewhere under PATH,
+    # S the rite's own scope-write.sh run on a plan.
+    target="$(RW_CMD="$command" python3 "$(dirname "$0")/shellread.py" "$cwd")"
     [ -n "$target" ] || exit 0
     # The foundation is protected through THIS door too. Guarding only the edit tools left the
     # exact hole the roadmap recorded from the field -- appending a glob to .roadworthy/scope
     # with a justification quoted from the chat -- open, one `>>` away, whenever a front was open.
     inside=""
-    while IFS=$'\t' read -r kind one; do
+    while IFS=$'\t' read -r kind dir one; do
       [ -n "$one" ] || continue
+      [ "$kind" = S ] && continue
       abs="$one"
-      case "$one" in /*) ;; *) abs="$cwd/$one" ;; esac
+      # A relative path is relative to the directory in force for IT -- after a `cd`, a `git -C` --
+      # which the reader carries, never to wherever the session stands.
+      case "$one" in /*) ;; *) abs="${dir:-$cwd}/$one" ;; esac
       abs="$(rw_realpath "$abs")"
       rel="$abs"
       case "$abs" in "$root"|"$root"/*) rel="${abs#"$root"}"; rel="${rel#/}" ;; esac
       # Nothing under .roadworthy/ is removed by hand, the directory included; see the note above.
-      if [ "$kind" = R ]; then
+      # D is a removal whose targets are not on the command line (`find ... -delete`): it is judged
+      # by the directory it searches.
+      if [ "$kind" = R ] || [ "$kind" = D ]; then
         case "$rel" in .roadworthy|.roadworthy/|.roadworthy/*) deny_removal "$rel" ;; esac
+      fi
+      # A write whose target is not on the command line, aimed at the plugin's own directory
+      # (`tar x -C .roadworthy`), is a write to the foundation with the name left out.
+      if [ "$kind" = U ]; then
+        case "$rel" in .roadworthy|.roadworthy/|.roadworthy/*) deny_foundation "$rel" ;; esac
       fi
       # The foundation is protected wherever it is named, front or no front; so are the owner's files.
       if foundation "$rel"; then deny_foundation "$rel"; fi
@@ -252,7 +205,7 @@ PY
       # A write OUTSIDE this repository is not work on this repository. Without this the gate
       # denied `echo x > /tmp/...` and every write into the session scratchpad, which is not the
       # thing it exists to stop.
-      case "$abs" in "$root"/*) [ -n "$inside" ] || inside="$rel" ;; esac
+      case "$abs" in "$root"|"$root"/*) [ -n "$inside" ] || inside="${rel:-.}" ;; esac
     done <<< "$target"
     [ -n "$inside" ] || exit 0
     scope_usable && exit 0

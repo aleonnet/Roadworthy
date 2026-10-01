@@ -73,7 +73,7 @@ for path in sys.argv[1:]:
 sys.exit(1 if problems else 0)
 PY
 # shellcheck disable=SC2086
-if python3 "$TMP/pycheck.py" $RW_FENCES skills/*/scripts/*.sh bin/rw-metrics hooks/globmatch.py tests/goldens/check.py > "$TMP/py.out" 2>&1; then
+if python3 "$TMP/pycheck.py" $RW_FENCES skills/*/scripts/*.sh bin/rw-metrics hooks/globmatch.py hooks/shellread.py tests/goldens/check.py > "$TMP/py.out" 2>&1; then
   ok "every embedded block and standalone script compiles, and no import is dead"
 else
   fail "python hygiene"; cat "$TMP/py.out"

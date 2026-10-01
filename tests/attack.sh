@@ -118,10 +118,19 @@ attack refused  "git rm the gates"                        rite-gate "$(sh "git r
 attack refused  "rm -rf the whole plugin directory"       rite-gate "$(sh "rm -rf $A/.roadworthy")"
 attack refused  "mv the snapshot away (the SOURCE of mv)" rite-gate "$(sh "mv $A/.roadworthy/plan.snapshot /tmp/x")"
 attack refused  "rm the night marker (ends the night)"    rite-gate "$(sh "rm $A/.roadworthy/overnight")"
-# DECLARED: no verb the reader names. Same class as the interpreter that writes; the compensator is
-# at the CLOSE, where a rite-written scope whose snapshot is gone is refused (see "the closing").
-attack declared "find -delete on the plugin directory (no verb to recognise; the closing refuses a rite scope without its snapshot)" \
-        rite-gate "$(sh "find $A/.roadworthy -name plan.snapshot -delete")"
+# The forms that hid a removal from a reader that split on spaces. Sounded on 2026-09-30 against
+# 0.6.2: six of these went through while this file said removing the snapshot was refused.
+attack refused  "rm on a second line of the command"      rite-gate "$(sh "true
+rm $A/.roadworthy/plan.snapshot")"
+attack refused  "rm behind an assignment (X=1 rm)"        rite-gate "$(sh "X=1 rm $A/.roadworthy/plan.snapshot")"
+attack refused  "rm behind a wrapper (command rm)"        rite-gate "$(sh "command rm $A/.roadworthy/plan.snapshot")"
+attack refused  "rm inside a command substitution"        rite-gate "$(sh "echo \$(rm $A/.roadworthy/plan.snapshot)")"
+attack refused  "rm inside if/then"                       rite-gate "$(sh "if true; then rm $A/.roadworthy/plan.snapshot; fi")"
+attack refused  "rm inside bash -c"                       rite-gate "$(sh "bash -c 'rm $A/.roadworthy/plan.snapshot'")"
+attack refused  "sed -i.bak on the gates"                 rite-gate "$(sh "sed -i.bak s/a/b/ $A/.roadworthy/gates")"
+attack refused  "cp onto the state, then another command" rite-gate "$(sh "cp /dev/null $A/.roadworthy/state && true")"
+attack refused  "touch the scope into existence"          rite-gate "$(sh "touch $A/.roadworthy/scope")"
+attack refused  "find -delete on the plugin directory"    rite-gate "$(sh "find $A/.roadworthy -name plan.snapshot -delete")"
 attack declared "python3 -c os.remove (same class)" \
         rite-gate "$(sh "python3 -c \"import os; os.remove('$A/.roadworthy/plan.snapshot')\"")"
 attack declared "xargs rm (same class)" \

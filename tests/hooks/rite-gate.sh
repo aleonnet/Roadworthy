@@ -158,6 +158,38 @@ rg Bash "{\"command\":\"echo x > $RG/.roadworthy/scope 2>/dev/null\"}"
 denied && printf '%s' "$OUT" | grep -q 'written by a script' \
   && ok "and the foundation is still denied even next to a device redirection" || fail "the device exemption leaked onto the foundation: $OUT"
 
+# ── 0.7.0: the command is read the way the shell reads it ───────────────────
+# The reader lived in this hook as forty lines that split on spaces. Sounded on 2026-09-30 with
+# eight forms aimed at the foundation, six went through: a command on a second line, behind an
+# assignment, behind `command`, inside `$( )`, inside `if ...; then`, and `sed -i.bak`. It also
+# collected a verb's arguments to the end of the whole line, so `cp x .roadworthy/state && true`
+# examined the word `true`. hooks/shellread.py is the reader now; its grammar is measured row by
+# row in tests/scripts/shellread.sh, and here the hook is measured with it in place.
+rgc() { run_hook rite-gate "$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","cwd":sys.argv[1],"tool_input":{"command":sys.argv[2]}}))' "$RG" "$1")"; }
+printf 'src/**\n' > "$RG/.roadworthy/scope"       # a front is open: only the foundation can deny
+for cmd in $'true\nrm .roadworthy/plan.snapshot' 'X=1 rm .roadworthy/plan.snapshot' 'command rm .roadworthy/plan.snapshot' \
+           'echo $(rm .roadworthy/plan.snapshot)' 'if true; then rm .roadworthy/plan.snapshot; fi' \
+           'sed -i.bak s/a/b/ .roadworthy/gates' 'bash -c "rm .roadworthy/plan.snapshot"' \
+           'find .roadworthy -name plan.snapshot -delete' 'tar xzf a.tgz -C .roadworthy'; do
+  rgc "$cmd"
+  denied || fail "a write hid behind a form the reader did not follow: $cmd"
+done
+ok "a second line, an assignment, a wrapper, a substitution, if/then, sed -i.bak, bash -c, find -delete and tar -C no longer hide a write to the foundation"
+rgc 'cp /dev/null .roadworthy/state && true'
+denied && printf '%s' "$OUT" | grep -q "'.roadworthy/state' is written by a script" \
+  && ok "a verb followed by another command is judged by ITS target, not by the last word of the line" || fail "the reader examined the wrong word: $OUT"
+rgc 'sed -i s/a/b/ src/a.py && git status --short | wc -l'
+! denied && ok "and an ordinary edit followed by a pipeline is not mistaken for a write to the last word" || fail "the reader examined the wrong word (an in-scope edit was denied): $OUT"
+rm -f "$RG/.roadworthy/scope"                      # no front: any write inside the repository denies
+rgc $'python3 - <<\'PY\'\nif o.get("ts", "") >= "2026-09-30T17": print(o)\nPY'
+! denied && ok "a comparison inside the body of a heredoc is not a redirection (field, 2026-09-30 19:58)" || fail "a read was taken for a write (heredoc body): $OUT"
+rgc 'grep -n "a\|'"'"'>'"'"'\|\">\"\|>>x" hooks/rite-gate'
+! denied && ok "nor is a > after an escaped quote (field, 2026-09-30 20:09)" || fail "a read was taken for a write (escaped quote): $OUT"
+rgc "cd $TMP && echo x > relative.txt"
+! denied && ok "a relative path is relative to where the command went, not to where the session stands" || fail "a write after cd was judged at the session directory: $OUT"
+rgc $'cd src\necho x > a.py'
+denied && ok "and a relative write inside the repository, after a cd inside it, is still denied with no front" || fail "a cd hid a write inside the repository"
+
 CLAUDE_PLUGIN_OPTION_RITE_GATE=false rg Edit "{\"file_path\":\"$RG/src/a.py\"}"
 ! denied && ok "rite_gate=false honoured" || fail "rite_gate=false ignored"
 
