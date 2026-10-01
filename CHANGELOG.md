@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `README_DEV.md`, with `README_DEV.pt-BR.md` as the same page in Brazilian Portuguese: a guide
+  for whoever CHANGES the plugin — the idea, a code map, the invariants, the cross-cutting
+  concerns and what to touch together — in the shape of an `ARCHITECTURE.md`, short on purpose,
+  with names instead of links and no count that goes stale.
+- `docs/guides/runbook.md`: how to do each recurring task and what to do when it fails. Its
+  commands were run when it was written, against a toy repository or this one; the acts reserved
+  for a person are described and were not typed.
+- Two gates keep the guide from drifting: every registered hook, every helper and every skill
+  script has to be named in both guides (`dev-map`), and the two guides have to agree in sections
+  and link each other (`readme-dev-parity`). Both refuted with the defect planted.
+
 ## [0.7.0] - 2026-10-01
 
 **The rite tells the truth.** Fifteen gaps measured in the field on 0.6.2, in four private notes

@@ -331,6 +331,11 @@ privacidade falha em qualquer caminho absoluto de home. A CI roda `tests/run.sh`
 executa o ramo sem bash do `run-hook.cmd` no Windows e pode rodar o único caso de eval que exige
 Bash no Linux.
 
+Para trabalhar no próprio plugin: [`README_DEV.pt-BR.md`](README_DEV.pt-BR.md) explica como ele é
+construído e o que tem de continuar verdade quando você o muda, e
+[`docs/guides/runbook.md`](docs/guides/runbook.md), em inglês, traz os passos de cada tarefa
+recorrente.
+
 <details>
 <summary><strong>Como a suíte é feita, e por quê</strong></summary>
 

@@ -13,3 +13,7 @@ Read this first. Each role below is a directory declared in `.roadworthy/docs.js
 | archive | `docs/archive/` | excluded from checks, declared |
 
 Resuming work: `/roadworthy:resume`. Checking the tree: `docs-check.sh`.
+
+Changing the plugin itself: [`README_DEV.md`](../README_DEV.md) — how it is built and what has to
+stay true (in Portuguese: [`README_DEV.pt-BR.md`](../README_DEV.pt-BR.md)).
+Doing a recurring task step by step: [`guides/runbook.md`](guides/runbook.md).

@@ -320,6 +320,10 @@ manifests are validated with `claude plugin validate --strict`, and a privacy sc
 absolute home path. CI runs `tests/run.sh` on macOS and Linux, executes the no-bash branch of
 `run-hook.cmd` on Windows, and can run the one Bash-granting eval case on Linux.
 
+Working on the plugin itself: [`README_DEV.md`](README_DEV.md) explains how it is built and what
+has to stay true when you change it, and [`docs/guides/runbook.md`](docs/guides/runbook.md) has
+the steps for each recurring task.
+
 <details>
 <summary><strong>How the suite is built, and why</strong></summary>
 
