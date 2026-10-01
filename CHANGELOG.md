@@ -5,6 +5,74 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-01
+
+**The rite tells the truth.** Fifteen gaps measured in the field on 0.6.2, in four private notes
+(18, 22, 24 and 30 September), plus one class no note had: the reader of shell commands inside the
+entry gate, which took reads for writes and let through six of eight removals aimed at the rite's
+own files. All of it is closed here, and the whole rite was then walked end to end by a simulator
+that runs sessions through the real hooks. The measurements, the two directions the notes proposed
+and the numbers refuted, and what stays a declared limit are in
+`docs/decisions/2026-10-01-0900-the-rite-tells-the-truth.md`.
+
+### Fixed — the closing
+- Every declared gate runs, with its standard input isolated: a gate that read its input (an `ssh`)
+  swallowed the gates after it and the front closed `passed` with two never run. The count of gates
+  that ran has to equal the count declared, a last line with no newline is a gate, and a gate's
+  output goes to a file, so three megabytes of output no longer lose the evidence.
+- A human verification has a state of its own, derived from the ledger: `--needs-human "<item>"`
+  opens one, `--human` lists what is open, a person's answer closes it, and no later closing writes
+  `passed` over it. `--abandon "<reason>"` ends a front with no way forward, on record.
+- The closing refuses a front whose diff touched a protected path, records `gaps_found` when it
+  refuses before the gates, says so when nothing is open instead of speaking of a changed scope,
+  and counts only the commits made here: a colleague's commit that arrived by pull or merge is not
+  the front's. A name with a non-ASCII character is the name the globs see.
+
+### Fixed — the entry gate
+- `hooks/shellread.py` reads a command the way the shell reads it — quoting, heredocs,
+  substitutions, every separator, wrappers, `bash -c`, `eval`, the directory in force — with its
+  grammar as a table of cases. A `>=` inside a heredoc is no longer a write; a removal on a second
+  line, behind `X=1`, inside `$( )` or `if/then` is one.
+- The repository that judges a target is the one the target is in, never the one the session
+  stands in. A file in no repository under a temporary directory, the session scratchpad and the
+  project memory are nobody's front. A nested repository with no rite of its own answers to the one
+  that holds it, and a refusal never creates `.roadworthy/` where there was none.
+- The rite's directory is closed to everything but its scripts: only a command known to read is
+  handed a path there; sweeps, an interpreter whose code writes there, and the directory spelled in
+  another case are denied. `docs.json`, `free` and `rites` join the owner's files; the plan's
+  exemption is for the plan — a `.md` directly in its home — never for the directory.
+- With a front open, a named shell write outside the scope is denied, a protected path is protected
+  through the shell, and a front whose scope or gates no longer match the approval snapshot stops
+  every write until it is reopened.
+- The refusal after a front that ended `gaps_found` or `needs_human` is gone: it never blocked a
+  front the rite opened and denied four honest writes in one day. An unfinished front is refused
+  where a front opens.
+
+### Added
+- **A front opens only from what was approved.** Approving a plan in plan mode records the
+  fingerprint of its scope, gates and base; the agent running `scope-write.sh` on anything else is
+  denied. Reopening keeps the base; a second front over a live one is refused, naming it.
+- **A commit takes only what the front declared** (`commit_scope`): the set is read from git's own
+  index, so it holds however the file was written.
+- **`.roadworthy/rites`**, the owner's file for what a project demands beyond the defaults:
+  `plan_gate`, `review_record`, `diff_review`. And **`.roadworthy/free`**, for paths outside the rite.
+- **`session-state`** (SessionStart): the state on disk at the top of every session.
+- **`review-record`** (SubagentStop): the cold reviewer's verdict, recorded by the plugin.
+- **The reporting form is agreed at the start of the rite**: a `report:` line in the plan, carried
+  in the snapshot, repeated at every prompt while the front is open.
+- **A person answers a human verification in their own prompt** (`rw-human: all approved`); the
+  same command typed by the agent is denied.
+- `tests/sim/rite-sim.py` and `tests/meta/rite-liveness.sh`: whole sessions through the real hooks,
+  honest ones (a denied step is a dead end) and attempts to get past the rite.
+
+### Changed
+- A denial records the session, the subagent and whether a scope was open; three strikes are three
+  refusals of the same kind by this session's main agent since the front opened, said in the third
+  denial itself, and they end when the front closes.
+- The stop gate judges a claim, not a word (`stop_gate_open_markers`), and asks for the gates of
+  every repository the turn wrote in.
+- A guard that dies answers with a denial; the event is parsed once per hook call.
+
 ## [0.6.2] - 2026-09-14
 
 **The plan template taught a form the suite refuses.** Its `project:` line asked for an absolute

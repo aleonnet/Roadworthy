@@ -33,8 +33,34 @@ Living document (undated name by design). One line per item, with the measured r
   for dead imports; the eval graders judging state, never the attempt, and measured with a smaller
   model; `tests/bench/bench.sh`, the fences met by a real headless session -- the seven-step bench
   that needed a person in plan mode is replaced by a script that fills itself.
+- 0.7.0 the rite tells the truth (record `docs/decisions/2026-10-01-0900-the-rite-tells-the-truth.md`).
+  Fifteen gaps measured in the field on 0.6.2, and the reader of shell commands found while reading
+  for them. The closing runs every declared gate and keeps a human verification as a state of its
+  own; `hooks/shellread.py` reads a command the way the shell does; the repository that judges a
+  target is the one the target is in; a front opens only from an approved plan and a commit takes
+  only what the front declared; the owner's requirements live in `.roadworthy/rites`; the session
+  is told the state on disk when it starts; the stop gate judges a claim, not a word; a denial knows
+  who was denied, and **the third one says so in its own reason** — which closes the item that stood
+  here about the three-strikes line reaching only the next prompt. `tests/sim/rite-sim.py` walks
+  the whole rite through the real hooks, honest sessions and attempts to get past it.
 
 ## Pending
+- **Beyond carelessness: the three classes the adversarial simulation of 2026-10-01 proved.** Each
+  needs a change of architecture, not another rule, and none is approved yet. (1) A commit by a
+  route no reader of commands recognises: have git itself refuse the ref update, with a hook the
+  rite installs in the repository when a front opens. (2) The evidence ledger and the state file
+  written by a program: move the rite's own writes out of the agent's shell into hooks, so that the
+  sandbox of the Bash tool can deny writes under `.roadworthy/` at the level of the operating
+  system. (3) A finished claim worded outside the vocabulary: with a front open and the gates not
+  fresh, block every turn end once unless it names an open item. See Declared limits below for what
+  holds today.
+- **The reader of shell commands has not been attacked by an independent agent.** The run that
+  would have done it was stopped before it tested anything. The table of cases
+  (`tests/scripts/shellread.sh`) and the differential over real commands are what stand behind it.
+- **Whose change is it.** A change outside the scope left in the tree is said to the agent and not
+  blocked, because nothing can tell the agent's from the owner's saving a note in the same tree.
+  Candidate: attribute by timing, with a hook after each shell call that compares the tree before
+  and after it.
 - **Bash-granting evals on macOS with Docker Desktop.** `claude plugin eval --allow-tools Bash`
   refuses to run when the Docker credential store contains symbolic links (Docker Desktop
   keeps its CLI plugins as links under `~/.docker/cli-plugins`). Measured again on 2026-09-14 with
@@ -54,12 +80,6 @@ Living document (undated name by design). One line per item, with the measured r
   the field case below (a widening justified by quoting the owner's angry message) is
   prevented by the same three mechanisms rather than recorded by a fourth. If the denial
   proves too strict in the field, the ledger comes back with it.
-- **The three-strikes line reaches the next PROMPT, never the same turn.** It is injected by the
-  `principles` hook on `UserPromptSubmit`; in a single-prompt session (an eval, a `claude -p`) it
-  never appears, and what bounds a model insisting on a denied write is the harness's turn cap and
-  the stop gate's latch. Measured 2026-09-14 with haiku: 3 of 36 runs with the plugin hit the
-  25-turn cap after dozens of denials, none of them touching a file. Candidate: a `PostToolUse`
-  hook that injects the same line into the turn where the third denial happened.
 - Prune graders that pass in both arms once three runs with the target model are in hand
   (agentskills.io guidance: such assertions inflate the with-plugin pass rate). The 2026-09-14
   run with haiku is the first set of three; the numbers are in
@@ -118,7 +138,7 @@ measured in that run; the owner asked for it to be recorded for another model to
   `scope-write.sh` writes the scope, the gates and `plan.snapshot` in one act, from the plan's
   fenced Scope and Verification blocks.
 
-## Declared limits — decided, not pending (2026-09-13, revised 2026-09-14)
+## Declared limits — decided, not pending (2026-09-13, revised 2026-09-14 and 2026-10-01)
 
 These are not on the list above because they are not going to be fixed as stated. Each is a
 limit we accept, with the reason. Documenting a hole does not close it, so they are written here
@@ -126,22 +146,30 @@ as decisions and repeated where the user chooses (`README.md`), never as a quiet
 Every one of them is exercised in `tests/attack.sh` as a DECLARED attack, so a limit that starts
 being refused is reported as the fence growing, and a hole nobody declared fails the gate.
 
-- **The scope lock watches the edit tools, not the shell.** `hooks.json` registers `scope-lock`
-  for `Edit|Write|MultiEdit|NotebookEdit`; a `cat >`, `tee`, `sed -i`, `python -c` or a heredoc
-  run through Bash writes without passing it. Why it stays: deciding whether an arbitrary shell
-  command writes outside the scope has no exact answer (redirection inside a subshell, an editor
-  invoked by a tool, a script that writes later). A guard that fails open on what it cannot parse
-  is decoration; one that fails closed denies nearly every command and the plugin becomes
-  unusable. **Consequence for the user:** while a scope is declared, write through the edit
-  tools; a shell write is not guarded. What compensates is the closing: `close.sh` refuses a front
-  whose diff touched a file outside the declared globs.
-- **The shell command reader is best effort, and says so in the denial.** `rite-gate` recognises
-  `>`, `>>`, `tee`, `cp`, `mv` (source and destination), `install`, `truncate`, `dd of=`, `sed -i`,
-  `rm`, `unlink`, `rmdir` and `git rm` in command position, tracking quote state and `$( )` depth.
-  An interpreter that opens or unlinks the file itself (`python3 -c "open(...)"`, `perl -e`,
-  `python3 -c "os.remove(...)"`), `find -delete` and `xargs rm` write or remove through no verb it
-  can name. What backs them up is the closing: a file touched outside the globs, and a rite-written
-  scope whose `plan.snapshot` is gone, both refuse it.
+- **What this plugin stops, and what it does not (0.7.0).** It closes the paths an agent takes by
+  carelessness or by shortcut. It does not claim to stop an agent that sets out to defeat it: the
+  agent and the hooks run as the same user, so what a hook can read or write a program started by
+  the agent can reach too. The owner asked for the stricter bar, saw what the adversarial
+  simulation of 2026-10-01 measured, and withdrew it for this release; the three classes below are
+  what that simulation proved, and their fix is the first item under Pending.
+- **The shell is read, and a reader of commands has a ceiling.** From 0.7.0 the entry gate denies a
+  shell write or removal outside the scope when the reader (`hooks/shellread.py`) can NAME the
+  target — a redirection, `cp`, `mv`, `sed -i`, `rm` and the rest of its table. A program that opens
+  the file itself (an interpreter, a script on disk, a build tool) writes through nothing a reader
+  can name; a quarter of all real commands use one (measured), so denying what cannot be read is not
+  available. What backs it is exact and elsewhere: the commit takes only what the front declared
+  (`guard-commit` reads git's own index), the closing refuses a front whose diff left the globs, and
+  the agent is told at its next write that a path outside the scope is changed.
+- **A commit by a route the reader does not recognise.** `guard-commit` is asked when the command
+  reads as a `git commit`. A commit made by a script on disk, by git's own plumbing or by an alias
+  is not, and a file outside the scope staged that way enters the history. The closing still
+  refuses the front over it. Proved by the simulation; exercised in `tests/attack.sh` as DECLARED.
+- **The rite's directory is closed to what can be read, not to a program that hides the name.**
+  Only a command known to read is handed a path under `.roadworthy/`, an interpreter whose inline
+  code writes there is denied, and a forged scope, gates or snapshot is caught afterwards by its
+  digest and stops the front. A program that builds the path at run time is not read; what it can
+  forge and have honoured is the evidence ledger and the state file, which carry nothing that
+  authenticates them — an approval, a reviewer's verdict, a person's answer, the word `passed`.
 - **A changed plugin option does not reach the session that is already open.** Measured
   2026-09-13: the option was correct on disk and the hook honoured it when the variable arrived,
   but the running session kept the value it read at launch. `/reload-plugins` applies it without
@@ -170,15 +198,22 @@ being refused is reported as the fence growing, and a hole nobody declared fails
   (`true`) with a WARN; it does not refuse, because the gate came from the plan the owner approved
   and the closing's job is to run what was approved and say when it proves nothing.
 - **The stop gate judges a named enumeration of "finished" words, in two languages.** A claim
-  worded outside it is not judged. A guard that guesses at meaning blocks honest turns, and the
-  cost of a false positive is a session that cannot end -- measured on this repository on
+  worded outside it is not judged ("all green", "it is live", "tudo certo": the simulation of
+  2026-10-01 got five of them through). A guard that guesses at meaning blocks honest turns, and
+  the cost of a false positive is a session that cannot end -- measured on this repository on
   2026-09-14, when the word "pronto" inside a sentence about a plan blocked a turn that claimed
-  nothing. The latch (one block per tree) and `stop_hook_active` bound the damage.
+  nothing. From 0.7.0 the word is read as a claim (not in a table row, a legend, a negation, or
+  before "to/when/if"; not when the message names an open item). Widening the vocabulary instead
+  (`feito`, `fechado`, `aprovado`, a check mark) was measured and refused: it more than doubles the
+  turn ends judged. The latch (one block per tree) and `stop_hook_active` bound the damage.
+- **A change outside the scope left in the tree is said, not blocked.** Blocking was built and
+  measured on 2026-10-01: it stopped the agent over a file the OWNER had saved in the same tree, and
+  told it to stash work that was not its own. Nothing in the tree says whose change it is.
+- **With no front open, a removal whose targets the reader cannot name is denied** (`rm "$f"`,
+  `find . -name '*.pyc' -delete`), even when it would only take untracked files. Name the path, or
+  the directory.
 - **The review binds to the plan by name, not by hash** (0.3.0, the owner's decision): what the
   owner approved is what counts, and editing the plan afterwards does not void it.
-- **`.roadworthy/docs.json` stays editable by the agent.** It names directories and status words.
-  Changing the word for "superseded" makes the plan gate refuse two live plans as ambiguous; it
-  never lets one pass.
 - **`ROADWORTHY_DATA` pointed elsewhere for one command moves the ledger, not the gates.** They
   still run for real, and the hook's `--check` reads the project and blocks a claim it cannot see.
 - **`run-hook.cmd` without bash is executed in CI, not on the machine that wrote it.** macOS

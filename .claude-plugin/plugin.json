@@ -1,7 +1,7 @@
 {
   "name": "roadworthy",
   "displayName": "Roadworthy",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "Guardrails for agentic coding: one change, zero collateral damage. Scope-locked edits, refutation-tested guarantees, evidence-gated commits and plan reviews, enforced by hooks rather than by prose.",
   "author": {
     "name": "Alessandro Barbosa",
@@ -56,6 +56,12 @@
       "description": "When a turn says the work is finished and the project declares gates, block it while close.sh --check does not report every gate FRESH. Never blocks a project with no gates file, never blocks twice on the same tree, and fails open on any error.",
       "default": true
     },
+    "stop_gate_open_markers": {
+      "type": "string",
+      "title": "Marks that mean an item is still open",
+      "description": "Comma-separated marks. A final message that carries one of them outside a legend line is a status report, not a claim that the work is finished, and the stop gate does not judge it. Default: the four status marks, TODO, and 'still have to' / 'ainda falta'.",
+      "default": "⬜,🟡,📍,TODO,still have to,still need to,ainda falta,falta fazer,in progress,em andamento"
+    },
     "session_state": {
       "type": "boolean",
       "title": "Say the state at session start",
@@ -67,6 +73,12 @@
       "title": "Forbidden commit flags",
       "description": "Comma-separated flags that must never appear in a git commit command.",
       "default": "--trailer"
+    },
+    "commit_scope": {
+      "type": "boolean",
+      "title": "A commit takes only what the front declared",
+      "description": "Deny a git commit that would take a protected path, a path outside the open front's scope, or — with no front open — anything that is not the plan, .roadworthy/gates, the owner's files or a path listed in .roadworthy/free. The set is read from git's own index, so it holds however the file was written.",
+      "default": true
     },
     "block_empty_commits": {
       "type": "boolean",
