@@ -460,7 +460,7 @@ and refuted once (defect injected, expected failure text, file restored by hash)
 proved is the end-to-end path: this front submitted its own plan with the gate suspended, because
 the gate blocked the repair of itself, and every hook was exercised with synthetic events against
 this working tree — never against the installed copy in a real session. The bench that closes
-this is in `docs/plans/2026-09-13-1315-handoff-the-rite-inside-plan-mode.md`.
+this is in `docs/plans/done/2026-09-13-1315-handoff-the-rite-inside-plan-mode.md`.
 
 **Behaviour change to know about before upgrading:** `close.sh --check` now fails in a project
 with no `.roadworthy/gates`, where it used to print the absence and exit 0. That is the fix, and
