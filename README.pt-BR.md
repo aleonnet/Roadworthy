@@ -96,9 +96,9 @@ exatamente um fechamento esperando e ele é o da frente aberta; no meio de uma f
 conversa. `rw-principios: aceito` concorda com o arquivo de princípios como ele está agora.
 `rw-config: [<repositório>] <arquivo> + <linha>` acrescenta uma linha a um dos arquivos do dono e
 `- <linha>` a retira (para `docs.json`: `<chave> = <valor>`); o que não pode ser aplicado não
-grava nada e é dito de volta. A marca só vale no começo de uma linha. Este hook só é entregue a
-um comando conhecido por ler: o agente rodá-lo com um evento que ele escreveu — pelo nome, por um
-padrão, carregado com `source`, importado, pela entrada padrão, ou como uma sessão sem tela
+grava nada e é dito de volta. A marca só vale no começo de uma linha. Uma linha de comando que
+nomeia este hook só pode ler: o agente rodá-lo com um evento que ele escreveu — pelo nome, por um
+padrão, carregado com `source`, importado, canalizado para um shell, ou como uma sessão sem tela
 iniciada com uma dessas linhas — é negado como ato de pessoa. Um nome que o comando nunca escreve
 é um limite declarado.
 

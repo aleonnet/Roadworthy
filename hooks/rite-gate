@@ -161,6 +161,9 @@
 # Against tests/hooks/principles.sh: the owner's file written in the repository the session
 # stands in, and in the one named, instead of the one it answers to -> `the owner's line gave a
 # nested repository a rite of its own`.
+# Refuted 2026-11-13, after the leads of the second review (which ran nothing): in
+# hooks/shellread.py, the rule of the whole line off, a sourced script not read as the script, and
+# a shell's `+e` taken for its script -> each red with `the agent approved its own closing`.
 export RW_HOOK="rite-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -501,6 +504,10 @@ case "$tool" in
     if [ "$(printf '%s\n' "$target" | grep -c . || true)" -gt 400 ]; then
       deny PreToolUse "this command writes or removes more than 400 separate targets, which is more than the gate can judge inside its time limit; a gate that runs out of time does not deny, so it is refused whole. Split it into smaller commands, or name the directory instead of every file. (rite_gate)"
     fi
+    # The prompt hook is run by the harness, on the prompt a person submitted.
+    if printf '%s\n' "$target" | grep -q '^H	.*	prompt$'; then
+      deny PreToolUse "the prompt hook is run by the harness, on the prompt the person submitted: that is what makes a line in it the person's own. Run by the agent, on an event the agent wrote, it would record the agent's words as the owner's -- an approval of a closing, an answer to a human verification, a change to the owner's files. Ask the owner and stop there; the owner writes the word or the line in the chat. To see what the hook does, read its file or run its case (tests/hooks/principles.sh). (rite_gate)"
+    fi
     # Two passes. The foundation is protected through THIS door too -- guarding only the edit tools
     # left the exact hole the roadmap recorded from the field, appending a glob to .roadworthy/scope,
     # one `>>` away -- and it is looked for in every target before anything else is said.
@@ -534,10 +541,6 @@ case "$tool" in
     # that types `--owner` has made itself the owner.
     if printf '%s\n' "$target" | grep -q '^H	.*	owner$'; then
       deny PreToolUse "opening a front with --owner is the owner's act, not the agent's: it says a person opened this front himself, with no approval on record. A front the agent opens comes from an approved plan: submit the plan through plan mode and, once it is approved, run skills/plan/scripts/scope-write.sh <plan.md> without --owner. If the owner wants to open it himself, he runs the command outside the agent. (rite_gate)"
-    fi
-    # The prompt hook is run by the harness, on the prompt a person submitted.
-    if printf '%s\n' "$target" | grep -q '^H	.*	prompt$'; then
-      deny PreToolUse "the prompt hook is run by the harness, on the prompt the person submitted: that is what makes a line in it the person's own. Run by the agent, on an event the agent wrote, it would record the agent's words as the owner's -- an approval of a closing, an answer to a human verification, a change to the owner's files. Ask the owner and stop there; the owner writes the word or the line in the chat. To see what the hook does, read its file or run its case (tests/hooks/principles.sh). (rite_gate)"
     fi
     # The answer of a person is recorded by the person. A human verification exists because a
     # machine cannot make it; an agent that types `--human all approved --by owner` has made it.

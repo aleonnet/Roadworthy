@@ -206,9 +206,10 @@ being refused is reported as the fence growing, and a hole nobody declared fails
   only at the start of a line and the bare word only as the whole message; every order applied is
   said back in the same prompt; and the files it changes are the project's, under git. Exercised
   in `tests/attack.sh` as DECLARED.
-- **The prompt hook is a program on disk (0.8.0).** Only a command known to read is handed the
-  hook, its launcher and the reader of the owner's lines: named, by a pattern, sourced, imported,
-  on standard input. A headless session the agent starts with one of the owner's lines in its
+- **The prompt hook is a program on disk (0.8.0).** A command line that names the hook, its
+  launcher or the reader of the owner's lines may only read, the whole of it: the file named, by
+  a pattern, sourced, imported, on standard input, piped or substituted into a shell, run by
+  `find -exec`, by awk, by a git alias or by a subprocess of inline code is denied. A headless session the agent starts with one of the owner's lines in its
   command is denied too. (The first rule matched the literal name after `bash`; the cold review
   of 2026-11-13 closed a front with one command that named the hook by a glob.) What is not
   read: the hook under a name assembled at run time or inside a script on disk, and a session

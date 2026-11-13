@@ -169,7 +169,7 @@ A maioria é uma ausência, e por isso é difícil de ver a partir de um arquivo
 7. **Um ato de pessoa nunca é digitado pelo agente.** Abrir uma frente como dono (`--owner`),
    responder a uma verificação humana, aprovar um fechamento e rodar à mão o hook de prompt —
    que é por onde as linhas do dono são lidas — são negados a ele, em toda forma que um leitor
-   de comandos consegue ler: esse hook só é entregue a um comando conhecido por ler. Um nome
+   de comandos consegue ler: uma linha de comando que nomeia esse hook só pode ler. Um nome
    que o comando nunca escreve é o limite declarado.
 8. **O fechamento mede o que foi aprovado, e quem fecha é o dono**: uma frente que o rito
    abriu só fecha quando o escopo e os portões ainda casam com os digests da fotografia, todo

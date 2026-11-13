@@ -68,9 +68,12 @@ a refutation with the defect planted (25 of them, every file restored by its dig
   with `principles`, `hooks/ownerline.py`): run by the agent, on an event it wrote, the hook would
   record the agent's words as the owner's. The first rule matched the hook's literal name after
   `bash`, and the cold review of this release closed a front `passed` with one command that named
-  it by a glob; the rule now covers the file named by a pattern, sourced, imported, run as a
-  module, fed on standard input, and a headless session started with one of the owner's lines as
-  its prompt. `close.sh` and `scope-write.sh` named by a pattern are those scripts, which also
+  it by a glob; a second review listed what a rule applied command by command still left (the
+  hook's text piped into a shell, `find -exec`, awk's `system()`, a git alias, a subprocess of
+  inline code). The rule is now of the whole line: a command line that names one of those files
+  may only read. It covers the file named by a pattern, sourced, imported, run as a module, fed
+  on standard input or through a substitution, and a headless session started with one of the
+  owner's lines as its prompt. `close.sh` and `scope-write.sh` named by a pattern are those scripts, which also
   closes `clos?.sh --human ...`, open since 0.7.0. What a reader of commands cannot see stays a
   declared limit. The time limit of the prompt hook goes from 10 to 30 seconds: an approval
   measures the gates of every repository of the front.

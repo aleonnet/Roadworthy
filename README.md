@@ -94,8 +94,8 @@ and it is the open front's; in the middle of a sentence the word is conversation
 `rw-principios: aceito` agrees to the principles file as it is now. `rw-config: [<repository>]
 <file> + <line>` adds a line to one of the owner's files and `- <line>` removes it (for
 `docs.json`: `<key> = <value>`); what cannot be applied writes nothing and is said back. A marker
-counts only at the start of a line. Only a command known to read is handed this hook: the agent
-running it on an event it wrote — named, by a pattern, sourced, imported, on standard input, or as
+counts only at the start of a line. A command line that names this hook may only read: the agent
+running it on an event it wrote — named, by a pattern, sourced, imported, piped into a shell, or as
 a headless session started with one of these lines — is denied as a person's act. A name the
 command never spells is a declared limit.
 
