@@ -51,6 +51,20 @@
 # as dirty again -> red with `a file that was already changed when the front opened blocked the
 # closing`; an untracked file recorded at the opening counted as touched by the front -> red with
 # the same text. Each green again on the clean file, restored with its SHA-256 verified.
+# Refuted 2026-11-13 (0.8.0), against tests/scripts/scope-write.sh, in skills/plan/scripts/
+# scope-write.sh: the front opened in the plan's repository alone -> red with `a plan citing two
+# repositories opened only one front`; the plan's declared repository not taken when it holds the
+# one the script runs in -> red with `a front opened from the subproject the session stood in`. In
+# hooks/frontcheck.py: the local part not derived again from the plan -> red with `a wider local
+# scope under an untouched plan kept the approval`.
+#
+# ONE FRONT, SEVERAL REPOSITORIES (0.8.0). A plan that cites several repositories opens a front in
+# each (scope-write.sh), and every snapshot names the plan's repository (`plan_root`) and the
+# repositories of the front (`front_roots`). The gates of every one of them run from the plan's
+# repository, where the `cd` written in the plan means what it says. Run in the plan's repository,
+# the closing measures this one and then each of the others (tree, foundation, scope, gates), and
+# only with all of them green releases them together. Run in one of the others, it measures that
+# one and says where the front closes from: a part of a front does not close by itself.
 #
 # Usage:
 #   close.sh               run all gates (requires a clean tree); exit 0 = passed
@@ -60,6 +74,10 @@
 #   close.sh --human                                list what is waiting for a person
 #   close.sh --human "<item>|<id>|all" approved|rejected --by <who> [--note "<text>"]
 #   close.sh --abandon "<reason>"                   release a front that will not close, on the record
+# Used by the closing itself, from one repository of a front to another:
+#   close.sh --measure         measure THIS repository of the front, and release nothing
+#   close.sh --release-front   release the front, when every repository of it has its gates fresh on
+#                              its tree; it refuses otherwise, so calling it by hand skips nothing
 set -uo pipefail
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "close: not a git repository" >&2; exit 1; }
 cd "$root" || exit 1
@@ -100,6 +118,44 @@ read_state() {
 }
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fp() { bash "$here/tree-fingerprint.sh" "$root"; }
+# The front this repository is part of, from its snapshot: the plan's repository and every
+# repository of the front, one per line. A front from before 0.8.0, and a scope written by hand,
+# name neither: the front is this repository alone.
+snap_get() {  # snap_get <key> — a field of the snapshot; a list comes one item per line
+  [ -f "$snapshot" ] || return 0
+  python3 -c 'import json, sys
+try:
+    v = json.load(open(sys.argv[1], encoding="utf-8")).get(sys.argv[2]) or ""
+except Exception:
+    v = ""
+print("\n".join(v) if isinstance(v, list) else v)' "$snapshot" "$1" 2>/dev/null || true
+}
+here_p="$(pwd -P)"
+plan_root="$(snap_get plan_root)"
+{ [ -n "$plan_root" ] && [ -d "$plan_root" ]; } || plan_root="$here_p"
+front_roots="$(snap_get front_roots)"
+[ -n "$front_roots" ] || front_roots="$here_p"
+# front_green — every repository of the front has every gate FRESH on the tree it has now.
+front_green() {
+  local r
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    [ -d "$r" ] || return 1
+    (cd "$r" && bash "$here/close.sh" --check) >/dev/null 2>&1 || return 1
+  done <<< "$front_roots"
+  return 0
+}
+# release_front — in the plan's repository: every other repository of the front, then this one.
+release_front() {
+  local r
+  while IFS= read -r r; do
+    { [ -n "$r" ] && [ "$r" != "$here_p" ]; } || continue
+    [ -f "$r/.roadworthy/scope" ] || continue
+    (cd "$r" && bash "$here/close.sh" --release-front) >/dev/null || return 1
+  done <<< "$front_roots"
+  end_closing passed
+  rm -f .roadworthy/scope
+}
 front_name() {
   [ -f "$snapshot" ] || return 0
   python3 -c 'import json,sys
@@ -317,6 +373,13 @@ case "${1:-}" in
     reason="${2:-}"
     [ -n "$reason" ] || { echo "close: abandoning a front needs a reason (close.sh --abandon \"<reason>\"): it is recorded, and the next session reads it" >&2; exit 1; }
     [ -f .roadworthy/scope ] || { echo "close: no front is open here; there is nothing to abandon" >&2; exit 1; }
+    # Abandoned from the plan's repository, a front is abandoned in every repository of it.
+    if [ "$plan_root" = "$here_p" ]; then
+      while IFS= read -r r; do
+        { [ -n "$r" ] && [ "$r" != "$here_p" ] && [ -f "$r/.roadworthy/scope" ]; } || continue
+        (cd "$r" && bash "$here/close.sh" --abandon "$reason") >/dev/null 2>&1 || true
+      done <<< "$front_roots"
+    fi
     end_closing abandoned "$reason"
     rm -f .roadworthy/scope
     echo "close: front abandoned — $reason. State gaps_found; scope released. What it left in the tree is still there: say so in the hand-off."
@@ -357,6 +420,21 @@ PY
     done < "$gates"
     [ "$declared" -gt 0 ] || { echo "close: $gates declares no gate (only blank lines or comments); nothing was measured" >&2; exit 1; }
     exit $fail ;;
+  --release-front)
+    { [ -f .roadworthy/scope ] && [ -f "$snapshot" ]; } || { echo "close: no front the rite opened is open here; there is nothing to release" >&2; exit 1; }
+    if ! front_green; then
+      echo "close: the front is not released — a gate of one of its repositories is not fresh on the tree it has now. Run the closing in $plan_root: it measures every repository of the front." >&2
+      exit 1
+    fi
+    if [ "$plan_root" = "$here_p" ]; then
+      release_front || { echo "close: a repository of the front could not be released; the scope here is kept" >&2; exit 1; }
+    else
+      end_closing passed
+      rm -f .roadworthy/scope
+    fi
+    echo "close: passed — evidence in $ledger; scope released"
+    exit 0 ;;
+  --measure) measure_only=1 ;;
   "") ;;
   *) echo "close: unknown argument $1" >&2; exit 1 ;;
 esac
@@ -580,7 +658,9 @@ exec 3< "$gates"
 while IFS= read -r cmd <&3 || [ -n "$cmd" ]; do
   [[ "$cmd" =~ ^[[:space:]]*(#|$) ]] && continue
   ran=$((ran + 1))
-  bash -c "$cmd" < /dev/null > "$gate_out" 2>&1 3<&-; rc=$?
+  # From the plan's repository: a gate written `cd <another repository> && ...` in the plan is a
+  # gate of that repository, and its `cd` is relative to where the plan is.
+  ( cd "$plan_root" && exec bash -c "$cmd" ) < /dev/null > "$gate_out" 2>&1 3<&-; rc=$?
   record "$cmd" "$rc" "$gate_out"
   if [ $rc -eq 0 ]; then printf '  OK    %s\n' "$cmd"; trivially_green "$cmd" && printf '  WARN  %s\n' "that gate cannot fail: it proves nothing"; else printf '  FAIL  %s (exit %s)\n' "$cmd" "$rc"; tail -5 "$gate_out" | sed 's/^/        /'; failed=$((failed + 1)); fi
 done
@@ -641,15 +721,49 @@ PY
   fi
   echo "  OK    diff review: APPROVED for $head (required by .roadworthy/rites)"
 fi
-if [ $failed -eq 0 ]; then
-  end_closing passed
-  rm -f .roadworthy/scope
-  echo "close: passed — evidence in $ledger; scope released"
-  if open_now="$(print_open_human)"; then
-    echo "close: the gates passed and a person still has to check what is below — the state is needs_human until the answer is recorded (close.sh --human \"<item>\" approved|rejected --by <who>):"
-    printf '%s\n' "$open_now"
-  fi
-else
+if [ $failed -ne 0 ]; then
   end_closing gaps_found "$failed gate(s) red"
   echo "close: gaps_found — $failed gate(s) red; scope kept"; exit 1
+fi
+# This repository is green. What happens next depends on which repository of the front it is.
+if [ -n "${measure_only:-}" ]; then
+  echo "close: measured — the gates of $here_p passed on this tree"
+  exit 0
+fi
+if [ "$plan_root" != "$here_p" ] && [ -f "$plan_root/.roadworthy/scope" ]; then
+  echo "close: the gates of this repository passed on this tree, and its scope is kept. This front was opened from $plan_root, where its plan belongs, and closes from there: run the closing in that repository. It measures every repository of the front and releases them together."
+  exit 0
+fi
+if [ "$plan_root" = "$here_p" ]; then
+  while IFS= read -r r; do
+    { [ -n "$r" ] && [ "$r" != "$here_p" ]; } || continue
+    if [ ! -f "$r/.roadworthy/scope" ]; then
+      end_closing gaps_found "the repository $r of the front has no front open"
+      echo "close: gaps_found — $r is a repository of this front and no front is open there (it was abandoned, or closed by itself). The front is one: reopen it from the plan (skills/plan/scripts/scope-write.sh <plan.md>, in this repository), which opens it again in every repository it cites. The scope here is kept." >&2
+      exit 1
+    fi
+    echo "close: the repository $r of this front:"
+    if member_out="$( (cd "$r" && bash "$here/close.sh" --measure) 2>&1 )"; then
+      printf '%s\n' "$member_out" | sed 's/^/  /'
+    else
+      printf '%s\n' "$member_out" | sed 's/^/  /'
+      end_closing gaps_found "the repository $r of the front is not green"
+      echo "close: gaps_found — the repository $r of this front did not pass (above). The front is one, and it closes when every repository of it is green; the scope is kept in all of them." >&2
+      exit 1
+    fi
+  done <<< "$front_roots"
+  release_front || { end_closing gaps_found "a repository of the front could not be released"; echo "close: gaps_found — a repository of the front changed while the closing ran; run it again. The scope here is kept." >&2; exit 1; }
+else
+  # The plan's repository already released its part: this one follows, when the whole front is green.
+  if ! front_green; then
+    echo "close: gaps_found — the front this repository is part of closed in $plan_root, and a gate of one of its repositories is not fresh now. Reopen the front from the plan and close it there. The scope here is kept." >&2
+    end_closing gaps_found "the front is not green in every repository"; exit 1
+  fi
+  end_closing passed
+  rm -f .roadworthy/scope
+fi
+echo "close: passed — evidence in $ledger; scope released"
+if open_now="$(print_open_human)"; then
+  echo "close: the gates passed and a person still has to check what is below — the state is needs_human until the answer is recorded (close.sh --human \"<item>\" approved|rejected --by <who>):"
+  printf '%s\n' "$open_now"
 fi

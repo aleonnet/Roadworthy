@@ -104,15 +104,35 @@ def broken(root, ledger, review_required):
             return "%s is not what the approval snapshot recorded" % what, snap
     fp = snap.get("fingerprint")
     if fp:
-        again = json.dumps({"scope": snap.get("scope_globs") or [], "gates": snap.get("gates") or [],
+        # The fingerprint is the PLAN's: computed from its whole Scope and Verification, which a
+        # snapshot written from 0.8.0 carries beside the part of them this repository enforces.
+        whole_scope = snap["plan_scope"] if "plan_scope" in snap else snap.get("scope_globs") or []
+        whole_gates = snap["plan_gates"] if "plan_gates" in snap else snap.get("gates") or []
+        again = json.dumps({"scope": whole_scope, "gates": whole_gates,
                             "base": snap.get("declared_base") or ""},
                            sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         if hashlib.sha256(again.encode("utf-8")).hexdigest() != fp:
             return "the snapshot's fingerprint is not the fingerprint of its own scope, gates and base", snap
+        # And the part this repository enforces has to be the part of the plan that is its own:
+        # derived again from the whole lists, by the rule that divided them when the front opened.
+        # Without this a wider local scope under an untouched whole one would still carry the
+        # approval. A front in one repository whose lines are all its own has nothing to derive.
+        if whole_scope != (snap.get("scope_globs") or []) or whole_gates != (snap.get("gates") or []):
+            from planblocks import by_repository
+            _, parts = by_repository(snap.get("plan_root") or root, whole_scope, whole_gates)
+            mine = parts.get(os.path.realpath(root)) or {"scope": [], "gates": []}
+            if mine["scope"] != (snap.get("scope_globs") or []) or mine["gates"] != (snap.get("gates") or []):
+                return "the scope or the gates of this repository are not its part of the plan that was approved", snap
         # A front the owner opened himself (`scope-write.sh --owner`, a person's act the entry gate
         # denies the agent) stands with no approval: the owner running the script is the approval.
-        if review_required and snap.get("opened_by") != "owner" and not approved(fp, ledger):
-            return "no approval is on record for the scope, the gates and the base this front enforces", snap
+        # The approval is the plan's, wherever a front of it opens (0.8.0): it is looked for in the
+        # ledger of this repository, of the one the front was opened from and of the one the plan
+        # declares, which is where the plugin writes it when the plan-mode exit is approved.
+        if review_required and snap.get("opened_by") != "owner":
+            ledgers = [ledger] + [os.path.join(r, ".roadworthy", "evidence.jsonl")
+                                  for r in (snap.get("plan_root"), snap.get("plan_project")) if r]
+            if not any(approved(fp, l) for l in ledgers):
+                return "no approval is on record for the scope, the gates and the base this front enforces", snap
     return None, snap
 
 

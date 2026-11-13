@@ -395,6 +395,30 @@ printf '{"kind": "approval", "fingerprint": "%s"}\n' "$(python3 "$ROOT/hooks/pla
 ow Bash "{\"command\":\"bash $SWS plan.md\"}"
 ! denied && ok "with an approval on record for its scope, gates and base, the agent opens the front" || fail "an approved plan could not open its front (a dead end): $OUT"
 
+# ── 0.8.0: the approval is the PLAN's, wherever a front of it opens ───────────────────────────
+# The approval of a plan is written in the ledger of the repository the plan declares. A front of
+# that plan in ANOTHER repository was refused twice: when it opened ("no approval is on record",
+# 27 refusals measured), and, opened by the owner by hand, at every write.
+MP="$TMP/multi-plan-repo"; fx_repo_committed "$MP"; MP="$(cd "$MP" && pwd -P)"; mkdir -p "$MP/src"; printf 'a\n' > "$MP/src/a.py"; git -C "$MP" add -A; git -C "$MP" commit -q -m src
+MQ="$TMP/multi-second-repo"; fx_repo_committed "$MQ"; MQ="$(cd "$MQ" && pwd -P)"; mkdir -p "$MQ/lib"; printf 'b\n' > "$MQ/lib/b.py"; git -C "$MQ" add -A; git -C "$MQ" commit -q -m lib
+printf '# P\n\nproject: %s\n\n## Scope\n```\nsrc/**\n%s/lib/**\n```\n## Verification\n```\ntrue\ncd %s && true\n```\n' "$MP" "$MQ" "$MQ" > "$TMP/multi-plan.md"
+mg() { run_hook rite-gate "{\"tool_name\":\"$1\",\"session_id\":\"m\",\"cwd\":\"$2\",\"tool_input\":$3}"; }
+mg Bash "$MQ" "{\"command\":\"bash $SWS $TMP/multi-plan.md --root $MQ\"}"
+denied && printf '%s' "$OUT" | grep -q 'no approval is on record' && ok "with no approval anywhere, a front of the plan does not open in a second repository" || fail "a front opened in a second repository from a plan nobody approved: $OUT"
+mkdir -p "$MP/.roadworthy"; printf '{"kind": "approval", "fingerprint": "%s"}\n' "$(python3 "$ROOT/hooks/planblocks.py" fingerprint "$TMP/multi-plan.md")" >> "$MP/.roadworthy/evidence.jsonl"
+mg Bash "$MQ" "{\"command\":\"bash $SWS $TMP/multi-plan.md --root $MQ\"}"
+! denied && ok "approved in the ledger of the repository the plan declares, the front opens in a second repository" || fail "an approved plan could not open its front in a second repository: $OUT"
+# Opened for real, from the plan's repository: one act, two fronts.
+(cd "$MP" && bash "$SWS" "$TMP/multi-plan.md") >/dev/null
+[ -f "$MQ/.roadworthy/scope" ] || fail "the fixture did not open the second front"
+mg Edit "$MP" "{\"file_path\":\"$MQ/lib/b.py\"}"
+! denied && ok "a write inside the scope in the second repository is honoured, on the approval recorded in the plan's" || fail "a front opened in a second repository was not honoured: $OUT"
+mg Bash "$MP" "{\"command\":\"echo x > $MQ/other.py\"}"
+denied && printf '%s' "$OUT" | grep -q 'outside the approved scope' && ok "and the second repository holds ITS part of the scope" || fail "the second repository of a front does not enforce its scope: $OUT"
+: > "$MP/.roadworthy/evidence.jsonl"
+mg Edit "$MP" "{\"file_path\":\"$MQ/lib/b.py\"}"
+denied && printf '%s' "$OUT" | grep -q 'no approval is on record' && ok "with the approval gone from every ledger, that front is not a front" || fail "a front in a second repository was honoured with no approval anywhere: $OUT"
+
 CLAUDE_PLUGIN_OPTION_RITE_GATE=false rg Edit "{\"file_path\":\"$RG/src/a.py\"}"
 ! denied && ok "rite_gate=false honoured" || fail "rite_gate=false ignored"
 

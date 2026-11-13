@@ -140,7 +140,10 @@
 # an unapproved scope was honoured at the next write`; the refusal saying "both are open to you now"
 # again -> `the refusal of a front nobody approved names an exit that is refused`.
 # Refuted 2026-11-13 (0.8.0), against tests/hooks/rite-gate.sh: the standing gates out of the
-# owner's files -> red with `the agent edited the standing gates`. Green again on the clean file,
+# owner's files -> red with `the agent edited the standing gates`; the approval looked up only in
+# the ledger of the repository the front opens in -> red with `an approved plan could not open its
+# front in a second repository`; and, in hooks/frontcheck.py, only in the local ledger -> red with
+# `a front opened in a second repository was not honoured`. Each green again on the clean file,
 # restored with its SHA-256 verified.
 export RW_HOOK="rite-gate"
 export RW_ON_CRASH=deny
@@ -189,7 +192,7 @@ deny_foundation() {  # deny_foundation <relative path>
 
 # judge_open <where the front opens> <plan> — the agent running scope-write.sh.
 judge_open() {
-  local where="$1" plan="$2" oroot
+  local where="$1" plan="$2" oroot proot
   rw_bool "$(rw_option PLAN_REVIEW_REQUIRED true)" || return 0
   if [ "$where" = "?" ] || [ "$plan" = "?" ]; then
     deny PreToolUse "this command opens a front from a plan, or in a repository, that is only known when it runs, so the approval it needs cannot be looked up. Name both: skills/plan/scripts/scope-write.sh <plan.md> [--root <repository>]. (rite_gate)"
@@ -203,6 +206,19 @@ judge_open() {
   # to "submit the plan again", in a loop (adversarial simulation, 2026-10-01).
   python3 "$(dirname "$0")/planblocks.py" fingerprint "$plan" >/dev/null 2>&1 || return 0
   export RW_DENIAL_ROOT="$oroot"
+  # The approval is the PLAN's, wherever a front of it opens (0.8.0): the ledger of the repository
+  # the front opens in, then the ledger of the repository the plan declares -- where the plugin
+  # writes the approval when the plan-mode exit is approved --, then the transcript. Until 0.8.0
+  # only the first was read, and a plan approved in its own repository could not open a front of
+  # it anywhere else (27 refusals measured between 2026-10-02 and 2026-11-13).
+  if python3 "$(dirname "$0")/planblocks.py" approved "$plan" "$(rw_data_dir "$oroot")/evidence.jsonl" >/dev/null 2>&1; then
+    return 0
+  fi
+  proot="$(python3 "$(dirname "$0")/planblocks.py" project-root "$plan" 2>/dev/null || true)"
+  if [ -n "$proot" ] && [ "$proot" != "$oroot" ] \
+     && python3 "$(dirname "$0")/planblocks.py" approved "$plan" "$proot/.roadworthy/evidence.jsonl" >/dev/null 2>&1; then
+    return 0
+  fi
   if python3 "$(dirname "$0")/planblocks.py" approved "$plan" "$(rw_data_dir "$oroot")/evidence.jsonl" "$(rw_field transcript_path)" >/dev/null 2>&1; then
     return 0
   fi
