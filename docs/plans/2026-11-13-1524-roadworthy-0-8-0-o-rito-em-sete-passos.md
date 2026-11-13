@@ -1,9 +1,9 @@
 # Roadworthy 0.8.0: o plugin garante o rito em sete passos, sem trava que dependa de comando manual do dono
 
+status: accepted
 project: ~/Development/roadworthy
 base: 2f1b0ed
 report: prosa curta, conclusão primeiro; uma única tabela (item, prova, estado) só no fecho da frente
-status: proposed
 
 Este plano supera o rascunho `2026-11-13-1120-roadworthy-garantir-o-rito-em-sete-passos.md`
 (mesma pasta), que fica em disco e é marcado como superado no primeiro ato da execução. As três
