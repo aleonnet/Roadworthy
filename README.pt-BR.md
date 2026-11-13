@@ -354,7 +354,7 @@ abre, e nunca editado à mão.
 ## Testes
 
 ```bash
-bash tests/run.sh              # o portão inteiro: 35 casos, ~6 min
+bash tests/run.sh              # o portão inteiro: 36 casos, ~6 min
 bash tests/hooks/scope-lock.sh # uma cerca, sozinha, em segundos
 bash tests/attack.sh           # a suíte de trapaças: 148 ataques, 132 recusados, 16 declarados
 bash tests/bench/bench.sh      # as cercas diante de uma sessão REAL, sem interface (gasta alguns centavos)

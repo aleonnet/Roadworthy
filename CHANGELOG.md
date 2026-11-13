@@ -50,7 +50,13 @@ a refutation with the defect planted (25 of them, every file restored by its dig
   each front when it opens and kept apart in the snapshot, so the fingerprint of the plan, which is
   what an approval approves, does not change.
 - `tests/scripts/front-roots.sh`: one table of paths handed to the shell's resolver of a file's
-  repository and to the Python one, which have to agree on every row. The suite has 35 cases.
+  repository and to the Python one, which have to agree on every row.
+- `tests/scripts/owner-channel.sh`: the owner's channel attacked by class instead of by example.
+  Every way a shell line can run a program (71 wrappers) crossed with every target (the prompt
+  hook, its launcher, the reader of the owner's lines, the closing script's two verdicts, a front
+  opened as the owner, a session started with the owner's word): 614 generated forms, handed to
+  the reader as data, each of which has to be read as a person's act, and 30 honest commands
+  about the same files, none of which may be. The suite has 36 cases.
 
 ### Changed
 - **The approval of a plan is the plan's, wherever a front of it opens.** The entry gate and the
@@ -71,7 +77,10 @@ a refutation with the defect planted (25 of them, every file restored by its dig
   it by a glob; a second review listed what a rule applied command by command still left (the
   hook's text piped into a shell, `find -exec`, awk's `system()`, a git alias, a subprocess of
   inline code). The rule is now of the whole line: a command line that names one of those files
-  may only read. It covers the file named by a pattern, sourced, imported, run as a module, fed
+  may only read, and a person's act spelled inside a text (`ssh host '...'`, awk's `system()`, a
+  git alias, the code of an interpreter, a heredoc for `at` or `make`) on a line that runs
+  something is that act. Written by hand, one form at a time, the cases had missed 98 of the 614
+  forms the generated battery walks. It covers the file named by a pattern, sourced, imported, run as a module, fed
   on standard input or through a substitution, and a headless session started with one of the
   owner's lines as its prompt. `close.sh` and `scope-write.sh` named by a pattern are those scripts, which also
   closes `clos?.sh --human ...`, open since 0.7.0. What a reader of commands cannot see stays a

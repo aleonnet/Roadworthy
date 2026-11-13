@@ -144,7 +144,19 @@ OWNERLINE_CODE = re.compile(r"(?:import|from)\s+[\w.]*ownerline|__import__\(\s*[
 # neither.
 HOOK_MENTION = re.compile(r"hooks/principles(?![\w.-])|ownerline|run-hook\.cmd\W+principles(?![\w.-])", re.I)
 SPAWNS = re.compile(r"subprocess|os\.system|popen|\bexec[lv]?[pe]*\s*\(|run_path|run_module|spawn|child_process|"
-                    r"system\s*\(|`|(?:import|from)\s+[\w.]*ownerline|__import__", re.I)
+                    r"system\s*\(|`|do shell script|(?:import|from)\s+[\w.]*ownerline|__import__", re.I)
+# A PERSON'S ACT SPELLED INSIDE A STRING. The closing script's two verdicts, a front opened as the
+# owner and a session started with the owner's word are recognised where they are commands. Handed
+# as TEXT to something that runs it -- `ssh host '...'`, awk's system(), a git alias, the code of
+# an interpreter, a heredoc for `at` or `make` -- they are the same act. `T` marks the text, and
+# with a command that is not a reader on the same line (`Q`) it is `H ... human`. Text only read
+# (`grep`, a commit message) is not an act. tests/scripts/owner-channel.sh generates the forms:
+# every wrapper crossed with every target.
+PERSON_ACT = re.compile(
+    r"close\.sh\b[^\n;|&]*?(?:--human\b[^\n;|&]*?\b(?:approved|rejected)\b|--owner-word)"
+    r"|scope-write\.sh\b[^\n;|&]*?--owner\b"
+    r"|\bclaude(?:-code)?\b[^\n;|&]*?(?:-p|--print)\b(?:\s+['\"]?(?:aprovad[oa]|approved)[.!]*['\"]?\s*(?:$|[;|&)'\"\\\n])"
+    r"|[^\n;|&]*?(?:rw-human:|rw-config:|rw-princ[ií]p))", re.I)
 QUIET = HOOK_READERS | frozenset((
     "cd", "pushd", "popd", "true", "false", ":", "pwd", "sleep", "chmod", "export", "set", "unset",
     "local", "declare", "read", "wait", "exit", "return", "date", "mkdir", "touch", "ls"))
@@ -714,7 +726,13 @@ def targets(cmd, cwd, env=None, depth=0, state=None):
     # command that is not a reader is `H ... prompt` (see HOOK_MENTION, above).
     if any(t[0] == "P" for t in found) and any(t[0] == "Q" for t in found):
         found.append(("H", cwd, "prompt"))
-    found = [t for t in found if t[0] not in ("P", "Q")]
+    # `T` neither: a person's act spelled in a text, on a line that runs something. (It was `A`
+    # for an hour, which is the kind of a `git add`: stripping the marker stripped every add, and
+    # the commit guard answered "nothing is staged" to `git add x && git commit`.)
+    # Said only when nothing more exact was: the command itself, read as one, names its own act.
+    if any(t[0] == "T" for t in found) and any(t[0] == "Q" for t in found) and not any(t[0] == "H" for t in found):
+        found.append(("H", cwd, "human"))
+    found = [t for t in found if t[0] not in ("P", "Q", "T")]
     # `B` never leaves this file: it marks a write or a removal whose target could not be followed,
     # and carries the directory that target is certainly under, when one is known. In a command
     # that names the plugin's directory it becomes an N on that directory's `.roadworthy` -- so a
@@ -967,6 +985,13 @@ def _simple(p, state, env, out, depth, fed=None):
             or any(HOOK_MENTION.search(t) for t in plain_words)
             or (name == "find" and any(_hook_file(w, cwd, anywhere=True) for w in words))):
         out.append(("P", cwd, "hook"))
+    # ... and in the text a command is handed: a heredoc, a here-string.
+    handed_text = [p["body"] or "", fed or ""] + [t.text for (_, op, _fd, t, _b, _q) in redirs
+                                                   if op == "<<<" and isinstance(t, Word) and not t.dynamic]
+    if any(HOOK_MENTION.search(t) for t in handed_text) and ("P", cwd, "hook") not in out:
+        out.append(("P", cwd, "hook"))
+    if any(PERSON_ACT.search(t) for t in [" ".join(plain_words)] + plain_words + handed_text):
+        out.append(("T", cwd, "act"))
     if not _quiet(p, name, args, fed):
         out.append(("Q", cwd, name or "?"))
     # A script named by a pattern is the script: `clos?.sh --human all approved`.
@@ -1274,7 +1299,8 @@ def _quiet(p, name, args, fed):
         return not p["unknown"]
     if name in SHELLS:
         if p["script"] is not None:
-            return not p["script"].dynamic
+            # `bash -c 'eval "$0"' '<text>'`: what follows the script is handed to it.
+            return not p["script"].dynamic and len(_plain(args, ("-o", "-O"))) <= 1
         if "-n" in texts:
             return True
         ops = _shell_operands(args)

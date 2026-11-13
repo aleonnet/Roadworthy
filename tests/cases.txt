@@ -23,6 +23,7 @@ tests/scripts/docs-init.sh
 tests/scripts/front-roots.sh
 tests/scripts/globmatch.sh
 tests/scripts/overnight.sh
+tests/scripts/owner-channel.sh
 tests/scripts/plan-preflight.sh
 tests/scripts/plan-template.sh
 tests/scripts/pointers-check.sh

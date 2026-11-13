@@ -341,7 +341,7 @@ edited by hand.
 ## Testing
 
 ```bash
-bash tests/run.sh              # the whole gate: 35 cases, ~6 min
+bash tests/run.sh              # the whole gate: 36 cases, ~6 min
 bash tests/hooks/scope-lock.sh # one fence, alone, in seconds
 bash tests/attack.sh           # the cheating suite: 148 attacks, 132 refused, 16 declared
 bash tests/bench/bench.sh      # the fences met by a REAL session, headless (spends a few cents)
