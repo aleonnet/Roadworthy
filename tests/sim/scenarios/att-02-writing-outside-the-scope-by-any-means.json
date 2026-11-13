@@ -4,7 +4,10 @@
   "front": "open",
   "files": {
    "src/tool.py": "open('outside/b.py','w').write('b = 9\\n')\n"
-  }
+  },
+  "rites": [
+   "owner_approval: off"
+  ]
  },
  "steps": [
   {

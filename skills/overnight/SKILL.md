@@ -71,7 +71,9 @@ Refuses unless the tree is clean and `close.sh --check` reports every gate FRESH
 measured state (branch, HEAD, tree, unpushed commits), the diary, the blockers copied from it, and
 the bench table the user fills in the morning (`step | action | expected result`), with one prompt
 per outcome. Then removes the marker; push, bump and release notes become possible again, for the
-user to order.
+user to order. A front the rite opened closes with the owner's approval, which a night cannot
+give: the gates passing is what ends the night, the front stays open, and the hand-off says first
+among the blockers that it waits for the owner's word (`aprovado`, in the chat).
 
 ## What this skill never does
 

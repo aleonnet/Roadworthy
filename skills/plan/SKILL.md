@@ -85,7 +85,21 @@ globs -- which is where a write made through the shell, invisible to the lock, f
 **When to write it.** Plan mode lets you write exactly one file, the plan, so the scope file
 cannot be written there — and it should not be: nothing is being edited yet. Write it as the
 first act after the plan is approved, before the first edit of the front. The lock then guards
-the work it was declared for, and `/roadworthy:close` releases it when the gates pass.
+the work it was declared for, and `/roadworthy:close` releases it when the gates pass and the
+owner approves the closing.
+
+**One plan, several repositories.** A Scope line may name a file of another repository: written
+from home (`~/...`) or as an absolute path, or as a path into a repository nested in the plan's
+that keeps a rite of its own. `scope-write.sh` opens a front in EACH repository the Scope cites,
+in one act, each with its own lines. A repository the Scope cites needs a gate of its own, and a
+gate belongs to it when its command starts with `cd <that repository> && ...`; one cited with no
+gate refuses the whole opening. Run the script from the repository the plan is about (or with
+`--root`); inside a subproject of it that is a repository of its own, the plan's `project:` line
+is followed. The front closes from the plan's repository.
+
+**Standing gates.** What a project asks of every closing is the owner's to say, in
+`.roadworthy/standing-gates` (one command per line). They are joined to the gates of every front
+when it opens; you do not copy them into the plan, and you cannot edit that file.
 
 **Write the gates in the same act.** Copy the plan's **Verification** commands into
 `.roadworthy/gates`, one per line. `/roadworthy:close` reads them and nothing else; a project

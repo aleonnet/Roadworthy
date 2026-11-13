@@ -25,6 +25,7 @@ printf '%s' "$CTX" | grep -q 'not a verdict' && ok "and says these are facts, no
 # A front opened by the rite, with gates that were never measured.
 printf '.roadworthy/scope\n.roadworthy/plan.snapshot\n.roadworthy/state\n.roadworthy/evidence.jsonl\n.roadworthy/denials.jsonl\n' > "$SS/.gitignore"
 git -C "$SS" add -A; git -C "$SS" commit -q -m ignore
+fx_owner_approval_off "$SS"
 fx_front_rite "$SS" 'f' 'true'
 git -C "$SS" add -A; git -C "$SS" commit -q -m 'front open'
 ss "$SS" resume

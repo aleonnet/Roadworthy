@@ -10,7 +10,8 @@
    "lib/auth/**"
   ],
   "rites": [
-   "plan_gate: both"
+   "plan_gate: both",
+   "owner_approval: off"
   ],
   "files": {
    "lib/auth/token.py": "t = 1\n",

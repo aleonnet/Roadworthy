@@ -2,7 +2,12 @@
  "name": "overnight mode on and off, in a project that declares neither a decisions nor a plans directory and whose scope names only the code: the night starts, works, commits its diary, is refused what waits for the morning, closes, commits its hand-off, and the morning is free again",
  "setup": {
   "front": "open",
-  "scope": ["src/**"]
+  "scope": [
+   "src/**"
+  ],
+  "rites": [
+   "owner_approval: off"
+  ]
  },
  "steps": [
   {

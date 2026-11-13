@@ -1,7 +1,10 @@
 {
  "name": "every honest way of undoing a change outside the scope is open",
  "setup": {
-  "front": "open"
+  "front": "open",
+  "rites": [
+   "owner_approval: off"
+  ]
  },
  "steps": [
   {

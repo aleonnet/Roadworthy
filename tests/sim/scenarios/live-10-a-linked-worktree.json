@@ -1,7 +1,10 @@
 {
  "name": "a linked worktree (git worktree): its own front, opened from the approved plan, worked, closed, and the first one untouched",
  "setup": {
-  "front": "open"
+  "front": "open",
+  "rites": [
+   "owner_approval: off"
+  ]
  },
  "steps": [
   {

@@ -9,6 +9,9 @@
    ".roadworthy/*.jsonl",
    ".roadworthy/stop-latch/",
    "vendor/"
+  ],
+  "rites": [
+   "owner_approval: off"
   ]
  },
  "steps": [

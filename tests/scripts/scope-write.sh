@@ -10,6 +10,7 @@ git -C "$SW" init -q; git -C "$SW" config user.email t@t; git -C "$SW" config us
 echo base > "$SW/src/a.txt"
 printf '# P\n## Escopo\n```\nsrc/**\nplan.md\n```\n## Verificação\n```\ntrue\n```\n' > "$SW/plan.md"
 git -C "$SW" add -A; git -C "$SW" commit -q -m base
+fx_owner_approval_off "$SW"
 (cd "$SW" && bash "$ROOT/skills/plan/scripts/scope-write.sh" plan.md) >/dev/null \
   && ok "scope-write opens a front from the plan" || fail "scope-write failed"
 [ -f "$SW/.roadworthy/scope" ] && [ -f "$SW/.roadworthy/gates" ] && [ -f "$SW/.roadworthy/plan.snapshot" ] \
@@ -141,6 +142,7 @@ SG="$TMP/standing"; fx_repo_committed "$SG"; mkdir -p "$SG/src" "$SG/.roadworthy
 printf '# what every closing of this project runs\ntest -f src/a.txt\n\ntrue\n' > "$SG/.roadworthy/standing-gates"
 printf '# P\n## Scope\n```\nsrc/**\n```\n## Verification\n```\ntrue\n```\n' > "$TMP/sg-plan.md"
 git -C "$SG" add -A; git -C "$SG" commit -q -m base
+fx_owner_approval_off "$SG"
 SG_OPEN="$( (cd "$SG" && bash "$ROOT/skills/plan/scripts/scope-write.sh" "$TMP/sg-plan.md") 2>&1 )"
 git -C "$SG" add .roadworthy/gates; git -C "$SG" commit -q -m 'the gates of the front'
 sg_lines() { grep -v -E '^[[:space:]]*(#|$)' "$SG/.roadworthy/gates"; }
@@ -179,6 +181,7 @@ printf '%s' "$SG_OUT" | grep -q 'FAIL  test -f src/not-there.txt' && [ -f "$SG/.
 section "scope-write.sh (a plan that cites several repositories)"
 MA="$TMP/multi-a"; fx_repo "$MA"; MA="$(cd "$MA" && pwd -P)"; mkdir -p "$MA/src"; printf 'a\n' > "$MA/src/a.txt"; printf 'sub/\n' > "$MA/.gitignore"
 git -C "$MA" add -A; git -C "$MA" commit -q -m base
+fx_owner_approval_off "$MA"
 MS="$MA/sub"; fx_repo "$MS"; mkdir -p "$MS/.roadworthy" "$MS/app"; printf 's\n' > "$MS/app/s.txt"; git -C "$MS" add -A; git -C "$MS" commit -q -m base
 MB="$TMP/multi-b"; fx_repo "$MB"; MB="$(cd "$MB" && pwd -P)"; mkdir -p "$MB/lib"; printf 'b\n' > "$MB/lib/b.txt"; git -C "$MB" add -A; git -C "$MB" commit -q -m base
 mplan() {  # mplan <file> <gate lines...> — the Scope cites the three repositories

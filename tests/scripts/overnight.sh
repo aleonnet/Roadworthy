@@ -92,4 +92,21 @@ handoff="$(cd "$OV" && bash "$S/overnight-close.sh" --run | tail -1)"
 [ -f "$OV/$handoff" ] && [ ! -f "$OV/.roadworthy/overnight" ] && grep -q "pricing is the user's" "$OV/$handoff" && grep -q '| ov | ' "$OV/$handoff" && ok "close with FRESH gates writes the hand-off with the blockers and removes the marker" || fail "close --run: $handoff"
 unset ROADWORTHY_DATA
 
+# ── 0.8.0: a night ends with the front WAITING for the owner ──────────────────────────────────
+# A front the rite opened closes with the owner's approval, and at night nobody is there to give
+# it. The gates passing is what lets the night end (the closing leaves with 0); the hand-off the
+# owner reads in the morning has to say that the front is still open, waiting for one word.
+NW="$TMP/night-waiting"; fx_repo_committed "$NW"; mkdir -p "$NW/src" "$NW/docs/decisions"; printf 'a\n' > "$NW/src/a.py"
+printf '# P\n## Scope\n```\nsrc/**\n```\n## Verification\n```\ntrue\n```\n' > "$TMP/nw-plan.md"
+printf '# the diary of the night\n\n## Blockers for the morning\n' > "$NW/docs/decisions/2026-01-01-0100-overnight-t.md"
+git -C "$NW" add -A; git -C "$NW" commit -q -m base
+(cd "$NW" && bash "$ROOT/skills/plan/scripts/scope-write.sh" "$TMP/nw-plan.md") >/dev/null
+git -C "$NW" add .roadworthy/gates; git -C "$NW" commit -q -m 'the gates of the front'
+python3 -c 'import json,sys; json.dump({"topic":"t","diary":"docs/decisions/2026-01-01-0100-overnight-t.md","plan":sys.argv[2],"started_iso":"2026-01-01T01:00:00Z"}, open(sys.argv[1],"w"))' "$NW/.roadworthy/overnight" "$TMP/nw-plan.md"
+NW_OUT="$( (cd "$NW" && env -u ROADWORTHY_DATA bash "$S/overnight-close.sh" --run) 2>&1 )" || fail "a night whose gates passed could not end because the front waits for the owner: $NW_OUT"
+NW_HANDOFF="$NW/$(printf '%s\n' "$NW_OUT" | tail -1)"
+[ -f "$NW_HANDOFF" ] && grep -q "waiting for the owner's approval" "$NW_HANDOFF" && [ -f "$NW/.roadworthy/scope" ] && [ ! -f "$NW/.roadworthy/overnight" ] \
+  && ok "the night ends, the front stays open, and the hand-off says it waits for the owner's approval" || fail "the hand-off of the night does not say the front waits for the owner: $NW_OUT"
+printf '%s' "$NW_OUT" | grep -q "waiting for the owner's approval" && ok "and so does what the script prints" || fail "the night closed without saying the front waits for the owner: $NW_OUT"
+
 rw_end

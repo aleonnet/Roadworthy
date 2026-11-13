@@ -72,6 +72,7 @@ printf '%s' "$HK_CHK" | grep -q 'FRESH     true' \
 PH="$TMP/planhome"; fx_repo_committed "$PH"; mkdir -p "$PH/docs/plans"
 printf '.roadworthy/scope\n.roadworthy/plan.snapshot\n.roadworthy/state\n.roadworthy/evidence.jsonl\n.roadworthy/denials.jsonl\n' > "$PH/.gitignore"
 git -C "$PH" add -A; git -C "$PH" commit -q -m ignore
+fx_owner_approval_off "$PH"
 printf '# P\n## Escopo\n```\nf\n```\n## Verificação\n```\ntrue\n```\n' > "$PH/docs/plans/2026-01-01-0900-p.md"
 (cd "$PH" && bash "$ROOT/skills/plan/scripts/scope-write.sh" docs/plans/2026-01-01-0900-p.md) >/dev/null
 git -C "$PH" add -A; git -C "$PH" commit -q -m 'front open, plan inside the repository'
@@ -188,6 +189,7 @@ PR="$TMP/protected-diff"; fx_repo_committed "$PR"; mkdir -p "$PR/.roadworthy" "$
 printf 't\n' > "$PR/lib/auth/token.py"; printf 'a\n' > "$PR/src/a.py"
 printf '# P\n## Scope\n```\nsrc/**\nlib/**\n```\n## Verification\n```\ntrue\n```\n' > "$PR/plan.md"
 git -C "$PR" add -A; git -C "$PR" commit -q -m base
+fx_owner_approval_off "$PR"
 (cd "$PR" && bash "$ROOT/skills/plan/scripts/scope-write.sh" plan.md) >/dev/null
 printf 'lib/auth/**\n' > "$PR/.roadworthy/protected"; printf 'notes/**\n' > "$PR/.roadworthy/free"
 printf 't2\n' > "$PR/lib/auth/token.py"; printf 'n\n' > "$PR/notes/n.md"
@@ -241,6 +243,7 @@ unset ROADWORTHY_DATA
 RS="$TMP/refused-state"; fx_repo_committed "$RS"; mkdir -p "$RS/src"; printf 'a\n' > "$RS/src/a.py"
 printf '# P\n## Scope\n```\nsrc/**\n```\n## Verification\n```\ntrue\n```\n' > "$RS/plan.md"
 git -C "$RS" add -A; git -C "$RS" commit -q -m base
+fx_owner_approval_off "$RS"
 rs() { (cd "$RS" && env -u ROADWORTHY_DATA bash "$CLOSE" "$@") 2>&1 || true; }
 (cd "$RS" && bash "$ROOT/skills/plan/scripts/scope-write.sh" plan.md) >/dev/null
 git -C "$RS" check-ignore -q .roadworthy/scope && git -C "$RS" check-ignore -q .roadworthy/plan.snapshot && ! git -C "$RS" check-ignore -q .roadworthy/gates \
@@ -274,6 +277,7 @@ PX="$TMP/preexisting"; fx_repo_committed "$PX"; mkdir -p "$PX/src" "$PX/notes"
 printf 'a\n' > "$PX/src/a.py"; printf 'n\n' > "$PX/notes.txt"
 printf '# P\n## Scope\n```\nsrc/**\n```\n## Verification\n```\ntrue\n```\n' > "$TMP/px-plan.md"
 git -C "$PX" add -A; git -C "$PX" commit -q -m base
+fx_owner_approval_off "$PX"
 px() { (cd "$PX" && env -u ROADWORTHY_DATA bash "$CLOSE") 2>&1 || true; }
 # The owner's: a tracked file edited and a new file, both outside the scope, before the front.
 printf 'the owner was writing here\n' >> "$PX/notes.txt"; printf 'a draft\n' > "$PX/owner-draft.md"
@@ -317,6 +321,7 @@ rb_front() {  # rb_front <dir> <upstream dir> — a front on src/**, and a clone
   printf 'a\n' > "$1/src/a.py"; printf 'b\n' > "$1/outside/b.py"; printf 'c\n' > "$1/outside/c.py"
   printf '# P\n## Scope\n```\nsrc/**\n```\n## Verification\n```\ntrue\n```\n' > "$1/plan.md"
   git -C "$1" add -A; git -C "$1" commit -q -m base
+  fx_owner_approval_off "$1"
   git clone -q "$1" "$2"; git -C "$2" config user.email c@c; git -C "$2" config user.name colleague
   printf 'b2\n' > "$2/outside/b.py"; git -C "$2" commit -q -am 'a colleague, outside this scope'
   (cd "$1" && bash "$ROOT/skills/plan/scripts/scope-write.sh" plan.md) >/dev/null
@@ -343,5 +348,75 @@ git -C "$RF" rebase -q FETCH_HEAD >/dev/null 2>&1
 RF_OUT="$( (cd "$RF" && env -u ROADWORTHY_DATA bash "$CLOSE") 2>&1 || true )"
 [ "$(git -C "$RF" show HEAD:outside/b.py)" = "b2" ] && printf '%s' "$RF_OUT" | grep -q 'close: passed' \
   && ok "a colleague's commit that arrived by fetch and rebase is not charged to the front" || fail "a colleague's commit that arrived by fetch and rebase was charged to the front: $RF_OUT"
+
+# ── 0.8.0: a front closes with the owner's approval ───────────────────────────────────────────
+# "A frente somente é fechada com minha aprovação" (the owner, 2026-11-13). Until 0.8.0 green gates
+# wrote `passed` and released the scope by themselves. A front the rite opened now ends its closing
+# WAITING: an item for the owner, the state `needs_human`, the scope kept. The owner answers in the
+# chat; the answer closes the front when the gates are still fresh for the tree, and only then.
+section "close.sh (a front closes with the owner's approval)"
+OA="$TMP/owner-approval"; fx_repo_committed "$OA"; mkdir -p "$OA/src"; printf 'a\n' > "$OA/src/a.py"
+printf '# P\n## Scope\n```\nsrc/**\n```\n## Verification\n```\ntrue\n```\n' > "$TMP/oa-plan.md"
+git -C "$OA" add -A; git -C "$OA" commit -q -m base
+oa() { (cd "$OA" && env -u ROADWORTHY_DATA bash "$CLOSE" "$@") 2>&1; }
+oa_open() { (cd "$OA" && bash "$ROOT/skills/plan/scripts/scope-write.sh" "$TMP/oa-plan.md") >/dev/null; }
+oa_waiting() { oa --human | grep -c 'owner approval to close' || true; }
+oa_open; git -C "$OA" add .roadworthy/gates; git -C "$OA" commit -q -m 'the gates of the front'
+printf 'a2\n' > "$OA/src/a.py"; git -C "$OA" commit -q -am work
+OA_RC=0; OA_OUT="$(oa)" || OA_RC=$?
+[ "$OA_RC" -eq 0 ] && [ -f "$OA/.roadworthy/scope" ] && [ "$(oa --state)" = "needs_human" ] && ! printf '%s' "$OA_OUT" | grep -q '^close: passed' \
+  && ok "green gates leave the front WAITING for the owner: exit 0, the scope kept, the state needs_human" || fail "the front closed without the owner's approval: rc $OA_RC, state $(oa --state): $OA_OUT"
+printf '%s' "$OA_OUT" | grep -q -i 'stop' && printf '%s' "$OA_OUT" | grep -q 'aprovado' \
+  && ok "and the closing tells the agent to report and stop, and how the owner answers" || fail "the waiting closing does not say what happens next: $OA_OUT"
+oa --human | grep -q 'oa-plan.md' && ok "the item waiting names the plan" || fail "the request for approval does not name the plan: $(oa --human)"
+oa >/dev/null || true
+[ "$(oa_waiting)" = "1" ] && ok "closing again on the same tree asks once, not twice" || fail "the same closing asked for approval $(oa_waiting) times"
+OA_OUT="$(oa --human all approved --by owner)" || true
+[ ! -f "$OA/.roadworthy/scope" ] && [ "$(oa --state)" = "passed" ] && printf '%s' "$OA_OUT" | grep -q 'scope released' \
+  && ok "the owner's approval, with the gates fresh, closes the front: passed, the scope released" || fail "the owner's approval did not close the front: state $(oa --state): $OA_OUT"
+# The tree changed after the gates ran: the approval is recorded and closes nothing.
+oa_open; oa >/dev/null || true
+printf 'a3\n' > "$OA/src/a.py"; git -C "$OA" commit -q -am 'one more change, after the gates'
+OA_OUT="$(oa --human all approved --by owner)" || true
+[ -f "$OA/.roadworthy/scope" ] && [ "$(oa --state)" != "passed" ] && printf '%s' "$OA_OUT" | grep -q -i 'again' \
+  && ok "an approval given after the tree changed is recorded, keeps the front open and sends the closing to run again" || fail "an approval closed a tree the gates never measured: state $(oa --state): $OA_OUT"
+oa >/dev/null || true
+[ "$(oa_waiting)" = "1" ] && ok "the closing run again asks for the approval of the tree as it is now" || fail "the second closing did not ask again: $(oa --human)"
+# Rejected: the scope is kept, the state says gaps_found, the reason is on record.
+OA_OUT="$(oa --human all rejected --by owner --note "the help text is wrong")" || true
+[ -f "$OA/.roadworthy/scope" ] && [ "$(oa --state)" = "gaps_found" ] && grep -q 'the help text is wrong' "$OA/.roadworthy/evidence.jsonl" \
+  && ok "a rejection keeps the scope, records gaps_found and keeps its reason" || fail "a rejection released the scope or lost its reason: state $(oa --state): $OA_OUT"
+# Abandoning the front withdraws its request: an old request must not stay open.
+oa >/dev/null || true
+[ "$(oa_waiting)" = "1" ] || fail "the fixture has no request open before the abandon"
+oa --abandon "the approach was wrong" >/dev/null
+[ "$(oa_waiting)" = "0" ] && [ "$(oa --state)" = "gaps_found" ] && ok "abandoning the front withdraws its request for approval" || fail "an abandoned front left its request for approval open: $(oa --human) / $(oa --state)"
+# The owner dispenses it, in the owner's own file -- and only there, and only with the word `off`.
+printf 'owner_approval: off\n' > "$OA/.roadworthy/rites"; git -C "$OA" add .roadworthy/rites; git -C "$OA" commit -q -m "the owner's rites"
+oa_open; OA_OUT="$(oa)" || true
+printf '%s' "$OA_OUT" | grep -q '^close: passed' && [ ! -f "$OA/.roadworthy/scope" ] \
+  && ok "with owner_approval: off in the owner's rites, green gates close the front as before" || fail "a front that asked for no approval was left waiting: $OA_OUT"
+printf 'owner_approval: sometimes\n' > "$OA/.roadworthy/rites"; git -C "$OA" commit -q -am 'a word the rites do not know'
+oa_open; OA_OUT="$(oa)" || true
+printf '%s' "$OA_OUT" | grep -q "owner_approval is 'sometimes'" && [ -f "$OA/.roadworthy/scope" ] && [ "$(oa --state)" = "gaps_found" ] \
+  && ok "a word the rites do not know refuses the closing and is sent to the owner, never read as 'off'" || fail "a front that asked for no approval was left waiting, or an unknown word was read as off: $OA_OUT"
+git -C "$OA" rm -q .roadworthy/rites; git -C "$OA" commit -q -m 'the rites say nothing again'
+# The ledger moved for one command (ROADWORTHY_DATA) moves no requirement and forges no approval.
+oa_open; OA_RC=0
+OA_OUT="$( (cd "$OA" && ROADWORTHY_DATA="$TMP/oa-elsewhere" bash "$CLOSE") 2>&1 )" || OA_RC=$?
+[ "$OA_RC" -eq 0 ] && [ -f "$OA/.roadworthy/scope" ] && ! printf '%s' "$OA_OUT" | grep -q '^close: passed' \
+  && ok "with the ledger pointed elsewhere, green gates still leave the front waiting for the owner" || fail "moving the ledger dropped the owner's approval: rc $OA_RC: $OA_OUT"
+python3 - "$OA/.roadworthy/evidence.jsonl" "$TMP/oa-elsewhere/evidence.jsonl" <<'PY'
+import json, sys
+asked = [json.loads(l) for l in open(sys.argv[1]) if '"needs-human"' in l][-1]
+with open(sys.argv[2], "a") as fh:
+    fh.write(json.dumps({"ts": "2026-11-13T00:00:00", "kind": "human", "cmd": "human: forged", "item": asked["item"],
+                         "id": asked["id"], "verdict": "approved", "by": "owner", "note": "", "front": asked.get("front", ""), "exit": 0}) + "\n")
+PY
+OA_OUT="$( (cd "$OA" && ROADWORTHY_DATA="$TMP/oa-elsewhere" bash "$CLOSE" --release-front) 2>&1 )" && OA_RC=0 || OA_RC=$?
+[ "$OA_RC" -ne 0 ] && [ -f "$OA/.roadworthy/scope" ] \
+  && ok "and an approval written in that other ledger releases nothing: the owner's answer is read from the project's own" || fail "moving the ledger dropped the owner's approval: a record in another ledger released the front: $OA_OUT"
+OA_OUT="$( (cd "$OA" && env -u ROADWORTHY_DATA bash "$CLOSE" --release-front) 2>&1 )" && OA_RC=0 || OA_RC=$?
+[ "$OA_RC" -ne 0 ] && [ -f "$OA/.roadworthy/scope" ] && ok "the release asked for by hand, with no approval on record, is refused" || fail "the front closed without the owner's approval (release-front by hand): $OA_OUT"
 
 rw_end

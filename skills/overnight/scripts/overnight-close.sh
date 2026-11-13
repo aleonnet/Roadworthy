@@ -6,6 +6,11 @@
 # gate FRESH (`--run` runs close.sh first). Writes <YYYY-MM-DD-HHMM>-handoff-overnight-<topic>.md
 # in the plans directory of .roadworthy/docs.json (fallback docs/plans), copying the blockers
 # from the diary, then removes the marker and prints the hand-off path.
+#
+# A front the rite opened closes with the OWNER'S APPROVAL (0.8.0), and at night nobody is there to
+# give it: `close.sh` leaves with 0 when the gates passed and keeps the front open, waiting. The
+# night ends all the same -- the gates are what it answers for -- and the hand-off says, first among
+# the blockers for the morning, that the front waits for the owner's word.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "overnight-close: not a git repository" >&2; exit 1; }
@@ -63,6 +68,12 @@ lines = [l for l in body.splitlines() if l.strip() and not l.strip().startswith(
 print("\n".join(lines) if lines else "- none")
 PY
 )"
+# The front still open, waiting for the owner: said in the hand-off and on the way out.
+waiting="$(bash "$close" --human 2>/dev/null | grep 'owner approval to close' || true)"
+if [ -n "$waiting" ]; then
+  first="- **The front is waiting for the owner's approval to close.** The gates passed on this tree and the scope is kept. Answer in the chat with one word: \`aprovado\` (or \`reprovado <motivo>\`)."
+  if [ "$blockers" = "- none" ]; then blockers="$first"; else blockers="$first"$'\n'"$blockers"; fi
+fi
 python3 - "$here/../templates/handoff.md" "$handoff" "$topic" "$closed_iso" "$(basename "$root")" "$branch" "$head" "clean" "$unpushed" "$diary" "$plan" "$blockers" "$(rw_status_word accepted)" <<'PY'
 import sys
 tpl, out, topic, closed, repo, branch, head, tree, unpushed, diary, plan, blockers, status = sys.argv[1:14]
@@ -74,4 +85,5 @@ open(out, "w", encoding="utf-8").write(t)
 PY
 rm -f .roadworthy/overnight
 echo "overnight-close: off at $closed_iso — hand-off $handoff (uncommitted: commit it, then the user orders the push)"
+[ -z "$waiting" ] || echo "overnight-close: the front is still open, waiting for the owner's approval to close; the hand-off says so. Approving is the owner's act."
 echo "$handoff"

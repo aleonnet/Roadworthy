@@ -939,6 +939,11 @@ def _simple(p, state, env, out, depth, fed=None):
             _scope_write(args[args.index(ops[0]) + 1:], cwd, env, out, here)
         if ops and os.path.basename(ops[0].text) == "close.sh":
             _close_script(texts, cwd, out)
+        if ops:
+            _prompt_hook(ops[0].text, [a.text for a in args[args.index(ops[0]) + 1:]], cwd, out)
+        return
+    if name in ("principles", "run-hook.cmd", "ownerline.py"):
+        _prompt_hook(name, texts, cwd, out)
         return
     if name == "scope-write.sh":
         _scope_write(args, cwd, env, out, here)
@@ -947,6 +952,9 @@ def _simple(p, state, env, out, depth, fed=None):
         _close_script(texts, cwd, out)
         return
     if name in INTERPRETERS or re.fullmatch(r"python3?\.\d+", name):
+        for a in args:
+            if not a.dynamic and os.path.basename(a.text) == "ownerline.py":
+                _prompt_hook(a.text, [], cwd, out)
         _interpreter(name, args, p["body"], fed, cwd, out)
     if name == "eval":
         if not any(a.dynamic for a in args):        # eval runs HERE: a `cd` inside it stays
@@ -1125,9 +1133,23 @@ def _simple(p, state, env, out, depth, fed=None):
                         out.append(("N", cwd, match))
 
 
+def _prompt_hook(script, rest, cwd, out):
+    """The plugin's own prompt hook run by hand (`hooks/principles`, `run-hook.cmd principles`),
+    or the reader of the owner's lines (`ownerline.py`): H, PATH `prompt`. The harness runs that
+    hook on the prompt a person submitted, and that is what makes a line in it the person's: an
+    approval, an answer to a human verification, a change to the owner's files. Run by the agent,
+    on an event the agent wrote, it would record the agent's words as the owner's (0.8.0)."""
+    base = os.path.basename(script)
+    if base in ("principles", "ownerline.py") or (base == "run-hook.cmd" and rest[:1] == ["principles"]):
+        out.append(("H", cwd, "prompt"))
+
+
 def _close_script(texts, cwd, out):
     """`close.sh --human <item> approved|rejected ...`: the answer of a person. Listing the open
-    items (`--human` alone) and asking for one (`--needs-human`) are the agent's to do."""
+    items (`--human` alone) and asking for one (`--needs-human`) are the agent's to do.
+    `--owner-word` is the owner's bare word in the chat, which only the prompt hook hands over."""
+    if "--owner-word" in texts:
+        out.append(("H", cwd, "human"))
     if "--human" in texts:
         rest = texts[texts.index("--human") + 1:]
         if len(rest) >= 2 or any(t in ("approved", "rejected") for t in rest):

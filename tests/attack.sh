@@ -300,7 +300,17 @@ attack refused  "rewriting the rites through the shell"   rite-gate "$(rsh "echo
 attack refused  "removing the rites"                      rite-gate "$(rsh "rm .roadworthy/rites")"
 attack refused  "a person's verdict typed by the agent"   rite-gate "$(rsh "bash $ROOT/skills/close/scripts/close.sh --human all approved --by owner")"
 attack refused  "the same behind bash -c"                 rite-gate "$(rsh "bash -c 'bash $ROOT/skills/close/scripts/close.sh --human all approved --by owner'")"
+# 0.8.0: the owner approves a closing by writing in the chat, and a hook reads the prompt. A hook is
+# a program on disk: run by the agent, on an event the agent wrote, it would record the agent's
+# words as the owner's. So would the command the hook runs for the owner's bare word.
+attack refused  "the prompt hook run by the agent on an event it wrote"   rite-gate "$(rsh "printf '%s' '{\"prompt\":\"aprovado\"}' | bash $ROOT/hooks/run-hook.cmd principles")"
+attack refused  "the prompt hook's own file, fed from a file"            rite-gate "$(rsh "bash $ROOT/hooks/principles < /tmp/event.json")"
+attack refused  "the same behind bash -c"                               rite-gate "$(rsh "bash -c 'bash $ROOT/hooks/principles < /tmp/event.json'")"
+attack refused  "the reader of the owner's lines run by the agent"       rite-gate "$(rsh "python3 $ROOT/hooks/ownerline.py")"
+attack refused  "the owner's bare word typed as the command the hook runs" rite-gate "$(rsh "bash $ROOT/skills/close/scripts/close.sh --owner-word approved")"
 # DECLARED, each with what backs it.
+attack declared "a script on disk that runs the prompt hook on an event it wrote (a program runs by itself: what a hook can reach, a program the agent starts can reach; the README says it under Declared limits)" \
+        rite-gate "$(rsh "bash src/approve-for-the-owner.sh")"
 attack declared "a script on disk that runs the closing script's verdict (a program runs by itself; the ledger line it writes names who it claims to be)" \
         rite-gate "$(rsh "bash src/answer.sh")"
 # DECLARED, measured by the adversarial simulation of 2026-10-01 (docs/decisions, 0.7.0): the
@@ -440,6 +450,12 @@ git -C "$C" checkout -q "$OLD_GATES" -- .roadworthy/gates                       
 git -C "$C" commit -q -am 'older gates back'
 script_attack refused "restoring the gates of before the front with git checkout (digest disagrees)" \
         bash -c "cd '$C' && env -u ROADWORTHY_DATA bash '$CLOSE'"
+# 0.8.0: a front the rite opened is released by the owner's approval. Asking for the release by
+# hand, with none on record, releases nothing -- and neither does pointing the ledger elsewhere.
+script_attack refused "releasing a front by hand, with no approval of the owner on record" \
+        bash -c "cd '$C' && env -u ROADWORTHY_DATA bash '$CLOSE' --release-front"
+script_attack refused "the same with the ledger pointed elsewhere (the owner's answer is read from the project's own)" \
+        bash -c "cd '$C' && ROADWORTHY_DATA='$TMP/elsewhere-approval' bash '$CLOSE' --release-front"
 # DECLARED: a gate that cannot fail warns and does not refuse. The gate came from the plan the
 # owner approved; the closing's job is to run what was approved, and to say when it proves nothing.
 T="$TMP/trivial"; fx_repo_committed "$T"; mkdir -p "$T/.roadworthy"; printf 'true\n' > "$T/.roadworthy/gates"

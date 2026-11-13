@@ -24,6 +24,11 @@
 # -> red with `the agreed reporting form did not reach the prompt`; the owner's line in the prompt
 # not read -> red with `the owner's answer in the prompt was not recorded`. Each green again on the
 # clean file, restored with its SHA-256 verified.
+# Refuted 2026-11-13 (0.8.0), against tests/hooks/principles.sh: the owner's bare word not read ->
+# red with `the owner's approval in the prompt did not close the front`; and, in
+# skills/close/scripts/close.sh, the freshness of the gates not asked before the approval releases
+# -> red with `an approval closed a tree the gates never measured`. Each green again on the clean
+# file, restored with its SHA-256 verified.
 export RW_HOOK="principles"
 export RW_ON_CRASH=allow
 source "$(dirname "$0")/lib.sh"
@@ -59,30 +64,62 @@ project_data=""
 #     rw-human: <item or id> rejected <note>
 # This hook fires on the prompt the person submitted, so the line cannot have been written by the
 # agent. Whatever fails here is said and never blocks the prompt.
+#
+# THE OWNER'S WORD CLOSES A FRONT (0.8.0). The closing of a front the rite opened waits for the
+# owner (skills/close/scripts/close.sh). The answer is the WHOLE message `aprovado`, `aprovada` or
+# `approved` -- or `reprovado <motivo>` / `rejected <reason>` -- when exactly one closing is waiting
+# and it is the closing of the front that is open; otherwise the word is conversation and nothing
+# is said. `rw-human: aprovado` does the same. The orders are read by one grammar, in
+# hooks/ownerline.py. The item is looked for in the PLAN's repository: the repository the session
+# stands in is found by the rule the fences use (rw_target_root: a subproject with no rite of its
+# own answers to the repository above it), and its snapshot names the plan's -- so the word works
+# with the session standing in any repository of the front.
+# The entry gate denies the agent this hook run by hand (hooks/shellread.py, `H ... prompt`).
 human_notice=""
 prompt="$(rw_field prompt)"
-if [ -n "$root" ] && printf '%s\n' "$prompt" | grep -q -i -E '^[[:space:]]*rw-human:'; then
+orders=""
+[ -z "$prompt" ] || orders="$(RW_PROMPT="$prompt" python3 "$(dirname "$0")/ownerline.py" 2>/dev/null || true)"
+if [ -n "$orders" ]; then
   closer="$(cd "$(dirname "$0")/.." && pwd)/skills/close/scripts/close.sh"
-  while IFS= read -r line; do
-    spec="$(printf '%s' "$line" | sed -E 's/^[[:space:]]*[Rr][Ww]-[Hh][Uu][Mm][Aa][Nn]:[[:space:]]*//')"
-    verdict="$(printf '%s' "$spec" | grep -o -i -E '(^|[[:space:]])(approved|rejected|aprovado|aprovada|reprovado|reprovada)([[:space:]]|$)' | head -1 | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]' || true)"
-    [ -n "$verdict" ] || { human_notice="${human_notice}A 'rw-human:' line carried no verdict (approved | rejected): $line"$'\n'; continue; }
-    item="$(printf '%s' "$spec" | sed -E "s/[[:space:]]*${verdict}.*//I" | sed 's/[[:space:]]*$//')"
-    note="$(printf '%s' "$spec" | sed -E "s/^.*${verdict}[[:space:]]*//I")"
-    case "$verdict" in aprovad*) verdict=approved ;; reprovad*) verdict=rejected ;; esac
-    [ -n "$item" ] || item=all
-    case "$item" in tudo|todas|todos) item=all ;; esac
-    # A refusal from the closing script is an ANSWER here (no such item), not an internal error:
-    # errtrace is lifted for the call so the ERR trap does not fire inside the substitution.
-    set +o errtrace
-    if answer="$(cd "$root" && ROADWORTHY_DATA="${ROADWORTHY_DATA:-}" bash "$closer" --human "$item" "$verdict" --by "the owner, in the prompt" --note "$note" 2>&1)"; then
-      set -o errtrace
-      human_notice="${human_notice}THE OWNER ANSWERED A HUMAN VERIFICATION IN THIS PROMPT, and it is recorded: $answer"$'\n'
-    else
-      set -o errtrace
-      human_notice="${human_notice}The owner's 'rw-human:' line could not be recorded: $answer"$'\n'
-    fi
-  done <<< "$(printf '%s\n' "$prompt" | grep -i -E '^[[:space:]]*rw-human:')"
+  # Where the front the session stands in closes from.
+  front_home="$(rw_target_root "$cwd/x")"
+  if [ -n "$front_home" ] && [ -f "$front_home/.roadworthy/plan.snapshot" ]; then
+    named="$(python3 -c 'import json, sys
+try:
+    print(json.load(open(sys.argv[1], encoding="utf-8")).get("plan_root") or "")
+except Exception:
+    print("")' "$front_home/.roadworthy/plan.snapshot" 2>/dev/null || true)"
+    if [ -n "$named" ] && [ -d "$named" ]; then front_home="$named"; fi
+  fi
+  while IFS=$'\t' read -r kind f1 f2 f3; do
+    case "$kind" in
+      error) human_notice="${human_notice}${f1}"$'\n' ;;
+      human)
+        [ -n "$front_home" ] || continue
+        # A refusal from the closing script is an ANSWER here (no such item), not an internal
+        # error: errtrace is lifted for the call so the ERR trap does not fire inside the substitution.
+        set +o errtrace
+        if answer="$(cd "$front_home" && ROADWORTHY_DATA="${ROADWORTHY_DATA:-}" bash "$closer" --human "$f1" "$f2" --by "the owner, in the prompt" --note "$f3" 2>&1)"; then
+          set -o errtrace
+          human_notice="${human_notice}THE OWNER ANSWERED A HUMAN VERIFICATION IN THIS PROMPT, and it is recorded: $answer"$'\n'
+        else
+          set -o errtrace
+          human_notice="${human_notice}The owner's 'rw-human:' line could not be recorded: $answer"$'\n'
+        fi ;;
+      word)
+        [ -n "$front_home" ] || continue
+        set +o errtrace
+        # In a condition, so a status that is an ANSWER (4: no closing waits) is not an error.
+        if answer="$(cd "$front_home" && ROADWORTHY_DATA="${ROADWORTHY_DATA:-}" bash "$closer" --owner-word "$f1" "$f2" 2>&1)"; then word_rc=0; else word_rc=$?; fi
+        set -o errtrace
+        # Exit 4: no closing is waiting for that word here. It was conversation; nothing is said.
+        if [ "$word_rc" -eq 0 ]; then
+          human_notice="${human_notice}THE OWNER ANSWERED THE CLOSING OF THE FRONT IN THIS PROMPT, and it is recorded: $answer"$'\n'
+        elif [ "$word_rc" -ne 4 ]; then
+          human_notice="${human_notice}The owner's word about the closing could not be recorded: $answer"$'\n'
+        fi ;;
+    esac
+  done <<< "$orders"
 fi
 
 RW_HUMAN_NOTICE="$human_notice" RW_SESSION="$(rw_field session_id)" \

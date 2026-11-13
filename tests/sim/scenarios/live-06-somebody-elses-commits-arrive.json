@@ -1,7 +1,10 @@
 {
  "name": "a colleague's commit outside the scope arrives by pull, by merge, by pull --rebase and by fetch and rebase; the front goes on and closes",
  "setup": {
-  "front": "open"
+  "front": "open",
+  "rites": [
+   "owner_approval: off"
+  ]
  },
  "steps": [
   {

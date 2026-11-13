@@ -66,18 +66,39 @@
 # only with all of them green releases them together. Run in one of the others, it measures that
 # one and says where the front closes from: a part of a front does not close by itself.
 #
+# A FRONT CLOSES WITH THE OWNER'S APPROVAL (0.8.0). "A frente somente é fechada com minha
+# aprovação" (the owner, 2026-11-13). Until then green gates wrote `passed` and released the scope
+# by themselves. For a front the rite opened -- one with a snapshot -- green gates now end the
+# closing WAITING: an item for the owner is opened (`owner approval to close <plan>`, naming the
+# trees the gates measured), the state is `needs_human`, the scope is kept, and the script leaves
+# with 0, because the gates did pass. The owner answers in the chat (hooks/principles reads the
+# prompt). Approved, with every gate still fresh on the tree it measured: `passed`, and the scope
+# released in every repository of the front. Approved after the tree changed: the answer is
+# recorded, the front stays open, and the closing has to run again -- approving a tree no gate
+# measured is not what the owner's sentence means. Rejected: `gaps_found`, the scope kept, the
+# reason on record. Abandoning the front withdraws its request.
+#   The requirement holds BY CONSTRUCTION: it is true of every front with a snapshot, read from no
+# option and no ledger (a shell the agent runs has no plugin option, and ROADWORTHY_DATA chooses
+# the ledger). Only one thing dispenses it: a line `owner_approval: off` in the rites of the plan's
+# repository (.roadworthy/rites, the owner's file). And the owner's answer about a closing is
+# written and read in that repository's OWN ledger, whatever ROADWORTHY_DATA says: a record in
+# another ledger releases nothing. A scope written by hand, with no snapshot, closes as before.
+#
 # Usage:
-#   close.sh               run all gates (requires a clean tree); exit 0 = passed
+#   close.sh               run all gates (requires a clean tree); exit 0 = passed, or waiting for the owner
 #   close.sh --check       classify each gate FRESH | STALE | MISSING for the current tree
 #   close.sh --state       print the state: passed | gaps_found | needs_human | none
 #   close.sh --needs-human "<item>"                 a person must verify <item>
 #   close.sh --human                                list what is waiting for a person
 #   close.sh --human "<item>|<id>|all" approved|rejected --by <who> [--note "<text>"]
 #   close.sh --abandon "<reason>"                   release a front that will not close, on the record
+#   close.sh --owner-word approved|rejected [<note>]  the owner's bare word in the chat (the prompt
+#                              hook runs it): an answer only when exactly one closing waits here
 # Used by the closing itself, from one repository of a front to another:
 #   close.sh --measure         measure THIS repository of the front, and release nothing
 #   close.sh --release-front   release the front, when every repository of it has its gates fresh on
-#                              its tree; it refuses otherwise, so calling it by hand skips nothing
+#                              its tree and the owner's approval of those trees is on record (where
+#                              it is required); it refuses otherwise, so calling it by hand skips nothing
 set -uo pipefail
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "close: not a git repository" >&2; exit 1; }
 cd "$root" || exit 1
@@ -145,6 +166,31 @@ front_green() {
   done <<< "$front_roots"
   return 0
 }
+# The owner's answer about a closing lives in the plan's repository's own ledger.
+own_ledger="$plan_root/.roadworthy/evidence.jsonl"
+# What the owner's rites say about the approval of a closing: empty, or the word written there.
+owner_approval_word() {
+  [ -f "$plan_root/.roadworthy/rites" ] || return 0
+  tr '[:upper:]' '[:lower:]' < "$plan_root/.roadworthy/rites" | tr -d '\r' | sed -n -E 's/^[[:space:]]*owner_approval[[:space:]]*:[[:space:]]*([^#[:space:]]+).*/\1/p' | head -1 || true
+}
+# A front the rite opened closes with the owner's approval, unless the owner's rites dispense it.
+approval_required() { [ -f "$snapshot" ] && [ "$(owner_approval_word)" != "off" ]; }
+# The item the owner approves: the plan, when this front of it opened, and the trees the gates
+# measured in every repository of the front. Another tree is another item, so an approval never
+# covers what no gate measured; and another front of the same plan is another item too.
+approval_item() {
+  local r acc=""
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    acc="$acc$r $(bash "$here/tree-fingerprint.sh" "$r" 2>/dev/null || true)"$'\n'
+  done <<< "$front_roots"
+  printf 'owner approval to close %s (opened %s, trees %s, plan %s)' "$(front_name)" "$(snap_get ts)" \
+    "$(printf '%s' "$acc" | shasum -a 256 | cut -c1-16)" "$(snap_get fingerprint | cut -c1-12)"
+}
+front_approved() {
+  approval_required || return 0
+  rw_ledger approved-item "$(approval_item)"
+}
 # release_front — in the plan's repository: every other repository of the front, then this one.
 release_front() {
   local r
@@ -202,24 +248,39 @@ PY
 #   rw_ledger add-open <item> <front>                 -> a person must verify <item>
 #   rw_ledger verdict <item|id|all> <approved|rejected> <by> <note>   exit 3: nothing matched
 #   rw_ledger close <passed|gaps_found|abandoned> <front> <reason>
+#   rw_ledger add-open <item> <front> close           -> the owner must approve the closing of <front>
+#   rw_ledger closing-open                            -> one line per closing waiting: id TAB front
+#   rw_ledger approved-item <item>                    -> exit 0 when the owner approved exactly <item>
+#   rw_ledger withdraw <front>                        -> the closing of <front> no longer waits
+# What is about the owner's approval of a closing is written and read in the plan's repository's
+# OWN ledger ($own_ledger), whatever ROADWORTHY_DATA says.
 rw_ledger() {
-  python3 - "$ledger" "$root" "$(fp)" "$@" <<'PY'
+  RW_OWN_LEDGER="$own_ledger" python3 - "$ledger" "$root" "$(fp)" "$@" <<'PY'
 import hashlib, json, os, sys, time
 ledger, root, fp, op = sys.argv[1], os.path.realpath(sys.argv[2]), sys.argv[3], sys.argv[4]
 args = sys.argv[5:]
+own = os.environ.get("RW_OWN_LEDGER") or ledger
 # A ledger inside the project belongs to the project, whatever path the project has today. Only a
 # ledger that lives elsewhere (ROADWORTHY_DATA) can hold the records of several projects.
 shared = os.path.realpath(os.path.dirname(ledger)) != os.path.join(root, ".roadworthy")
 head, wtree = (fp.split() + ["", ""])[:2]
 
-def records():
+def read(path):
     out = []
-    if os.path.exists(ledger):
-        for line in open(ledger, encoding="utf-8", errors="replace"):
+    if os.path.exists(path):
+        for line in open(path, encoding="utf-8", errors="replace"):
             try:
                 out.append(json.loads(line))
             except Exception:
                 continue
+    return out
+
+def records():
+    # The ledger in force, and the plan's repository's own when that is another file: the requests
+    # for the owner's approval of a closing live there, and they are items waiting like any other.
+    out = read(ledger)
+    if os.path.realpath(own) != os.path.realpath(ledger):
+        out = sorted(out + read(own), key=lambda r: r.get("ts", ""))
     return out
 
 def mine(r):
@@ -246,7 +307,7 @@ def fold():
         kind, cmd = r.get("kind", ""), r.get("cmd", "")
         if kind == "needs-human" or (not kind and cmd.startswith("needs-human: ")):
             item = r.get("item") or cmd[len("needs-human: "):]
-            open_items.setdefault(item_id(item), (item, r.get("ts", ""), r.get("front", "")))
+            open_items.setdefault(item_id(item), (item, r.get("ts", ""), r.get("front", ""), r.get("purpose", "")))
             asked = True
         elif not kind:
             if gates and gates[-1].get("wtree") != r.get("wtree"):
@@ -267,12 +328,19 @@ def fold():
         outcome = "gaps_found" if any(g.get("exit") for g in gates) else ("passed" if gates else "none")
     return open_items, outcome, rejected
 
-def append(rec):
+def append(rec, where=None):
     rec = dict({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "head": head, "wtree": wtree,
                 "root": root, "exit": 0}, **rec)
     rec["cmd_sha256"] = hashlib.sha256(rec["cmd"].encode()).hexdigest()
-    with open(ledger, "a", encoding="utf-8") as fh:
+    path = where or ledger
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+def answer(iid, item, front, purpose, verdict, by, note):
+    append({"kind": "human", "cmd": "human: %s %s" % (item, verdict), "item": item, "id": iid,
+            "verdict": verdict, "by": by, "note": note, "front": front, "purpose": purpose, "tail": note},
+           own if purpose == "close" else None)
 
 if op == "state":
     open_items, outcome, rejected = fold()
@@ -283,12 +351,38 @@ if op == "state":
     elif outcome:
         print(outcome if outcome in ("passed", "none") else "gaps_found")
 elif op == "open":
-    for iid, (item, ts, front) in fold()[0].items():
+    for iid, (item, ts, front, _) in fold()[0].items():
         print("\t".join((iid, item, ts, front)))
+elif op == "closing-open":
+    for iid, (item, ts, front, purpose) in fold()[0].items():
+        if purpose == "close":
+            print("\t".join((iid, front)))
 elif op == "add-open":
     item, front = args[0], args[1]
-    append({"kind": "needs-human", "cmd": "needs-human: " + item, "item": item, "id": item_id(item),
-            "front": front, "tail": item})
+    purpose = args[2] if len(args) > 2 else ""
+    rec = {"kind": "needs-human", "cmd": "needs-human: " + item, "item": item, "id": item_id(item),
+           "front": front, "tail": item}
+    if purpose == "close":
+        # One closing waits per front: a request about a tree that is no longer the tree is
+        # withdrawn when the closing asks again.
+        for iid, (old, _, old_front, old_purpose) in fold()[0].items():
+            if old_purpose == "close" and old_front == front and iid != item_id(item):
+                answer(iid, old, old_front, "close", "withdrawn", "close.sh", "the closing ran again on another tree")
+        rec["purpose"] = "close"
+        append(rec, own)
+    else:
+        append(rec)
+elif op == "withdraw":
+    for iid, (item, _, front, purpose) in fold()[0].items():
+        if purpose == "close" and front == args[0]:
+            answer(iid, item, front, "close", "withdrawn", "close.sh", "the front was abandoned")
+elif op == "approved-item":
+    # Read from the plan's repository's own ledger and from nowhere else.
+    last = None
+    for r in read(own):
+        if r.get("kind") == "human" and r.get("id") == item_id(args[0]):
+            last = r
+    sys.exit(0 if last is not None and last.get("verdict") == "approved" else 1)
 elif op == "verdict":
     which, verdict, by, note = args[0], args[1], args[2], args[3]
     open_items = fold()[0]
@@ -298,9 +392,9 @@ elif op == "verdict":
         targets = [(i, v) for i, v in open_items.items() if which in (i, v[0]) or item_id(which) == i]
     if not targets:
         sys.exit(3)
-    for iid, (item, _, front) in targets:
-        append({"kind": "human", "cmd": "human: %s %s" % (item, verdict), "item": item, "id": iid,
-                "verdict": verdict, "by": by, "note": note, "front": front, "tail": note})
+    for iid, (item, _, front, purpose) in targets:
+        answer(iid, item, front, purpose, verdict, by, note)
+        print("\t".join((iid, purpose, item)))
 elif op == "close":
     outcome, front, reason = args[0], args[1], args[2]
     append({"kind": "close", "cmd": "close: " + outcome, "outcome": outcome, "front": front,
@@ -328,7 +422,7 @@ print_open_human() {  # prints the open items, indented; returns 1 when there ar
   local lines
   lines="$(rw_ledger open)"
   [ -n "$lines" ] || return 1
-  printf '%s\n' "$lines" | while IFS=$'\t' read -r id item ts front; do
+  printf '%s\n' "$lines" | while IFS=$'\t' read -r id item ts front _; do
     printf '  %s  %s  (since %s%s)\n' "$id" "$item" "$ts" "${front:+, front $front}"
   done
 }
@@ -358,7 +452,10 @@ case "${1:-}" in
     done
     case "$verdict" in approved|rejected) ;; *) echo "close: the verdict is 'approved' or 'rejected' (close.sh --human \"<item>\" approved --by <who>)" >&2; exit 1 ;; esac
     [ -n "$by" ] || { echo "close: a verdict names who checked (--by <who>): an answer with nobody behind it is the sentence this command replaces" >&2; exit 1; }
-    rw_ledger verdict "$which" "$verdict" "$by" "$note"; rc=$?
+    # What the closing asked of the owner for THIS tree, read before the answer is recorded.
+    asked_now=""
+    if [ -f .roadworthy/scope ] && [ -f "$snapshot" ]; then asked_now="$(approval_item)"; fi
+    answered="$(rw_ledger verdict "$which" "$verdict" "$by" "$note")"; rc=$?
     if [ "$rc" -eq 3 ]; then
       echo "close: no open item matches '$which'. Open items:" >&2
       print_open_human >&2 || echo "  (none)" >&2
@@ -366,9 +463,36 @@ case "${1:-}" in
     fi
     [ "$rc" -eq 0 ] || exit 1
     sync_state
+    # The owner's answer about the closing of a front.
+    closing="$(printf '%s\n' "$answered" | awk -F'\t' '$2 == "close" { print $3; exit }')"
+    if [ -n "$closing" ] && [ "$verdict" = approved ]; then
+      if [ -n "$asked_now" ] && [ "$closing" = "$asked_now" ] && [ "$plan_root" = "$here_p" ] && front_green && release_front; then
+        echo "close: approved by $by — the front is closed: passed; evidence in $ledger; scope released in every repository of the front"
+      else
+        end_closing gaps_found "approved by the owner, but the tree changed after the gates ran"
+        echo "close: approved by $by, and recorded — but it closes nothing yet: the tree changed after the gates ran, or a gate is no longer fresh, and an approval closes the tree the gates measured. Run the closing again (skills/close/scripts/close.sh in $plan_root): it measures the tree as it is now and asks for its approval. The scope is kept."
+      fi
+      print_open_human || true
+      exit 0
+    fi
+    if [ -n "$closing" ]; then
+      echo "close: rejected by $by — the front stays open and its scope is kept; the reason is on record${note:+ ($note)}. Fix what the owner said, commit, and close again."
+      print_open_human || true
+      exit 0
+    fi
     echo "close: $verdict by $by — state $(current_state)"
     print_open_human || true
     exit 0 ;;
+  --owner-word)
+    # The owner's bare word in the chat, handed over by the prompt hook. It is an answer only when
+    # exactly one closing waits here and it is the closing of the front that is open: otherwise the
+    # word was conversation, and nothing is said (exit 4).
+    verdict="${2:-}"; note="${3:-}"
+    case "$verdict" in approved|rejected) ;; *) exit 4 ;; esac
+    waiting="$(rw_ledger closing-open)"
+    [ "$(printf '%s\n' "$waiting" | grep -c . || true)" = "1" ] || exit 4
+    { [ -f .roadworthy/scope ] && [ "$(printf '%s' "$waiting" | cut -f2)" = "$(front_name)" ]; } || exit 4
+    exec bash "$here/close.sh" --human "$(printf '%s' "$waiting" | cut -f1)" "$verdict" --by "the owner, in the prompt" --note "$note" ;;
   --abandon)
     reason="${2:-}"
     [ -n "$reason" ] || { echo "close: abandoning a front needs a reason (close.sh --abandon \"<reason>\"): it is recorded, and the next session reads it" >&2; exit 1; }
@@ -380,6 +504,7 @@ case "${1:-}" in
         (cd "$r" && bash "$here/close.sh" --abandon "$reason") >/dev/null 2>&1 || true
       done <<< "$front_roots"
     fi
+    rw_ledger withdraw "$(front_name)"
     end_closing abandoned "$reason"
     rm -f .roadworthy/scope
     echo "close: front abandoned — $reason. State gaps_found; scope released. What it left in the tree is still there: say so in the hand-off."
@@ -424,6 +549,10 @@ PY
     { [ -f .roadworthy/scope ] && [ -f "$snapshot" ]; } || { echo "close: no front the rite opened is open here; there is nothing to release" >&2; exit 1; }
     if ! front_green; then
       echo "close: the front is not released — a gate of one of its repositories is not fresh on the tree it has now. Run the closing in $plan_root: it measures every repository of the front." >&2
+      exit 1
+    fi
+    if ! front_approved; then
+      echo "close: the front is not released — it closes with the owner's approval of the trees as they are now, and none is on record in $own_ledger. Run the closing in $plan_root, report, and stop: the owner answers in the chat." >&2
       exit 1
     fi
     if [ "$plan_root" = "$here_p" ]; then
@@ -734,6 +863,12 @@ if [ "$plan_root" != "$here_p" ] && [ -f "$plan_root/.roadworthy/scope" ]; then
   echo "close: the gates of this repository passed on this tree, and its scope is kept. This front was opened from $plan_root, where its plan belongs, and closes from there: run the closing in that repository. It measures every repository of the front and releases them together."
   exit 0
 fi
+# What the owner's rites say about the approval of a closing: the one word they know is `off`.
+approval_word="$(owner_approval_word)"
+if [ -f "$snapshot" ] && [ -n "$approval_word" ] && [ "$approval_word" != "off" ]; then
+  end_closing gaps_found "the rites say owner_approval: $approval_word"
+  echo "close: gaps_found — .roadworthy/rites of $plan_root says owner_approval is '$approval_word'; the only word it knows is 'off' (a front the rite opened closes with the owner's approval unless that line dispenses it). That file is the owner's: report it. The scope is kept." >&2; exit 1
+fi
 if [ "$plan_root" = "$here_p" ]; then
   while IFS= read -r r; do
     { [ -n "$r" ] && [ "$r" != "$here_p" ]; } || continue
@@ -752,6 +887,14 @@ if [ "$plan_root" = "$here_p" ]; then
       exit 1
     fi
   done <<< "$front_roots"
+  if ! front_approved; then
+    asking="$(approval_item)"
+    rw_ledger add-open "$asking" "$(front_name)" close
+    sync_state
+    echo "close: every gate passed, in every repository of the front — and a front closes with the owner's approval. Waiting for it: $asking. The state is needs_human and the scope is kept."
+    echo "close: report what was done, with the evidence, and STOP here. Approving is the owner's act, never yours. The owner answers in the chat with a word of their own -- 'aprovado' ('approved'), or 'reprovado <motivo>' ('rejected <reason>') -- and the plugin reads it from the prompt. If the tree changes before the answer, run the closing again."
+    exit 0
+  fi
   release_front || { end_closing gaps_found "a repository of the front could not be released"; echo "close: gaps_found — a repository of the front changed while the closing ran; run it again. The scope here is kept." >&2; exit 1; }
 else
   # The plan's repository already released its part: this one follows, when the whole front is green.

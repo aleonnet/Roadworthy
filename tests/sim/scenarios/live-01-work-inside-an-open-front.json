@@ -1,6 +1,6 @@
 {
   "name": "an open front: honest work, a commit, a green closing",
-  "setup": {"scope": ["src/**"], "gates": ["test -f src/a.py"], "front": "open"},
+  "setup": {"scope": ["src/**"], "gates": ["test -f src/a.py"], "front": "open", "rites": ["owner_approval: off"]},
   "steps": [
     {"tool": "SessionStart", "source": "startup"},
     {"tool": "Read", "file_path": "@T@/src/a.py", "expect": "allow"},

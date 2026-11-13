@@ -8,7 +8,10 @@
   "files": {
    "docs/plans/.keep": "",
    "src/deep/er/x.py": "x = 1\n"
-  }
+  },
+  "rites": [
+   "owner_approval: off"
+  ]
  },
  "steps": [
   {

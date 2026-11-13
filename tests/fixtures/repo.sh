@@ -31,6 +31,17 @@ fx_front() {
   printf '%s\n' "$gates" > "$d/.roadworthy/gates"
 }
 
+# fx_owner_approval_off <dir> — the owner's line that dispenses the approval of a closing, COMMITTED
+# (an uncommitted file of the owner's makes the tree dirty to the closing). From 0.8.0 a front the
+# rite opened closes with the owner's approval; a case that is about something else says here that
+# its toy project does not ask for it, the way an owner would: in .roadworthy/rites.
+fx_owner_approval_off() {
+  mkdir -p "$1/.roadworthy"
+  printf 'owner_approval: off\n' >> "$1/.roadworthy/rites"
+  git -C "$1" add .roadworthy/rites
+  git -C "$1" commit -q -m "the owner's rites: no approval asked at the closing"
+}
+
 # fx_front_rite <dir> <globs> <gates> — a front opened THE WAY THE PLUGIN OPENS IT: scope-write.sh
 # over a plan with fenced Escopo and Verificação blocks, so the scope carries the rite's banner and
 # the snapshot exists. The plan sits next to the repository, not inside it, so it never dirties the

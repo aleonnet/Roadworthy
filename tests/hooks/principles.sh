@@ -142,4 +142,45 @@ printf '%s' "$HPO" | grep -q 'THE OWNER ANSWERED' && fail "a prompt that only me
 HPO="$(hpp 'rw-human: no such item approved')"
 printf '%s' "$HPO" | grep -q 'could not be recorded' && ok "an answer about an item nobody opened is said back, not swallowed" || fail "a failed answer was silent: $HPO"
 
+# ── 0.8.0: the owner closes a front with one word, in the chat ───────────────────────────────
+# The closing of a front the rite opened waits for the owner. The answer is a word of the owner's
+# own prompt -- `aprovado`, `aprovada`, `approved`, or `reprovado <reason>` -- when exactly one
+# closing is waiting and it is the live front's. Two repositories here, and the session stands in
+# the SECOND one, which is where the measured refusals happened.
+section "principles (the owner's word closes the front)"
+WA="$TMP/word-a"; fx_repo_committed "$WA"; WA="$(cd "$WA" && pwd -P)"; mkdir -p "$WA/src"; printf 'a\n' > "$WA/src/a.py"; git -C "$WA" add -A; git -C "$WA" commit -q -m src
+WB="$TMP/word-b"; fx_repo_committed "$WB"; WB="$(cd "$WB" && pwd -P)"; mkdir -p "$WB/lib"; printf 'b\n' > "$WB/lib/b.py"; git -C "$WB" add -A; git -C "$WB" commit -q -m lib
+printf '# P\n## Scope\n```\nsrc/**\n%s/lib/**\n```\n## Verification\n```\ntrue\ncd %s && true\n```\n' "$WB" "$WB" > "$TMP/word-plan.md"
+WCLOSE="$ROOT/skills/close/scripts/close.sh"
+w_open() { (cd "$WA" && bash "$ROOT/skills/plan/scripts/scope-write.sh" "$TMP/word-plan.md") >/dev/null; }
+w_close() { (cd "$WA" && env -u ROADWORTHY_DATA bash "$WCLOSE") >/dev/null 2>&1 || true; }
+w_state() { (cd "$1" && env -u ROADWORTHY_DATA bash "$WCLOSE" --state); }
+# w_say <cwd> <prompt> — what the hook hands back to the agent for that prompt of the owner
+w_say() { python3 -c 'import json,sys; print(json.dumps({"transcript_path":"","session_id":"w1","cwd":sys.argv[1],"hook_event_name":"UserPromptSubmit","prompt":sys.argv[2]}))' "$1" "$2" | env -u ROADWORTHY_DATA bash "$ROOT/hooks/run-hook.cmd" principles | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])'; }
+w_open; for r in "$WA" "$WB"; do git -C "$r" add .roadworthy/gates; git -C "$r" commit -q -m 'the gates of the front'; done
+printf 'b2\n' > "$WB/lib/b.py"; git -C "$WB" commit -q -am work
+w_close
+[ "$(w_state "$WA")" = "needs_human" ] || fail "the fixture: the closing is not waiting for the owner ($(w_state "$WA"))"
+WO="$(w_say "$WB" 'acho que está aprovado, mas olhe o texto antes')"
+[ -f "$WA/.roadworthy/scope" ] && ok "the word in the middle of a sentence is conversation, not an order" || fail "a sentence that only contains the word closed the front: $WO"
+WO="$(w_say "$WB" 'aprovado')"
+[ ! -f "$WA/.roadworthy/scope" ] && [ ! -f "$WB/.roadworthy/scope" ] && [ "$(w_state "$WA")$(w_state "$WB")" = "passedpassed" ] \
+  && ok "the owner's 'aprovado', with the session standing in the second repository, closes the front in both" || fail "the owner's approval in the prompt did not close the front: $(w_state "$WA")/$(w_state "$WB"): $WO"
+printf '%s' "$WO" | grep -q 'THE OWNER' && ok "and the agent is told what the owner's word did" || fail "the owner's approval was silent to the agent: $WO"
+WO="$(w_say "$WB" 'aprovado')"
+printf '%s' "$WO" | grep -q 'THE OWNER' && fail "the word with no closing waiting was taken for an order: $WO" || ok "with no closing waiting, the same word is only a word"
+# The tree changed after the gates: recorded, and the front stays open.
+w_open; w_close
+printf 'b3\n' > "$WB/lib/b.py"; git -C "$WB" commit -q -am 'changed after the gates'
+WO="$(w_say "$WA" 'Aprovado.')"
+[ -f "$WA/.roadworthy/scope" ] && [ -f "$WB/.roadworthy/scope" ] && printf '%s' "$WO" | grep -q -i 'again' \
+  && ok "an approval after the tree changed is recorded, closes nothing and sends the closing to run again" || fail "an approval closed a tree the gates never measured: $WO"
+w_close
+WO="$(w_say "$WB" 'reprovado o texto da ajuda está errado')"
+[ -f "$WA/.roadworthy/scope" ] && [ -f "$WB/.roadworthy/scope" ] && [ "$(w_state "$WA")" = "gaps_found" ] && grep -q 'o texto da ajuda está errado' "$WA/.roadworthy/evidence.jsonl" \
+  && ok "'reprovado <motivo>' keeps the scope, records gaps_found and the reason" || fail "a rejection released the scope or lost its reason: $(w_state "$WA"): $WO"
+w_close
+WO="$(w_say "$WA" 'rw-human: aprovado')"
+[ ! -f "$WA/.roadworthy/scope" ] && [ ! -f "$WB/.roadworthy/scope" ] && ok "the line 'rw-human: aprovado' closes it too" || fail "the owner's approval in the prompt did not close the front (rw-human line): $WO"
+
 rw_end

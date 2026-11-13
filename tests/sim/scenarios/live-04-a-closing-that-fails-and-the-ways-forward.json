@@ -1,5 +1,5 @@
 {
- "name": "a red closing, the fix, a human verification, a second front",
+ "name": "a red closing, the fix, a human verification, the owner's approval, a second front",
  "setup": {
   "front": "open",
   "gates": [
@@ -61,7 +61,28 @@
   {
    "tool": "Bash",
    "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
-   "expect": "allow"
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "[ \"$(bash @PLUGIN@/skills/close/scripts/close.sh --state)\" = needs_human ]",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/close/scripts/close.sh --owner-word approved",
+   "expect": "deny"
+  },
+  {
+   "tool": "Bash",
+   "command": "printf '%s' '{\"prompt\":\"aprovado\"}' | bash @PLUGIN@/hooks/run-hook.cmd principles",
+   "expect": "deny"
+  },
+  {
+   "tool": "Prompt",
+   "prompt": "aprovado"
   },
   {
    "tool": "Bash",
@@ -88,7 +109,28 @@
   {
    "tool": "Bash",
    "command": "bash @PLUGIN@/skills/close/scripts/close.sh",
-   "expect": "allow"
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Prompt",
+   "prompt": "aprovado"
+  },
+  {
+   "tool": "Prompt",
+   "prompt": "rw-human: the label on the device approved"
+  },
+  {
+   "tool": "Bash",
+   "command": "[ \"$(bash @PLUGIN@/skills/close/scripts/close.sh --state)\" = passed ]",
+   "expect": "allow",
+   "expect_rc": 0
+  },
+  {
+   "tool": "Bash",
+   "command": "bash @PLUGIN@/skills/plan/scripts/scope-write.sh @PLANS@/second.md && bash @PLUGIN@/skills/close/scripts/close.sh --abandon 'the scenario ends: opening again proves the front had closed'",
+   "expect": "allow",
+   "expect_rc": 0
   },
   {
    "tool": "SessionStart",

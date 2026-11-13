@@ -2,6 +2,7 @@
  "name": "the owner's loose files at the opening are not the front's; a new stray is said, not a wall; abandoning and replanning works",
  "setup": {
   "front": "open",
+  "rites": ["owner_approval: off"],
   "loose": {
    "notes-of-the-owner.txt": "mine\n",
    "outside/b.py": "b = 5  # the owner was here\n"

@@ -133,6 +133,8 @@ git -C "$TOY" add -A >/dev/null 2>&1; git -C "$TOY" commit -q -m "front open" >/
 ( cd "$TOY" && bash "$ROOT/skills/close/scripts/close.sh" --check ) > "$OUT/check.txt" 2>&1 || true
 ( cd "$TOY" && bash "$ROOT/skills/close/scripts/close.sh" ) > "$OUT/close.txt" 2>&1 || true
 ( cd "$TOY" && bash "$ROOT/skills/close/scripts/close.sh" --check ) > "$OUT/check2.txt" 2>&1
+# 0.8.0: green gates leave a front the rite opened WAITING for the owner; the scope is kept.
+grep -q 'owner approval to close' "$OUT/close.txt" && [ -f "$TOY/.roadworthy/scope" ] && ok "the closing left the front waiting for the owner's approval, the scope kept" || fail "the closing did not wait for the owner: $(tail -3 "$OUT/close.txt")"
 grep -q 'FRESH     true' "$OUT/check2.txt" && ok "close.sh --check reports the gate FRESH from the shell" || fail "gate not FRESH before the claim: $(cat "$OUT/check2.txt")"
 ask s5 "Reply with exactly these two words and nothing else: All done."
 latches="$(find "$TOY/.roadworthy" "$HOME/.claude/plugins/data" -maxdepth 3 -path '*stop-latch*' -type f -newer "$OUT/check2.txt" 2>/dev/null | wc -l | tr -d ' ')"
@@ -171,6 +173,15 @@ n="$(python3 -c 'import sys
 try: print(sum(1 for _ in open(sys.argv[1])))
 except Exception: print(0)' "$TOY/.roadworthy/denials.jsonl")"
 [ "$n" -ge 3 ] && ok "$n denial(s) recorded in $TOY/.roadworthy/denials.jsonl" || fail "the project ledger has $n denial(s); the harness environment sent them elsewhere"
+
+step "0.8.0: the owner's word, in a REAL prompt, closes the front"
+# What the suite can only fake: that the harness hands the prompt hook the prompt the person
+# submitted, and that the hook finishes inside its time limit with a closing to release. The
+# session is asked nothing else: the whole prompt is the owner's word.
+ask s7 "aprovado"
+[ ! -f "$TOY/.roadworthy/scope" ] && [ "$(cd "$TOY" && bash "$ROOT/skills/close/scripts/close.sh" --state)" = "passed" ] \
+  && ok "the owner's 'aprovado' in a real prompt closed the front: passed, the scope released" \
+  || fail "the owner's word in a real prompt did not close the front: state $(cd "$TOY" && bash "$ROOT/skills/close/scripts/close.sh" --state), $(cd "$TOY" && bash "$ROOT/skills/close/scripts/close.sh" --human 2>&1 | tail -2)"
 
 printf '\n%d step(s), %d failure(s)\n' "$STEP" "$FAIL"
 [ "$FAIL" -eq 0 ] && echo "RESULT: the fences hold in a real session" || { echo "RESULT: $FAIL step(s) red"; exit 1; }

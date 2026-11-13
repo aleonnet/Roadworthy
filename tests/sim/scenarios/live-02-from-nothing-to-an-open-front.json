@@ -1,7 +1,10 @@
 {
  "name": "no front: the plan is written, approved, and the front opens from it",
  "setup": {
-  "front": "none"
+  "front": "none",
+  "rites": [
+   "owner_approval: off"
+  ]
  },
  "steps": [
   {

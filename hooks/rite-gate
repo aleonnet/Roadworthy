@@ -143,8 +143,9 @@
 # owner's files -> red with `the agent edited the standing gates`; the approval looked up only in
 # the ledger of the repository the front opens in -> red with `an approved plan could not open its
 # front in a second repository`; and, in hooks/frontcheck.py, only in the local ledger -> red with
-# `a front opened in a second repository was not honoured`. Each green again on the clean file,
-# restored with its SHA-256 verified.
+# `a front opened in a second repository was not honoured`; the reader's rule for the prompt hook
+# run by hand (hooks/shellread.py, `H ... prompt`) removed -> red with `the agent approved its own
+# closing`. Each green again on the clean file, restored with its SHA-256 verified.
 export RW_HOOK="rite-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -509,6 +510,10 @@ case "$tool" in
     # that types `--owner` has made itself the owner.
     if printf '%s\n' "$target" | grep -q '^H	.*	owner$'; then
       deny PreToolUse "opening a front with --owner is the owner's act, not the agent's: it says a person opened this front himself, with no approval on record. A front the agent opens comes from an approved plan: submit the plan through plan mode and, once it is approved, run skills/plan/scripts/scope-write.sh <plan.md> without --owner. If the owner wants to open it himself, he runs the command outside the agent. (rite_gate)"
+    fi
+    # The prompt hook is run by the harness, on the prompt a person submitted.
+    if printf '%s\n' "$target" | grep -q '^H	.*	prompt$'; then
+      deny PreToolUse "the prompt hook is run by the harness, on the prompt the person submitted: that is what makes a line in it the person's own. Run by the agent, on an event the agent wrote, it would record the agent's words as the owner's -- an approval of a closing, an answer to a human verification, a change to the owner's files. Ask the owner and stop there; the owner writes the word or the line in the chat. To see what the hook does, read its file or run its case (tests/hooks/principles.sh). (rite_gate)"
     fi
     # The answer of a person is recorded by the person. A human verification exists because a
     # machine cannot make it; an agent that types `--human all approved --by owner` has made it.
