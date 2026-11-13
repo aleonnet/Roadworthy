@@ -84,6 +84,14 @@ for f in docs.json free; do
   denied && printf '%s' "$OUT" | grep -q 'the owner' || fail "the agent edited docs.json (or free) through the shell: $f"
 done
 ok "docs.json and the free list are the owner's too, through both doors"
+# 0.8.0: the standing gates of the project (.roadworthy/standing-gates) are what every closing
+# runs, whatever the plan says. A file the agent could edit would be a gate the agent could drop.
+rg Edit "{\"file_path\":\"$RG/.roadworthy/standing-gates\"}"
+denied && printf '%s' "$OUT" | grep -q 'the owner' && ok "the standing gates are the owner's: denied to the edit tool" || fail "the agent edited the standing gates with the edit tool: $OUT"
+rg Bash "{\"command\":\"echo true > $RG/.roadworthy/standing-gates\"}"
+denied && printf '%s' "$OUT" | grep -q 'the owner' && ok "and through the shell" || fail "the agent edited the standing gates through the shell: $OUT"
+rg Bash "{\"command\":\"rm $RG/.roadworthy/standing-gates\"}"
+denied && ok "and they cannot be removed" || fail "the agent edited the standing gates (removed them): $OUT"
 # ── removing the foundation is writing it ────────────────────────────────────
 # The command reader recognised writes and not removals, and `mv` looked at its destination only.
 # The chain measured on 2026-09-14: open the front, write outside the scope through the shell (a

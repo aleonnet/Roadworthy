@@ -21,7 +21,8 @@ what a hook said, the facts listed under FLAGS below.
   setup: {"scope": ["src/**"], "gates": ["true"], "front": "open"|"none"|"approved",
           "files": {"path": "content"}, "loose": {"path": "left uncommitted before the front opens"},
           "protected": ["lib/auth/**"], "free": [...], "docs_json": {"plans": "docs/plans"},
-          "rites": ["plan_gate: both"], "options": {"PLAN_GATE": "preflight"}, "ignore": [...]}
+          "rites": ["plan_gate: both"], "standing-gates": ["true"], "options": {"PLAN_GATE": "preflight"},
+          "ignore": [...]}
   steps: {"tool": "Bash", "command": "..."}
          {"tool": "Write", "file_path": "@T@/src/a.py", "content": "..."}
          {"tool": "Edit", "file_path": "...", "old_string": "...", "new_string": "..."}
@@ -72,7 +73,8 @@ PLUGIN = os.path.dirname(os.path.dirname(HERE))
 RITE_SCRIPTS = ("scope-write.sh", "close.sh", "refute.sh", "plan-preflight.sh", "overnight-start.sh",
                 "overnight-entry.sh", "overnight-close.sh", "docs-init.sh")
 FOUNDATION = ("scope", "gates", "plan.snapshot", "state", "protected", "overnight-rules", "free",
-              "docs.json", "rites", "overnight", "evidence.jsonl", "denials.jsonl", "refutations.jsonl")
+              "docs.json", "rites", "standing-gates", "overnight", "evidence.jsonl", "denials.jsonl",
+              "refutations.jsonl")
 
 
 def sh(args, cwd=None, env=None, stdin=None, timeout=120):
@@ -155,7 +157,7 @@ class Sim:
                       ".roadworthy/refutations.jsonl", ".roadworthy/preflight.jsonl",
                       ".roadworthy/readings.jsonl", ".roadworthy/stop-latch/"]
         self.put(os.path.join(self.toy, ".gitignore"), "\n".join(ignore) + "\n")
-        for name in ("protected", "free", "rites"):
+        for name in ("protected", "free", "rites", "standing-gates"):
             if st.get(name):
                 self.put(os.path.join(self.toy, ".roadworthy", name), "\n".join(st[name]) + "\n")
         if st.get("docs_json"):
@@ -495,7 +497,7 @@ class Sim:
 
     def exempt(self, rel):
         if rel in (".roadworthy/gates", ".roadworthy/protected", ".roadworthy/free", ".roadworthy/rites",
-                   ".roadworthy/docs.json", ".roadworthy/overnight-rules"):
+                   ".roadworthy/docs.json", ".roadworthy/overnight-rules", ".roadworthy/standing-gates"):
             return True
         plans = (self.s.get("setup", {}).get("docs_json") or {}).get("plans")
         if plans and rel.endswith(".md") and os.path.dirname(rel) == plans.rstrip("/"):

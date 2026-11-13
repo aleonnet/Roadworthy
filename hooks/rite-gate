@@ -85,7 +85,9 @@
 # the rite) and `docs.json` joined them. docs.json was editable on the argument that it "names
 # directories and status words, and unlocks nothing" -- but the `plans` directory it names is
 # exempt from this gate and from the scope lock, so pointing it at `.` exempted the repository
-# (field note, 2026-09-18).
+# (field note, 2026-09-18). `rites` (what the owner requires of the project) is the fifth, and from
+# 0.8.0 `standing-gates` is the sixth: the commands every closing of the project runs, whatever the
+# plan declares. A list of gates the agent could edit is a gate the agent could drop.
 #
 # THE PLAN HAS TWO HOMES: plans_dir, where plan mode writes it, and the `plans` directory the
 # project declares in .roadworthy/docs.json, where the house documentation norm keeps it. Both
@@ -137,6 +139,9 @@
 # opened himself was not honoured`; the approval not asked for at each write -> `a front opened from
 # an unapproved scope was honoured at the next write`; the refusal saying "both are open to you now"
 # again -> `the refusal of a front nobody approved names an exit that is refused`.
+# Refuted 2026-11-13 (0.8.0), against tests/hooks/rite-gate.sh: the standing gates out of the
+# owner's files -> red with `the agent edited the standing gates`. Green again on the clean file,
+# restored with its SHA-256 verified.
 export RW_HOOK="rite-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -162,6 +167,7 @@ foundation() {
 owner_config() {
   case "$1" in
     .roadworthy/protected|.roadworthy/overnight-rules|.roadworthy/free|.roadworthy/docs.json|.roadworthy/rites) return 0 ;;
+    .roadworthy/standing-gates) return 0 ;;
     *) return 1 ;;
   esac
 }

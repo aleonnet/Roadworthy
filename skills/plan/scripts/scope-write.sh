@@ -45,6 +45,14 @@
 # `--owner` is written in the snapshot and stands where the approval would. It is a person's act --
 # the entry gate denies the agent a command that carries it, as it denies `close.sh --human`.
 #
+# THE STANDING GATES (0.8.0). What a project asks of EVERY closing is the owner's to say, in
+# `.roadworthy/standing-gates`: one command per line, `#` comments. They are joined to the gates of
+# the front here, after the plan's (one the plan already declares is not repeated), so the closing
+# runs them like any gate. The snapshot keeps them APART (`standing_gates`): its `gates` stay the
+# plan's, because the fingerprint an approval approved is computed from those, and a project that
+# adds a standing gate must not void every approval on record. Until 0.8.0 the quality bar of a
+# project was the Verification block of its newest plan, copied by hand into the next one.
+#
 # Usage: scope-write.sh <plan.md> [--root <repository>] [--base <ref>] [--owner]
 set -euo pipefail
 usage="usage: scope-write.sh <plan.md> [--root <repository>] [--base <ref>] [--owner]"
@@ -139,8 +147,19 @@ banner = (f"# Written by scope-write.sh from {name}. Do not edit by hand: the cl
           f"# against .roadworthy/plan.snapshot, and a hand edit here only makes the digests disagree.\n")
 with open(".roadworthy/scope", "w", encoding="utf-8") as fh:
     fh.write(banner + "\n".join(globs) + "\n")
+# The standing gates of the project: the owner's file, read as it is now -- a front reopened runs
+# what the owner asks today.
+standing = []
+try:
+    with open(".roadworthy/standing-gates", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.rstrip()
+            if line.strip() and not line.strip().startswith("#") and line not in gates and line not in standing:
+                standing.append(line)
+except FileNotFoundError:
+    pass
 with open(".roadworthy/gates", "w", encoding="utf-8") as fh:
-    fh.write(banner + "\n".join(gates) + "\n")
+    fh.write(banner + "\n".join(gates + standing) + "\n")
 
 def sha(path):
     try:
@@ -174,6 +193,8 @@ snap = {"ts": live["ts"] if reopened and live.get("ts") else time.strftime("%Y-%
         "base_head": head, "scope_globs": globs, "gates": gates,
         "declared_base": declared_base, "fingerprint": fingerprint(text),
         "report": header(text, "report|relato"), "preexisting": preexisting}
+if standing:
+    snap["standing_gates"] = standing
 if opened_by:
     snap["opened_by"] = opened_by
 canonical = json.dumps(snap, sort_keys=True, separators=(",", ":"))
@@ -208,7 +229,8 @@ if loose:
 print(f"scope-write: front {'reopened' if reopened else 'open'} from {name}")
 print(f"  base HEAD  {head[:12] or '(no commits)'}{'  (kept from when the front opened)' if reopened else ''}")
 print(f"  scope      {len(globs)} glob(s) -> .roadworthy/scope")
-print(f"  gates      {len(gates)} command(s) -> .roadworthy/gates")
+print(f"  gates      {len(gates)} command(s) -> .roadworthy/gates" +
+      (f", and {len(standing)} standing gate(s) of the project (.roadworthy/standing-gates)" if standing else ""))
 print(f"  snapshot   .roadworthy/plan.snapshot")
 if opened_by:
     print(f"  opened by the owner, outside the agent: it stands with no approval on record")

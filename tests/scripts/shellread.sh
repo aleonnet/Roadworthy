@@ -158,6 +158,8 @@ TABLE = [
     (HIDES, "git mv a.py b.py", ["R /repo a.py", "W /repo b.py"]),
     (HIDES, "find .roadworthy -name plan.snapshot -delete", ["F /repo /repo/.roadworthy"]),
     (HIDES, "find . -name plan.snapshot -delete", ["F /repo /repo"]),
+    (HIDES, "find . -name standing-gates -delete", ["F /repo /repo"]),
+    (HIDES, "find . -name rites -delete", ["F /repo /repo"]),
     (HIDES, "find . -delete", ["F /repo /repo"]),
     (HIDES, "find . -name '*.bak' -exec rm {} +", ["D /repo /repo"]),
     (HIDES, "find .roadworthy -name state -exec sh -c 'rm \"$1\"' _ {} \\;", ["F /repo /repo/.roadworthy"]),

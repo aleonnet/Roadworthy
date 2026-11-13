@@ -65,7 +65,7 @@ esac
 # requires (`/roadworthy:plan`), and the only way out is widening the scope by hand: measured in
 # the field on 2026-09-08 and again on 2026-09-13, in two different projects.
 # Nothing under .roadworthy/ is exempt. The foundation is the rite's, `protected`,
-# `overnight-rules`, `free` and `docs.json` are the owner's, and the rite gate denies all of them
+# `overnight-rules`, `free`, `docs.json`, `rites` and `standing-gates` are the owner's, and the rite gate denies all of them
 # to the agent through both doors; an exemption here would be dead code that reads as a promise.
 if rw_is_plan_file "$target" "$root"; then exit 0; fi
 

@@ -130,4 +130,43 @@ assert s["report"] == "prose, the conclusion first", "report: %r" % s.get("repor
 assert "loose.txt" in s["preexisting"], "preexisting: %r" % s.get("preexisting")
 PY
 
+# ── 0.8.0: the standing gates of the project ────────────────────────────────────────────────
+# What a project asks of EVERY closing lived in the newest plan under docs/plans/done, to be copied
+# by hand into the next one ("it is this repository's quality bar", the runbook said). Forgotten,
+# the front closed without it. `.roadworthy/standing-gates` is the owner's file: one command per
+# line, joined to the gates of every front when it opens -- and kept apart in the snapshot, so the
+# fingerprint of the plan (what the approval approved) is still the plan's.
+section "scope-write.sh (the standing gates of the project)"
+SG="$TMP/standing"; fx_repo_committed "$SG"; mkdir -p "$SG/src" "$SG/.roadworthy"; printf 'a\n' > "$SG/src/a.txt"
+printf '# what every closing of this project runs\ntest -f src/a.txt\n\ntrue\n' > "$SG/.roadworthy/standing-gates"
+printf '# P\n## Scope\n```\nsrc/**\n```\n## Verification\n```\ntrue\n```\n' > "$TMP/sg-plan.md"
+git -C "$SG" add -A; git -C "$SG" commit -q -m base
+SG_OPEN="$( (cd "$SG" && bash "$ROOT/skills/plan/scripts/scope-write.sh" "$TMP/sg-plan.md") 2>&1 )"
+git -C "$SG" add .roadworthy/gates; git -C "$SG" commit -q -m 'the gates of the front'
+sg_lines() { grep -v -E '^[[:space:]]*(#|$)' "$SG/.roadworthy/gates"; }
+[ "$(sg_lines)" = "$(printf 'true\ntest -f src/a.txt')" ] \
+  && ok "the standing gates are joined to the gates of the front, after the plan's, and one already in the plan is not repeated" \
+  || fail "a standing gate did not run at the closing: it is not in the gates of the front: $(sg_lines | tr '\n' '|')"
+printf '%s' "$SG_OPEN" | grep -q 'standing' && ok "and the opening says how many it added" || fail "the opening is silent about the standing gates: $SG_OPEN"
+python3 - "$SG/.roadworthy/plan.snapshot" "$(python3 hooks/planblocks.py fingerprint "$TMP/sg-plan.md")" <<'PY' \
+  && ok "the snapshot keeps them apart, and the fingerprint is still the plan's" || fail "the standing gates changed the fingerprint of the plan, or are not in the snapshot"
+import json, sys
+s = json.load(open(sys.argv[1]))
+assert s["fingerprint"] == sys.argv[2], "fingerprint"
+assert s["gates"] == ["true"], "gates: %r" % s["gates"]
+assert s["standing_gates"] == ["test -f src/a.txt"], "standing: %r" % s.get("standing_gates")
+PY
+SG_FACTS="$(python3 hooks/frontcheck.py "$SG" "$SG/.roadworthy/evidence.jsonl" false)"
+[ -z "$SG_FACTS" ] && ok "and the fence that measures the front finds it intact" || fail "a front with standing gates is called broken: $SG_FACTS"
+SG_OUT="$( (cd "$SG" && env -u ROADWORTHY_DATA bash "$ROOT/skills/close/scripts/close.sh") 2>&1 || true )"
+printf '%s' "$SG_OUT" | grep -q 'OK    test -f src/a.txt' && printf '%s' "$SG_OUT" | grep -q '^close: passed' \
+  && ok "the closing runs the standing gate with the plan's" || fail "a standing gate did not run at the closing: $SG_OUT"
+# A standing gate that fails keeps the front open, like any gate.
+printf 'test -f src/not-there.txt\n' > "$SG/.roadworthy/standing-gates"; git -C "$SG" add -A; git -C "$SG" commit -q -m 'the owner asks for more'
+(cd "$SG" && bash "$ROOT/skills/plan/scripts/scope-write.sh" "$TMP/sg-plan.md") >/dev/null 2>&1
+git -C "$SG" add .roadworthy/gates; git -C "$SG" commit -q --allow-empty -m 'the gates of the front'
+SG_OUT="$( (cd "$SG" && env -u ROADWORTHY_DATA bash "$ROOT/skills/close/scripts/close.sh") 2>&1 || true )"
+printf '%s' "$SG_OUT" | grep -q 'FAIL  test -f src/not-there.txt' && [ -f "$SG/.roadworthy/scope" ] \
+  && ok "and a standing gate that fails keeps the front open" || fail "a standing gate did not run at the closing (a red one passed): $SG_OUT"
+
 rw_end

@@ -115,7 +115,7 @@ GLOB_CHARS = "*?["
 # The names the rite keeps under its own directory: what a `find -name` could be aiming at.
 RITE_NAMES = (".roadworthy", "scope", "gates", "plan.snapshot", "state", "overnight", "evidence.jsonl",
               "denials.jsonl", "refutations.jsonl", "preflight.jsonl", "readings.jsonl", "stop-latch",
-              "protected", "overnight-rules", "free", "docs.json")
+              "protected", "overnight-rules", "free", "docs.json", "rites", "standing-gates")
 
 
 class Word:
