@@ -28,7 +28,8 @@
 # red with `the owner's approval in the prompt did not close the front`; and, in
 # skills/close/scripts/close.sh, the freshness of the gates not asked before the approval releases
 # -> red with `an approval closed a tree the gates never measured`. Each green again on the clean
-# file, restored with its SHA-256 verified.
+# file, restored with its SHA-256 verified. In hooks/ownerline.py: a marker accepted anywhere in a
+# line -> red with `a line that is not the owner's order changed a file`.
 export RW_HOOK="principles"
 export RW_ON_CRASH=allow
 source "$(dirname "$0")/lib.sh"
@@ -75,7 +76,17 @@ project_data=""
 # own answers to the repository above it), and its snapshot names the plan's -- so the word works
 # with the session standing in any repository of the front.
 # The entry gate denies the agent this hook run by hand (hooks/shellread.py, `H ... prompt`).
-human_notice=""
+#
+# THE OWNER'S OTHER ACTS (0.8.0), by the same channel and the same grammar:
+#     rw-principios: aceito                         agrees to the principles file as it is now
+#     rw-config: [<repository>] <file> + <line>     changes one of the owner's files (- removes)
+#     rw-config: [<repository>] docs.json <key> = <value>
+# Until then both were done outside the agent, by hand: the pin of the principles file rewritten
+# in a JSON file, and the six files the fences read edited in a shell. What cannot be applied is
+# said and writes nothing. The declared limit is the one `rw-human:` has: the channel trusts the
+# prompt the person submitted, so a text the person pasted with one of these lines at the start of
+# a line is the person's order.
+human_notice=""; accept_principles=""
 prompt="$(rw_field prompt)"
 orders=""
 [ -z "$prompt" ] || orders="$(RW_PROMPT="$prompt" python3 "$(dirname "$0")/ownerline.py" 2>/dev/null || true)"
@@ -94,6 +105,16 @@ except Exception:
   while IFS=$'\t' read -r kind f1 f2 f3; do
     case "$kind" in
       error) human_notice="${human_notice}${f1}"$'\n' ;;
+      principles) accept_principles=1 ;;
+      config)
+        set +o errtrace
+        if answer="$(python3 "$(dirname "$0")/ownerline.py" --apply-config "$root" "$cwd" "$f1" 2>&1)"; then
+          set -o errtrace
+          human_notice="${human_notice}THE OWNER CHANGED ONE OF THE OWNER'S FILES IN THIS PROMPT -- $answer. It is the owner's change: do not edit that file; commit it as it is when the tree has to be clean (the commit guard lets the owner's files through)."$'\n'
+        else
+          set -o errtrace
+          human_notice="${human_notice}The owner's 'rw-config:' line could not be applied: $answer"$'\n'
+        fi ;;
       human)
         [ -n "$front_home" ] || continue
         # A refusal from the closing script is an ANSWER here (no such item), not an internal
@@ -122,7 +143,7 @@ except Exception:
   done <<< "$orders"
 fi
 
-RW_HUMAN_NOTICE="$human_notice" RW_SESSION="$(rw_field session_id)" \
+RW_HUMAN_NOTICE="$human_notice" RW_ACCEPT_PRINCIPLES="$accept_principles" RW_SESSION="$(rw_field session_id)" \
 python3 - "$principles" "$project_rules" "$transcript" "$data" "$root" "$project_data" <<'PY'
 import hashlib, json, os, re, sys, time
 principles, project_rules, transcript = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -162,6 +183,13 @@ if data:
         key = hashlib.sha256(os.path.abspath(principles).encode()).hexdigest()[:16]
         pin_path = os.path.join(data, "principles." + key + ".json")
         now = hashlib.sha256(open(principles, "rb").read()).hexdigest()
+        if os.environ.get("RW_ACCEPT_PRINCIPLES"):
+            # `rw-principios: aceito`, in the owner's own prompt: the text as it is now is agreed.
+            json.dump({"sha256": now, "pinned_at": time.strftime("%Y-%m-%d"), "file": os.path.abspath(principles),
+                       "accepted": "by the owner, in the prompt"},
+                      open(pin_path, "w", encoding="utf-8"), indent=1)
+            notices.append("THE OWNER ACCEPTED THE PRINCIPLES FILE IN THIS PROMPT: %s is agreed as it is now (%s)."
+                           % (principles, now[:16]))
         if os.path.exists(pin_path):
             pin = json.load(open(pin_path, encoding="utf-8"))
             if pin.get("sha256") != now:
@@ -169,9 +197,11 @@ if data:
                     "THE PRINCIPLES FILE CHANGED SINCE IT WAS LAST AGREED.\n"
                     "  file:   %s\n  agreed: %s (%s)\n  now:    %s\n"
                     "Nothing here can prevent that edit -- the file lives outside every repository. What it\n"
-                    "can do is say so out loud, every prompt, until the owner agrees to the new text by\n"
-                    "updating the pin at %s." % (principles, pin.get("sha256", "")[:16],
-                                                 pin.get("pinned_at", "unknown date"), now[:16], pin_path))
+                    "can do is say so out loud, every prompt, until the owner agrees to the new text. That is\n"
+                    "the owner's act, never the agent's: a line of the owner's own in the chat,\n"
+                    "  rw-principios: aceito\n"
+                    "(the pin is %s)." % (principles, pin.get("sha256", "")[:16],
+                                         pin.get("pinned_at", "unknown date"), now[:16], pin_path))
         else:
             json.dump({"sha256": now, "pinned_at": time.strftime("%Y-%m-%d"), "file": os.path.abspath(principles)},
                       open(pin_path, "w", encoding="utf-8"), indent=1)

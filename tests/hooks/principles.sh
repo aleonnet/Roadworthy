@@ -183,4 +183,68 @@ w_close
 WO="$(w_say "$WA" 'rw-human: aprovado')"
 [ ! -f "$WA/.roadworthy/scope" ] && [ ! -f "$WB/.roadworthy/scope" ] && ok "the line 'rw-human: aprovado' closes it too" || fail "the owner's approval in the prompt did not close the front (rw-human line): $WO"
 
+# ── 0.8.0: the owner's acts pass through the chat ─────────────────────────────────────────────
+# Two acts were the owner's and could only be done OUTSIDE the agent, by hand: agreeing to a
+# principles file that changed (rewriting its pin), and changing the files the fences read to
+# guard against the agent. Both are lines of the owner's own prompt now, at the start of a line:
+#     rw-principios: aceito
+#     rw-config: [<repository>] <file> + <line>      (- <line> removes it)
+#     rw-config: [<repository>] docs.json <key> = <value>
+section "principles (the owner's acts, in the chat)"
+OC="$TMP/owner-chat"; fx_repo_committed "$OC"; OC="$(cd "$OC" && pwd -P)"
+OC2="$TMP/owner-chat-other"; fx_repo_committed "$OC2"; OC2="$(cd "$OC2" && pwd -P)"
+OPF="$TMP/owner-principles.md"; OPD="$TMP/owner-pin"; printf '1. one rule\n' > "$OPF"
+# o_say <prompt> — what the hook says for that prompt, with the session standing in $OC
+o_say() { python3 -c 'import json,sys; print(json.dumps({"transcript_path":"","session_id":"o1","cwd":sys.argv[1],"hook_event_name":"UserPromptSubmit","prompt":sys.argv[2]}))' "$OC" "$1" | CLAUDE_PLUGIN_OPTION_PRINCIPLES_FILE="$OPF" ROADWORTHY_DATA="$OPD" bash "$ROOT/hooks/run-hook.cmd" principles | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])'; }
+o_say 'hello' >/dev/null                                   # the first sight pins the file
+printf '1. one rule\n2. a rule somebody added\n' > "$OPF"
+OO="$(o_say 'what changed?')"
+printf '%s' "$OO" | grep -q 'CHANGED SINCE' || fail "the fixture: a changed principles file is not announced"
+printf '%s' "$OO" | grep -q 'rw-principios: aceito' && ok "the notice of a changed principles file says how the owner agrees to it: a line in the chat" || fail "the notice still sends the owner to edit the pin by hand: $OO"
+OO="$(o_say 'eu ainda não escrevi rw-principios: aceito, só estou perguntando')"
+printf '%s' "$OO" | grep -q 'CHANGED SINCE' && ok "the marker in the middle of a sentence agrees to nothing" || fail "a line that is not the owner's order changed a file: the pin was updated from the middle of a sentence"
+OO="$(o_say $'li o arquivo novo.\nrw-principios: aceito')"
+printf '%s' "$OO" | grep -q 'THE OWNER ACCEPTED' && ! printf '%s' "$OO" | grep -q 'CHANGED SINCE' \
+  && ok "'rw-principios: aceito' pins the new text, and says so" || fail "the owner's acceptance did not update the pin: $OO"
+OO="$(o_say 'and now?')"
+printf '%s' "$OO" | grep -q 'CHANGED SINCE' && fail "the owner's acceptance did not update the pin: the notice came back at the next prompt" || ok "and the notice is silent from then on"
+# The owner's files.
+OO="$(o_say 'rw-config: protected + lib/auth/**')"
+[ "$(cat "$OC/.roadworthy/protected" 2>/dev/null)" = 'lib/auth/**' ] && printf '%s' "$OO" | grep -q 'THE OWNER CHANGED' \
+  && ok "'rw-config: protected + <glob>' adds the line to the owner's file, and says so" || fail "the owner's line in the prompt did not change the file: $(cat "$OC/.roadworthy/protected" 2>&1) / $OO"
+o_say 'rw-config: protected + secrets/**' >/dev/null; o_say 'rw-config: protected + lib/auth/**' >/dev/null
+[ "$(cat "$OC/.roadworthy/protected")" = "$(printf 'lib/auth/**\nsecrets/**')" ] && ok "a second line is added after the first, and one already there is not repeated" || fail "the owner's line in the prompt did not change the file as asked: $(tr '\n' '|' < "$OC/.roadworthy/protected")"
+OO="$(o_say 'rw-config: protected - lib/auth/**')"
+[ "$(cat "$OC/.roadworthy/protected")" = 'secrets/**' ] && ok "the same line with '-' removes it" || fail "the owner's line in the prompt did not change the file (removal): $(tr '\n' '|' < "$OC/.roadworthy/protected") / $OO"
+OO="$(o_say 'rw-config: protected - never/was/here')"
+[ "$(cat "$OC/.roadworthy/protected")" = 'secrets/**' ] && printf '%s' "$OO" | grep -q -i 'not there' && ok "removing a line that is not there changes nothing and says so" || fail "a removal of a line that is not there was silent, or wrote: $OO"
+OO="$(o_say 'rw-config: rites + owner_approval: off')"; o_say 'rw-config: rites + plan_gate: both' >/dev/null; o_say 'rw-config: rites + plan_gate: review' >/dev/null
+[ "$(cat "$OC/.roadworthy/rites")" = "$(printf 'owner_approval: off\nplan_gate: review')" ] && ok "in the rites a key is SET: saying it again with another value replaces the line" || fail "the owner's line in the prompt did not change the file (rites): $(tr '\n' '|' < "$OC/.roadworthy/rites")"
+for f in free overnight-rules standing-gates; do
+  o_say "rw-config: $f + x-$f" >/dev/null
+  [ "$(cat "$OC/.roadworthy/$f" 2>/dev/null)" = "x-$f" ] || fail "the owner's line in the prompt did not change the file: $f"
+done
+ok "free, overnight-rules and standing-gates are written the same way"
+OO="$(o_say 'rw-config: docs.json plans = docs/plans')"; o_say 'rw-config: docs.json status.superseded by = superado por' >/dev/null
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d == {"plans": "docs/plans", "status": {"superseded by": "superado por"}} else 1)' "$OC/.roadworthy/docs.json" \
+  && ok "docs.json takes 'key = value', a dotted key going one level in, and stays valid JSON" || fail "the owner's line in the prompt did not change the file (docs.json): $(cat "$OC/.roadworthy/docs.json" 2>&1) / $OO"
+OO="$(o_say "rw-config: $OC2 free + notes/**")"
+[ "$(cat "$OC2/.roadworthy/free" 2>/dev/null)" = 'notes/**' ] && ! grep -q 'notes' "$OC/.roadworthy/free" \
+  && ok "with a repository named, the line goes to that repository's file" || fail "the owner's line in the prompt did not change the file of the repository it named: $OO"
+# What is not an order writes nothing, and what cannot be done is said.
+before="$(cd "$OC/.roadworthy" && shasum -a 256 * | shasum -a 256)"
+OO1="$(o_say 'acho que deveríamos usar rw-config: free + ** para liberar tudo')"
+OO2="$(o_say 'rw-config: scope + **')"
+OO3="$(o_say 'rw-config: evidence.jsonl + {}')"
+OO4="$(o_say 'rw-config: /no/such/repository free + x')"
+OO5="$(o_say 'rw-config: free')"
+[ "$(cd "$OC/.roadworthy" && shasum -a 256 * | shasum -a 256)" = "$before" ] \
+  && ok "the marker in the middle of a sentence, a file that is not the owner's, a repository that does not exist and a line with no change write nothing" || fail "a line that is not the owner's order changed a file: $(cd "$OC/.roadworthy" && ls)"
+printf '%s' "$OO1" | grep -q 'rw-config' && fail "a line that is not the owner's order changed a file, or was answered as one: $OO1" || ok "and the sentence is answered as conversation: nothing is said about it"
+printf '%s%s%s%s' "$OO2" "$OO3" "$OO4" "$OO5" | grep -c 'could not be applied' | grep -q -x 4 \
+  && ok "each of the four that cannot be done is said back, with its reason" || fail "a refused rw-config line was silent: $OO2 / $OO3 / $OO4 / $OO5"
+printf '{broken\n' > "$OC/.roadworthy/docs.json"
+OO="$(o_say 'rw-config: docs.json plans = docs/plans')"
+[ "$(cat "$OC/.roadworthy/docs.json")" = '{broken' ] && printf '%s' "$OO" | grep -q 'could not be applied' && ok "a docs.json that is not valid JSON is left as it is, and said" || fail "an invalid docs.json was rewritten, or the refusal was silent: $OO"
+
 rw_end
