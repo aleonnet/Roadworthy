@@ -133,6 +133,21 @@ pf "$PF/plan-scope.md" "$PF/t.jsonl"
   && ok "an invented scope path is named" || fail "invented path passed: $OUT"
 printf '%s' "$OUT" | grep -q 'c-new.txt does not exist' \
   && fail "a declared new file was treated as missing" || ok "a declared new file is exempt"
+# 0.8.0: a scope path written from home. A plan may cite a file of ANOTHER repository, and the
+# form the template teaches for a path outside this one is `~/...`. Joined to the root as it was
+# written, such a path never exists.
+printf 'a note\n' > "$HOME_SANDBOX/outside-note.txt"
+sed 's|^b\.txt$|~/outside-note.txt|' "$PF/plan.md" > "$PF/plan-home.md"
+tr_write "$PF/t-home-unread.jsonl" "cat a.txt"
+HOME="$HOME_SANDBOX" pf "$PF/plan-home.md" "$PF/t-home-unread.jsonl"
+printf '%s' "$OUT" | grep -q 'outside-note.txt does not exist' \
+  && fail "a scope path written from home was called missing: $OUT" || ok "a scope path written with ~ is found where it is"
+printf '%s' "$OUT" | grep -q 'outside-note.txt was never read WHOLE' \
+  && ok "and it is held to the same proof of reading as any other" || fail "a scope path written from home was called missing, or was not asked for its reading: $OUT"
+tr_write "$PF/t-home-read.jsonl" "cat a.txt" "cat ~/outside-note.txt"
+HOME="$HOME_SANDBOX" pf "$PF/plan-home.md" "$PF/t-home-read.jsonl"
+printf '%s' "$OUT" | grep -q 'outside-note.txt' \
+  && fail "a scope path written from home was called missing: its whole reading, written with ~, was not recognised: $OUT" || ok "a whole reading of it, written with ~, is recognised"
 
 # Acceptance numbering: 1..N, no gap, no repeat.
 sed 's/^| 2 | c | d |$/| 4 | c | d |/' "$PF/plan.md" > "$PF/plan-acc.md"

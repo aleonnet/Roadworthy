@@ -181,6 +181,12 @@ for m in REFERENCE.finditer(text):
 
 # --- 3: scope ------------------------------------------------------------------------------------
 scope = fenced(section("scope", "escopo"))
+def at(rel):
+    # A scope line may name a file of ANOTHER repository, written from home (`~/...`) or as an
+    # absolute path (0.8.0: a plan opens a front in every repository it cites). Joined to the root
+    # as it was written, a path from home never exists.
+    p = os.path.expanduser(rel)
+    return p if os.path.isabs(p) else os.path.join(root, rel)
 declared_new = set()
 for l in section("scope", "escopo"):
     if l.lower().startswith(("**new files declared:", "**arquivos novos declarados:")) or declared_new:
@@ -191,7 +197,7 @@ existing_scope = []
 for rel in scope:
     if "*" in rel or rel in declared_new:
         continue
-    if not os.path.exists(os.path.join(root, rel)):
+    if not os.path.exists(at(rel)):
         problems.append("scope: %s does not exist and is not declared as a new file" % rel)
     else:
         existing_scope.append(rel)
@@ -238,11 +244,11 @@ if transcript and os.path.exists(transcript):
                     # lines is the common case -- without it in the set, every reading done inside
                     # a multi-line command was invisible and the file counted as never read.
                     for mm in re.finditer(r"(?:^|[;&|\n]\s*)(?:cat|sed -n ..1,\$p.)\s+([^\s;&|]+)", cmd):
-                        whole_reads.add(os.path.realpath(os.path.join(root, mm.group(1))))
+                        whole_reads.add(os.path.realpath(at(mm.group(1))))
     except Exception as e:
         problems.append("transcript could not be read (%s); reading and commands cannot be proved" % e)
     for rel in existing_scope:
-        if os.path.realpath(os.path.join(root, rel)) not in whole_reads:
+        if os.path.realpath(at(rel)) not in whole_reads:
             problems.append("scope: %s was never read WHOLE in this session (a window is not a reading)" % rel)
         else:
             bump("files proved read whole")
