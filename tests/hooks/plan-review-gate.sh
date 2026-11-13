@@ -369,6 +369,50 @@ rm -f "$RP/.roadworthy/evidence.jsonl"
 rpg PostToolUse "The user doesn't want to proceed with this plan."
 recorded && fail "a plan the person refused left an approval on record" || ok "a result in words that does not say the plan was approved records nothing"
 
+# ── 0.8.0: the plan the call names is the plan, and a session inside a nested repository ───────
+# Thirteen refusals "N live plans declare this project" were measured in the field between
+# 2026-10-02 and 2026-11-13, with one cause: the file the call NAMED was dropped by the filter
+# "plans that declare this project" before it could be elected, and the stale drafts left behind
+# were then called ambiguous. Nine of them with the session standing in a repository nested in the
+# one the plan declares (a monorepo whose subprojects are repositories of their own).
+section "plan-review-gate (the plan the call names, and a session inside a nested repository)"
+unset CLAUDE_PLUGIN_OPTION_PLAN_GATE
+NO="$TMP/outer"; fx_repo "$NO"; NO="$(cd "$NO" && pwd -P)"
+printf 'one\ntwo\n' > "$NO/src.txt"; git -C "$NO" add -A; git -C "$NO" commit -q -m base
+NI="$NO/inner"; fx_repo_committed "$NI"
+NU="$TMP/unrelated"; fx_repo_committed "$NU"; NU="$(cd "$NU" && pwd -P)"
+NP="$TMP/named-plans"; mkdir -p "$NP"
+nplan() {  # nplan <file> <project> — a plan the pre-flight passes in the outer repository
+  printf '# A plan\n\nproject: %s\n\n## Scope\n\n```\nsrc.txt\n```\n\n## Acceptance\n\n| # | WHEN | THE SYSTEM SHALL |\n|---|---|---|\n| 1 | a | b |\n' "$2" > "$1"
+}
+fx_transcript "$TMP/named-tr.jsonl" "cat src.txt"
+nev() {  # nev <cwd> <plan file> — a plan-mode exit that names its file, as 356 of 368 measured do
+  python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"ExitPlanMode","session_id":"s","cwd":sys.argv[1],"transcript_path":sys.argv[3],"tool_input":{"plan":open(sys.argv[2]).read(),"planFilePath":sys.argv[2]}}))' "$1" "$2" "$TMP/named-tr.jsonl"
+}
+export CLAUDE_PLUGIN_OPTION_PLANS_DIR="$NP"
+nplan "$NP/named.md" "$NO"
+run_hook plan-review-gate "$(nev "$NI" "$NP/named.md")"
+! denied && ok "a plan of the repository that holds the one the session stands in is accepted, and judged in its own repository" \
+  || fail "a plan of the project that holds this repository was refused: $OUT"
+# Two stale drafts declare the nested repository itself; the call names the plan of the outer one.
+nplan "$NP/stale-1.md" "$NI"; nplan "$NP/stale-2.md" "$NI"
+run_hook plan-review-gate "$(nev "$NI" "$NP/named.md")"
+! denied && ok "with other live plans declaring this repository, the plan the call names is the one elected" \
+  || fail "the plan the call named was not elected: $OUT"
+# What the call does not name is still judged as before.
+run_hook plan-review-gate "$(printf '{"tool_name":"ExitPlanMode","cwd":"%s","transcript_path":"%s","tool_input":{}}' "$NI" "$TMP/named-tr.jsonl")"
+denied && printf '%s' "$OUT" | grep -q 'stale-1.md, stale-2.md' && ok "a call that names no file still has two live plans refused by name" || fail "the ambiguity stopped being refused when the call names nothing: $OUT"
+rm -f "$NP/stale-1.md" "$NP/stale-2.md"
+# A plan of a project with no relation to this one is still refused by name, named or not.
+nplan "$NP/named.md" "$NU"
+run_hook plan-review-gate "$(nev "$NI" "$NP/named.md")"
+denied && printf '%s' "$OUT" | grep -q 'belongs to another project' && ok "a named plan of an unrelated project is still refused as another project's" || fail "a plan of an unrelated project was accepted because the call named it: $OUT"
+# A directory that merely contains this repository is not a project that holds it: it has to be a repository.
+nplan "$NP/named.md" "$TMP"
+run_hook plan-review-gate "$(nev "$NI" "$NP/named.md")"
+denied && printf '%s' "$OUT" | grep -q 'belongs to another project' && ok "a declared directory that contains this repository and is no repository itself is not its project" || fail "any directory above the repository was taken for its project: $OUT"
+unset CLAUDE_PLUGIN_OPTION_PLANS_DIR
+
 # ── 0.8.0: the approval found in a transcript that records the call twice ──────────────────────
 # The harness writes a plan-mode exit twice under ONE id: once as the assistant's message, with the
 # whole plan in its input, and once more as the request it sent on (`api-request-blob`), with the

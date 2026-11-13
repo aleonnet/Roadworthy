@@ -36,6 +36,10 @@
 # instead of producing a cryptic "no review for the current plan". The second home is the
 # `plans` directory the project declares in .roadworthy/docs.json, where the house documentation
 # norm keeps plans: a plan written there got "no plan found" (field, 2026-09-08). Both are read.
+# From 0.8.0 the file the call names is elected before that filter by project, and a plan whose
+# declared project is a repository that HOLDS the one the session stands in (the session entered a
+# subproject that is a repository of its own) is that project's plan, judged in its repository: its
+# base resolved there, its pre-flight run there. A plan of an unrelated project is still named.
 # Symlinks and names containing '/' are refused (path traversal).
 #
 # WHAT guards the plan is `plan_gate` (preflight | review | both), new in 0.6.0 and born in
@@ -79,6 +83,11 @@
 # approved plan-mode exit (an object holding the plan and its path) made to need the word
 # "approved" again -> red with `an approval in the documented shape left no record`; green again on
 # the clean file, restored with its SHA-256 verified.
+# Refuted 2026-11-13 (0.8.0), against tests/hooks/plan-review-gate.sh: the file the call names
+# elected only when it passes the filter by project -> red with `the plan the call named was not
+# elected`; a plan of the repository that holds this one treated as another project again -> red
+# with `a plan of the project that holds this repository was refused`. Each green again on the
+# clean file, restored with its SHA-256 verified.
 #
 # A REVIEW IS A REVIEWER (0.7.0). Wherever a review is asked for -- `plan_gate` in `review` or
 # `both` -- the review file needs behind it the verdict hooks/review-record wrote when a
@@ -287,19 +296,24 @@ if live: cands = live
 
 # The plans directory is shared by every project: a plan that declares THIS repository wins
 # over a newer plan of another project. With none declaring, the old fallback stands.
-mine = [p for p in cands if not os.path.islink(p) and same(declared_project(p), root)]
-ambiguous = len(mine) > 1
-if mine: cands = mine
-
+#
+# THE PLAN THE CALL NAMES IS THE PLAN (0.8.0). The call names its file (`planFilePath`: 356 of
+# 368 plan-mode exits on this machine carry it, measured 2026-09-30). When it is a live candidate
+# it is elected HERE, before the filter by project. Until 0.8.0 the filter ran first: a named plan
+# that did not declare exactly this repository was dropped, and the drafts left behind were called
+# ambiguous (13 refusals measured on 2026-11-13, nine with the session inside a nested repository).
+# Whether the elected plan belongs to this project is judged below, as for any other.
 plan = None
-# The call names its file (`planFilePath`: 356 of 368 plan-mode exits on this machine carry it,
-# measured 2026-09-30). When it is one of the candidates, that is the plan -- no matching needed.
 named = os.environ.get("RW_SUBMITTED_PATH", "")
 if named and not os.path.islink(named):
     for p in cands:
         if not os.path.islink(p) and os.path.realpath(p) == os.path.realpath(named):
             plan = p
             break
+mine = [p for p in cands if not os.path.islink(p) and same(declared_project(p), root)]
+ambiguous = len(mine) > 1
+if mine and plan is None: cands = mine
+
 if plan is None and submitted:
     for p in cands:
         if os.path.islink(p): continue
@@ -329,8 +343,23 @@ pdir = os.path.dirname(plan)
 ptext = open(plan, encoding="utf-8", errors="replace").read()
 pre = ptext.split("\n## ", 1)[0]
 
+def holds(outer, inner):
+    # The declared project is a REPOSITORY (its own top level) and the repository of the session
+    # lies inside it: the session entered a subproject that is a repository of its own. A plain
+    # directory above this one is not its project.
+    o, i = os.path.realpath(os.path.expanduser(outer)), os.path.realpath(inner)
+    if not i.startswith(o + os.sep):
+        return False
+    r = subprocess.run(["git", "-C", o, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    return r.returncode == 0 and os.path.realpath(r.stdout.strip()) == o
+
 proj = field(pre, "project|projeto")
-if root and proj and not same(proj, root):
+# The repository the plan is JUDGED in -- its base resolved, its pre-flight run: the one it
+# declares when that one holds the repository of the session, else the repository of the session.
+judged = root
+if root and proj and not same(proj, root) and holds(proj, root):
+    judged = os.path.realpath(os.path.expanduser(proj))
+elif root and proj and not same(proj, root):
     # The hint teaches the form the template teaches: the root written from home with `~`. The
     # absolute root was printed here until 0.6.2, and a plan kept inside the repository that
     # obeyed it committed a home path -- the thing the privacy scan of this repository refuses.
@@ -347,15 +376,15 @@ base = field(pre, "base")
 if base:
     if not root:
         out("DENY", f"{name} declares base '{base}', but this call carries no repository to resolve it in.")
-    if subprocess.run(["git", "-C", root, "rev-parse", "--verify", "--quiet", base + "^{commit}"],
+    if subprocess.run(["git", "-C", judged, "rev-parse", "--verify", "--quiet", base + "^{commit}"],
                       capture_output=True).returncode != 0:
-        out("DENY", f"{name} declares base '{base}', which does not resolve to a commit in {root}. Fetch the ref or fix the line: every reading of the plan and of its review is made through it (git show {base}:<path>).")
+        out("DENY", f"{name} declares base '{base}', which does not resolve to a commit in {judged}. Fetch the ref or fix the line: every reading of the plan and of its review is made through it (git show {base}:<path>).")
 
 # In preflight mode the plan is guarded by the mechanical check the shell runs below, and no
 # reviewer is consulted. The election above is unchanged: which plan this call submits is the
 # same question in every mode.
 if mode == "preflight":
-    out("ALLOW", plan + "\t" + base + ("\tDATE" if elected_by_date else ""))
+    out("ALLOW", plan + "\t" + base + ("\tDATE" if elected_by_date else "\t-") + "\t" + judged)
 
 # The sidecar review sits next to the plan, in whichever home the plan lives.
 reviews = []
@@ -437,7 +466,7 @@ except Exception:
 if last is None or (last.get("verdict") != "APPROVED" and not owner):
     said = "none is on record" if last is None else "the last one on record says " + str(last.get("verdict"))
     out("DENY", f"{rname} says the plan is approved, and a review needs the reviewer's own verdict behind it: {said}. Run the cold reviewer on {name} (the roadworthy:cold-reviewer agent); it ends its report with a VERDICT line, which the plugin records when it finishes. A review file with no reviewer behind it is the reviewed party describing its own review. After an escalation, the written decision of the user goes in the review as an owner: line.")
-out("ALLOW", plan + "\t" + base + ("\tDATE" if elected_by_date else ""))
+out("ALLOW", plan + "\t" + base + ("\tDATE" if elected_by_date else "\t-") + "\t" + judged)
 PY
 )"
 # When the date decided, say so. No permissionDecision here: "allow" would skip the approval
@@ -458,7 +487,10 @@ case "$kind" in
     plan_file="${rest%%	*}"
     rest2="${rest#*	}"; [ "$rest2" = "$rest" ] && rest2=""
     plan_base="${rest2%%	*}"
-    by_date_flag="${rest2#*	}"; [ "$by_date_flag" = "$rest2" ] && by_date_flag=""
+    rest3="${rest2#*	}"; [ "$rest3" = "$rest2" ] && rest3=""
+    by_date_flag="${rest3%%	*}"
+    # The repository the plan is judged in: its own, when it holds the one the session stands in.
+    judged_root="${rest3#*	}"; [ "$judged_root" = "$rest3" ] && judged_root="$root"
     if [ "$mode" = "review" ]; then
       [ "$by_date_flag" = DATE ] && said_by_date "$plan_file"
       exit 0
@@ -470,7 +502,7 @@ case "$kind" in
     # fires inside the command substitution subshell where the condition context cannot
     # protect it. Restored immediately, on both paths.
     set +o errtrace
-    if pfout="$(bash "$pf" "$plan_file" ${root:+--root "$root"} ${tp:+--transcript "$tp"} ${plan_base:+--base "$plan_base"} 2>&1)"; then
+    if pfout="$(bash "$pf" "$plan_file" ${judged_root:+--root "$judged_root"} ${tp:+--transcript "$tp"} ${plan_base:+--base "$plan_base"} 2>&1)"; then
       set -o errtrace
       [ "$by_date_flag" = DATE ] && said_by_date "$plan_file"
       exit 0
