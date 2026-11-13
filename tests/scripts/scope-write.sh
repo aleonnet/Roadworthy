@@ -196,6 +196,9 @@ M_OUT="$( (cd "$MA" && bash "$SWS" "$TMP/multi-nogate.md") 2>&1 )" && fail "a re
   || { printf '%s' "$M_OUT" | grep -q "$MB" && [ ! -f "$MA/.roadworthy/scope" ] && [ ! -f "$MS/.roadworthy/scope" ] && [ ! -f "$MB/.roadworthy/scope" ] \
        && ok "a cited repository that would be left with no gate is refused by name, and nothing is written in any of them" || fail "a repository cited with no gate: wrong refusal, or a front half open: $M_OUT"; }
 mplan "$TMP/multi.md" 'true' 'cd sub && test -f app/s.txt' "cd $MB && test -f lib/b.txt"
+# The standing gates of a repository are THAT repository's: they run in it, not in the plan's.
+mkdir -p "$MB/.roadworthy"; printf 'test -d lib && test ! -d src\n' > "$MB/.roadworthy/standing-gates"
+git -C "$MB" add .roadworthy/standing-gates; git -C "$MB" commit -q -m "the owner's standing gate of the second repository"
 # A live front of ANOTHER plan in one of them: refused whole, too.
 fx_front_rite "$MB" 'lib/**' 'true'
 M_OUT="$( (cd "$MA" && bash "$SWS" "$TMP/multi.md") 2>&1 )" && fail "a front opened over the live front of another plan in a second repository: $M_OUT" \
@@ -206,7 +209,7 @@ M_OUT="$( (cd "$MA" && bash "$SWS" "$TMP/multi.md") 2>&1 )" || fail "a plan citi
 [ "$(lines "$MA/.roadworthy/scope")" = 'src/**|' ] && [ "$(lines "$MS/.roadworthy/scope")" = 'app/**|' ] && [ "$(lines "$MB/.roadworthy/scope")" = 'lib/**|' ] \
   && ok "one act opens a front in each repository the Scope cites, each with its own lines, relative to it" \
   || fail "a plan citing two repositories opened only one front: $(lines "$MA/.roadworthy/scope") / $(lines "$MS/.roadworthy/scope") / $(lines "$MB/.roadworthy/scope")"
-[ "$(lines "$MA/.roadworthy/gates")" = 'true|' ] && [ "$(lines "$MS/.roadworthy/gates")" = 'cd sub && test -f app/s.txt|' ] && [ "$(lines "$MB/.roadworthy/gates")" = "cd $MB && test -f lib/b.txt|" ] \
+[ "$(lines "$MA/.roadworthy/gates")" = 'true|' ] && [ "$(lines "$MS/.roadworthy/gates")" = 'cd sub && test -f app/s.txt|' ] && [ "$(lines "$MB/.roadworthy/gates")" = "cd $MB && test -f lib/b.txt|test -d lib && test ! -d src|" ] \
   && ok "and each gets the gates that are its own: the one that starts with cd into it" \
   || fail "a plan citing two repositories opened only one front (the gates were not divided): $(lines "$MA/.roadworthy/gates") / $(lines "$MS/.roadworthy/gates") / $(lines "$MB/.roadworthy/gates")"
 python3 - "$(python3 hooks/planblocks.py fingerprint "$TMP/multi.md")" "$MA" "$MS" "$MB" <<'PY' \
@@ -265,6 +268,8 @@ M_OUT="$(mclose "$MA")"
 printf '%s' "$M_OUT" | grep -q '^close: passed' && [ ! -f "$MA/.roadworthy/scope" ] && [ ! -f "$MS/.roadworthy/scope" ] && [ ! -f "$MB/.roadworthy/scope" ] \
   && [ "$(cat "$MA/.roadworthy/state")$(cat "$MS/.roadworthy/state")$(cat "$MB/.roadworthy/state")" = "passedpassedpassed" ] \
   && ok "run in the plan's repository with every one green, it closes the front in all of them" || fail "a green front in three repositories did not close in all of them: $M_OUT"
+printf '%s' "$M_OUT" | grep -q 'OK    test -d lib && test ! -d src' \
+  && ok "and the standing gate of the second repository ran IN that repository (it is red anywhere else)" || fail "a standing gate did not run at the closing in the repository it belongs to: $M_OUT"
 # The session entered the subproject, and the plan declares the repository that holds it: run
 # there with no --root, the front opens from the plan's repository, not from the subproject.
 { printf '# P\n\nproject: %s\n\n' "$MA"; sed 1d "$TMP/multi.md"; } > "$TMP/multi-declared.md"

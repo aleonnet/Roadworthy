@@ -112,6 +112,29 @@ WRITES_TEXT = re.compile(r"writeFile|appendFile|createWriteStream|rmSync|unlink|
                          r"File\.(?:write|open|delete|rename)|IO\.write|fopen|file_put_contents|open\s*\(|"
                          r"system\s*\(|exec\s*\(|spawn|`|(?<![=<>-])>(?![=>])|do shell script", re.I)
 GLOB_CHARS = "*?["
+# THE OWNER'S CHANNEL (0.8.0). The owner approves a closing, answers a human verification and
+# changes the owner's files by writing in the chat; the prompt hook (hooks/principles) reads the
+# prompt through hooks/ownerline.py. Those are programs on disk, and the first rule written here
+# matched their literal name after `bash`: the cold review of 2026-11-13 closed a front `passed`
+# with ONE command that named the hook by a glob, and listed the same program sourced, imported,
+# fed on standard input, and a headless session started with the owner's word as its prompt. So the
+# rule for these files is the one the rite's own directory has: only a command known to READ is
+# handed them. What is left is what no reader of commands can see, and it is declared: a name
+# assembled at run time, and a prompt a session the agent starts reads from a file.
+HOOK_READERS = frozenset((
+    "cat", "bat", "less", "more", "head", "tail", "grep", "egrep", "fgrep", "rg", "ag", "wc", "ls",
+    "stat", "file", "du", "shasum", "sha256sum", "sha1sum", "md5", "md5sum", "cksum", "jq", "diff",
+    "cmp", "comm", "test", "[", "echo", "printf", "cut", "awk", "sed", "sort", "uniq", "tr", "nl",
+    "od", "xxd", "hexdump", "strings", "column", "git", "find", "basename", "dirname", "realpath",
+    "readlink", "which", "type", "shellcheck", "refute.sh", "refute-ledger.sh", "pointers-check.sh",
+))
+# A line of the owner's, as hooks/ownerline.py reads it: a marker at the start of a line, or the
+# bare word as the whole text.
+OWNER_MARK = re.compile(r"(?im)^\s*(?:rw-human:|rw-config:|rw-princ[ií]p(?:ios|les):)"
+                        r"|\A\s*(?:aprovad[oa]|approved)\s*[.!]*\s*\Z"
+                        r"|\A\s*(?:reprovad[oa]|rejected)(?![^\s:,.;-])")
+OWNERLINE_CODE = re.compile(r"(?:import|from)\s+ownerline|__import__\(\s*['\"]ownerline|ownerline\.(?:apply_config|orders|main)")
+CLAUDE_ADMIN = ("plugin", "plugins", "mcp", "config", "update", "doctor", "install", "setup-token", "migrate-installer")
 # The names the rite keeps under its own directory: what a `find -name` could be aiming at.
 RITE_NAMES = (".roadworthy", "scope", "gates", "plan.snapshot", "state", "overnight", "evidence.jsonl",
               "denials.jsonl", "refutations.jsonl", "preflight.jsonl", "readings.jsonl", "stop-latch",
@@ -721,7 +744,8 @@ def _pipeline(pipeline, state, env, out, depth):
             continue
         fed = None
         bare_shell = p["name"] in SHELLS and p["script"] is None and (not _plain(p["args"], ("-o", "-O")) or "-s" in [a.text for a in p["args"]])
-        if i > 0 and p["name"] in INTERPRETERS:      # code piped into an interpreter is its program
+        # Code piped into an interpreter is its program; text piped into a session is its prompt.
+        if i > 0 and (p["name"] in INTERPRETERS or p["name"] == "claude"):
             prev = parsed[i - 1]
             if prev and prev["name"] in ("echo", "printf") and not any(a.dynamic for a in prev["args"]):
                 fed = " ".join(a.text for a in prev["args"])
@@ -914,6 +938,23 @@ def _simple(p, state, env, out, depth, fed=None):
             emit("W", target)                       # `>&file` is `&>file`; `>&2` and `>&$fd` are not
         elif op == "<<<" and name in SHELLS and not target.dynamic and p["script"] is None:
             out.extend(targets(target.text, cwd, env, depth + 1))
+    # The owner's channel: only a reader is handed the prompt hook or the reader of the owner's
+    # lines -- as a word, or as the file its standard input comes from.
+    handed = list(words) + [t for (_, op, _fd, t, _b, _q) in redirs if op == "<" and isinstance(t, Word)]
+    hooks_named = {h for h in (_hook_file(w, cwd) for w in handed) if h}
+    if hooks_named:
+        # A shell that runs one of the rite's own readers (`bash refute.sh --file hooks/principles`)
+        # or only checks the syntax (`bash -n`) reads.
+        shell_ops = _plain(args, ("-o", "-O")) if name in SHELLS and p["script"] is None else []
+        reads = (name in HOOK_READERS or (bool(shell_ops) and os.path.basename(shell_ops[0].text) in HOOK_READERS)
+                 or (name in SHELLS and p["script"] is None and "-n" in [a.text for a in args]))
+        if not reads and (hooks_named & {"principles", "ownerline.py"}
+                          or any(not w.dynamic and w.text == "principles" for w in words)):
+            out.append(("H", cwd, "prompt"))
+    # A script named by a pattern is the script: `clos?.sh --human all approved`.
+    if name:
+        cmdword = next((w for w in words if not w.dynamic and os.path.basename(w.text) == name), None)
+        name = _script_name(name, cmdword, cwd)
     if not name:
         if p["unknown"]:                            # not known to only read, because not known at all
             for w in words:
@@ -935,15 +976,21 @@ def _simple(p, state, env, out, depth, fed=None):
             out.extend(targets(fed, cwd, env, depth + 1))       # the script came through the pipe
         elif reads_stdin and p["body"] is not None:
             out.extend(targets(p["body"], cwd, env, depth + 1)) # a shell reading a heredoc runs it
-        if ops and os.path.basename(ops[0].text) == "scope-write.sh":
+        run = _script_name(os.path.basename(ops[0].text), ops[0], cwd) if ops else ""
+        if run == "scope-write.sh":
             _scope_write(args[args.index(ops[0]) + 1:], cwd, env, out, here)
-        if ops and os.path.basename(ops[0].text) == "close.sh":
+        if run == "close.sh":
             _close_script(texts, cwd, out)
-        if ops:
-            _prompt_hook(ops[0].text, [a.text for a in args[args.index(ops[0]) + 1:]], cwd, out)
         return
-    if name in ("principles", "run-hook.cmd", "ownerline.py"):
-        _prompt_hook(name, texts, cwd, out)
+    if name == "claude":
+        # A session the agent starts is a prompt the agent submits: with one of the owner's lines
+        # in it, the prompt hook of that session would take the agent's words for the owner's.
+        ops = _plain(args)
+        if not (ops and ops[0].text in CLAUDE_ADMIN):
+            said = [a.text for a in args if not a.dynamic] + [fed or "", p["body"] or ""]
+            said += [t.text for (_, op, _fd, t, _b, _q) in redirs if op == "<<<" and isinstance(t, Word) and not t.dynamic]
+            if any(OWNER_MARK.search(t) for t in said):
+                out.append(("H", cwd, "prompt"))
         return
     if name == "scope-write.sh":
         _scope_write(args, cwd, env, out, here)
@@ -952,9 +999,11 @@ def _simple(p, state, env, out, depth, fed=None):
         _close_script(texts, cwd, out)
         return
     if name in INTERPRETERS or re.fullmatch(r"python3?\.\d+", name):
-        for a in args:
-            if not a.dynamic and os.path.basename(a.text) == "ownerline.py":
-                _prompt_hook(a.text, [], cwd, out)
+        # The reader of the owner's lines imported, or run as a module, is that program run.
+        code = [a.text for a in args if not a.dynamic] + [fed or "", p["body"] or ""]
+        module = any(a.text == "ownerline" and i and args[i - 1].text == "-m" for i, a in enumerate(args))
+        if (module or any(OWNERLINE_CODE.search(t) for t in code)) and ("H", cwd, "prompt") not in out:
+            out.append(("H", cwd, "prompt"))
         _interpreter(name, args, p["body"], fed, cwd, out)
     if name == "eval":
         if not any(a.dynamic for a in args):        # eval runs HERE: a `cd` inside it stays
@@ -1133,15 +1182,68 @@ def _simple(p, state, env, out, depth, fed=None):
                         out.append(("N", cwd, match))
 
 
-def _prompt_hook(script, rest, cwd, out):
-    """The plugin's own prompt hook run by hand (`hooks/principles`, `run-hook.cmd principles`),
-    or the reader of the owner's lines (`ownerline.py`): H, PATH `prompt`. The harness runs that
-    hook on the prompt a person submitted, and that is what makes a line in it the person's: an
-    approval, an answer to a human verification, a change to the owner's files. Run by the agent,
-    on an event the agent wrote, it would record the agent's words as the owner's (0.8.0)."""
-    base = os.path.basename(script)
-    if base in ("principles", "ownerline.py") or (base == "run-hook.cmd" and rest[:1] == ["principles"]):
-        out.append(("H", cwd, "prompt"))
+def _wild(word):
+    return bool(word is not None and word.bare and any(ch in word.text for ch in "*?[{"))
+
+
+def _spelled(word, cwd):
+    """The names a word stands for, as (file name, name of its directory) pairs. A plain word is
+    itself. A pattern is what the shell expands it to, read from the disk; with nothing there to
+    match, it is the pattern itself, marked as one."""
+    text = word.text
+    plain = (os.path.basename(text), os.path.basename(os.path.dirname(text)) if "/" in text else os.path.basename(cwd))
+    if not _wild(word):
+        return [plain], False
+    path = text if os.path.isabs(text) else os.path.join(cwd, text)
+    try:
+        found = globlib.glob(path)
+    except Exception:
+        found = []
+    if found:
+        return [(os.path.basename(f), os.path.basename(os.path.dirname(f))) for f in found], False
+    return [plain], True
+
+
+def _is(spelled, target, pattern):
+    """Whether a name is `target`. A pattern that matched nothing on disk counts when it would
+    match the name AND spells a good part of it: a lone `*` names nothing in particular."""
+    if spelled == target:
+        return True
+    if not pattern:
+        return False
+    literal = re.sub(r"[*?\[\]{},]", "", spelled)
+    return len(literal) >= 5 and (fnmatch.fnmatchcase(target, spelled) or ("{" in spelled and target[:5] in spelled))
+
+
+def _script_name(name, word, cwd=""):
+    """`close.sh` and `scope-write.sh` named by a pattern are those scripts."""
+    if word is None or not _wild(word):
+        return name
+    names, pattern = _spelled(word, cwd or ".")
+    for target in ("close.sh", "scope-write.sh"):
+        if any(_is(base, target, pattern) for base, _ in names):
+            return target
+    return name
+
+
+def _hook_file(word, cwd):
+    """Which file of the owner's channel a word names, or "": the prompt hook (`principles`, in a
+    directory called `hooks`), its launcher (`run-hook.cmd`) or the reader of the owner's lines
+    (`ownerline.py`). The harness runs that hook on the prompt a person submitted, and that is
+    what makes a line in it the person's: an approval, an answer to a human verification, a change
+    to the owner's files. Run by the agent, on an event the agent wrote, it would record the
+    agent's words as the owner's (0.8.0)."""
+    if not isinstance(word, Word) or word.dynamic or not word.text:
+        return ""
+    names, pattern = _spelled(word, cwd)
+    for base, parent in names:
+        if _is(base, "ownerline.py", pattern):
+            return "ownerline.py"
+        if _is(base, "run-hook.cmd", pattern):
+            return "run-hook.cmd"
+        if _is(base, "principles", pattern) and (parent == "hooks" or (pattern and _is(parent, "hooks", True)) or (pattern and "hooks" in word.text)):
+            return "principles"
+    return ""
 
 
 def _close_script(texts, cwd, out):

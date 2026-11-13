@@ -168,7 +168,9 @@ A maioria é uma ausência, e por isso é difícil de ver a partir de um arquivo
    dele (`rw-config:`) ou à mão (`docs-init.sh` cria o `docs.json` quando ele falta).
 7. **Um ato de pessoa nunca é digitado pelo agente.** Abrir uma frente como dono (`--owner`),
    responder a uma verificação humana, aprovar um fechamento e rodar à mão o hook de prompt —
-   que é por onde as linhas do dono são lidas — são negados a ele.
+   que é por onde as linhas do dono são lidas — são negados a ele, em toda forma que um leitor
+   de comandos consegue ler: esse hook só é entregue a um comando conhecido por ler. Um nome
+   que o comando nunca escreve é o limite declarado.
 8. **O fechamento mede o que foi aprovado, e quem fecha é o dono**: uma frente que o rito
    abriu só fecha quando o escopo e os portões ainda casam com os digests da fotografia, todo
    portão declarado rodou, em todo repositório da frente, e o dono aprovou as árvores que

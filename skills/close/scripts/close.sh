@@ -178,25 +178,39 @@ approval_required() { [ -f "$snapshot" ] && [ "$(owner_approval_word)" != "off" 
 # The item the owner approves: the plan, when this front of it opened, and the trees the gates
 # measured in every repository of the front. Another tree is another item, so an approval never
 # covers what no gate measured; and another front of the same plan is another item too.
+# It prints NOTHING when a tree cannot be measured or digested: an item with an empty digest would
+# be the same for every tree, and one approval would cover them all.
 approval_item() {
-  local r acc=""
+  local r acc="" one digest
   while IFS= read -r r; do
     [ -n "$r" ] || continue
-    acc="$acc$r $(bash "$here/tree-fingerprint.sh" "$r" 2>/dev/null || true)"$'\n'
+    one="$(bash "$here/tree-fingerprint.sh" "$r" 2>/dev/null || true)"
+    [ -n "$one" ] || return 0
+    acc="$acc$r $one"$'\n'
   done <<< "$front_roots"
+  digest="$(printf '%s' "$acc" | shasum -a 256 2>/dev/null | cut -c1-16 || true)"
+  [ "${#digest}" -eq 16 ] || return 0
   printf 'owner approval to close %s (opened %s, trees %s, plan %s)' "$(front_name)" "$(snap_get ts)" \
-    "$(printf '%s' "$acc" | shasum -a 256 | cut -c1-16)" "$(snap_get fingerprint | cut -c1-12)"
+    "$digest" "$(snap_get fingerprint | cut -c1-12)"
 }
 front_approved() {
+  local item
   approval_required || return 0
-  rw_ledger approved-item "$(approval_item)"
+  item="$(approval_item)"
+  [ -n "$item" ] || return 1
+  rw_ledger approved-item "$item"
 }
 # release_front — in the plan's repository: every other repository of the front, then this one.
 release_front() {
   local r
   while IFS= read -r r; do
     { [ -n "$r" ] && [ "$r" != "$here_p" ]; } || continue
-    [ -f "$r/.roadworthy/scope" ] || continue
+    if [ ! -f "$r/.roadworthy/scope" ]; then
+      # No front there any more: released already by this same closing, or abandoned since the
+      # gates ran. Only the first lets the front end `passed`.
+      [ "$(cd "$r" && bash "$here/close.sh" --state 2>/dev/null)" = "passed" ] || return 1
+      continue
+    fi
     (cd "$r" && bash "$here/close.sh" --release-front) >/dev/null || return 1
   done <<< "$front_roots"
   end_closing passed
@@ -780,6 +794,7 @@ while IFS= read -r cmd || [ -n "$cmd" ]; do
 done < "$gates"
 gate_out="$(mktemp)"
 trap 'rm -f "$gate_out"' EXIT
+standing_here="$(snap_get standing_gates)"
 failed=0; ran=0
 # The list is read through descriptor 3, and each gate runs with an EMPTY standard input and
 # without that descriptor: whatever a gate reads, it is never the list of the gates after it.
@@ -788,8 +803,12 @@ while IFS= read -r cmd <&3 || [ -n "$cmd" ]; do
   [[ "$cmd" =~ ^[[:space:]]*(#|$) ]] && continue
   ran=$((ran + 1))
   # From the plan's repository: a gate written `cd <another repository> && ...` in the plan is a
-  # gate of that repository, and its `cd` is relative to where the plan is.
-  ( cd "$plan_root" && exec bash -c "$cmd" ) < /dev/null > "$gate_out" 2>&1 3<&-; rc=$?
+  # gate of that repository, and its `cd` is relative to where the plan is. A STANDING gate is the
+  # other way round: it is this repository's own, written by its owner with no `cd`, and it runs
+  # here (in the plan's repository it measured another tree: cold review, 2026-11-13).
+  run_in="$plan_root"
+  if [ -n "$standing_here" ] && printf '%s\n' "$standing_here" | grep -q -x -F -- "$cmd"; then run_in="$here_p"; fi
+  ( cd "$run_in" && exec bash -c "$cmd" ) < /dev/null > "$gate_out" 2>&1 3<&-; rc=$?
   record "$cmd" "$rc" "$gate_out"
   if [ $rc -eq 0 ]; then printf '  OK    %s\n' "$cmd"; trivially_green "$cmd" && printf '  WARN  %s\n' "that gate cannot fail: it proves nothing"; else printf '  FAIL  %s (exit %s)\n' "$cmd" "$rc"; tail -5 "$gate_out" | sed 's/^/        /'; failed=$((failed + 1)); fi
 done
@@ -889,6 +908,10 @@ if [ "$plan_root" = "$here_p" ]; then
   done <<< "$front_roots"
   if ! front_approved; then
     asking="$(approval_item)"
+    if [ -z "$asking" ]; then
+      end_closing gaps_found "the trees of the front could not be measured"
+      echo "close: gaps_found — the gates passed, and the trees of the front could not be measured to ask for the owner's approval of them (tree-fingerprint.sh or shasum failed). An approval names the trees it covers; without that it would cover any. The scope is kept." >&2; exit 1
+    fi
     rw_ledger add-open "$asking" "$(front_name)" close
     sync_state
     echo "close: every gate passed, in every repository of the front — and a front closes with the owner's approval. Waiting for it: $asking. The state is needs_human and the scope is kept."
@@ -898,9 +921,9 @@ if [ "$plan_root" = "$here_p" ]; then
   release_front || { end_closing gaps_found "a repository of the front could not be released"; echo "close: gaps_found — a repository of the front changed while the closing ran; run it again. The scope here is kept." >&2; exit 1; }
 else
   # The plan's repository already released its part: this one follows, when the whole front is green.
-  if ! front_green; then
-    echo "close: gaps_found — the front this repository is part of closed in $plan_root, and a gate of one of its repositories is not fresh now. Reopen the front from the plan and close it there. The scope here is kept." >&2
-    end_closing gaps_found "the front is not green in every repository"; exit 1
+  if ! front_green || ! front_approved; then
+    echo "close: gaps_found — the front this repository is part of closed in $plan_root, and here a gate of one of its repositories is not fresh now, or the owner's approval of these trees is not on record. Reopen the front from the plan and close it there. The scope here is kept." >&2
+    end_closing gaps_found "the front is not green and approved in every repository"; exit 1
   fi
   end_closing passed
   rm -f .roadworthy/scope

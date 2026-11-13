@@ -128,9 +128,14 @@ def broken(root, ledger, review_required):
         # The approval is the plan's, wherever a front of it opens (0.8.0): it is looked for in the
         # ledger of this repository, of the one the front was opened from and of the one the plan
         # declares, which is where the plugin writes it when the plan-mode exit is approved.
+        # An approval recorded for another repository reaches this one only when the plan, read
+        # from that repository, cites this one: the fingerprint alone would let an approval of one
+        # repository be replayed in any other (cold review, 2026-11-13).
         if review_required and snap.get("opened_by") != "owner":
+            from planblocks import reaches
             ledgers = [ledger] + [os.path.join(r, ".roadworthy", "evidence.jsonl")
-                                  for r in (snap.get("plan_root"), snap.get("plan_project")) if r]
+                                  for r in (snap.get("plan_root"), snap.get("plan_project"))
+                                  if r and reaches(r, root, whole_scope, whole_gates)]
             if not any(approved(fp, l) for l in ledgers):
                 return "no approval is on record for the scope, the gates and the base this front enforces", snap
     return None, snap

@@ -231,6 +231,17 @@ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d == 
 OO="$(o_say "rw-config: $OC2 free + notes/**")"
 [ "$(cat "$OC2/.roadworthy/free" 2>/dev/null)" = 'notes/**' ] && ! grep -q 'notes' "$OC/.roadworthy/free" \
   && ok "with a repository named, the line goes to that repository's file" || fail "the owner's line in the prompt did not change the file of the repository it named: $OO"
+# From inside a subproject that is a repository with NO rite of its own, the owner's file is the
+# one of the repository that subproject answers to. Written in the subproject, the new
+# `.roadworthy/` made it a repository with a rite of its own to every fence, and took it out of the
+# front that was open over it, with no way back through the chat (cold review, 2026-11-13).
+fx_repo_committed "$OC/vendored"
+OO="$(python3 -c 'import json,sys; print(json.dumps({"transcript_path":"","session_id":"o1","cwd":sys.argv[1],"hook_event_name":"UserPromptSubmit","prompt":"rw-config: free + tmp/**"}))' "$OC/vendored" | CLAUDE_PLUGIN_OPTION_PRINCIPLES_FILE="$OPF" ROADWORTHY_DATA="$OPD" bash "$ROOT/hooks/run-hook.cmd" principles | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])')"
+[ ! -e "$OC/vendored/.roadworthy" ] && grep -q -x 'tmp/\*\*' "$OC/.roadworthy/free" \
+  && ok "from a nested repository with no rite of its own, the line goes to the repository it answers to" || fail "the owner's line gave a nested repository a rite of its own, taking it out of the open front: $OO"
+o_say "rw-config: $OC/vendored free + other/**" >/dev/null
+[ ! -e "$OC/vendored/.roadworthy" ] && grep -q -x 'other/\*\*' "$OC/.roadworthy/free" \
+  && ok "and the same when that nested repository is named" || fail "the owner's line gave a nested repository a rite of its own (named): $(ls -a "$OC/vendored")"
 # What is not an order writes nothing, and what cannot be done is said.
 before="$(cd "$OC/.roadworthy" && shasum -a 256 * | shasum -a 256)"
 OO1="$(o_say 'acho que deveríamos usar rw-config: free + ** para liberar tudo')"

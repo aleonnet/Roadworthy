@@ -94,8 +94,10 @@ and it is the open front's; in the middle of a sentence the word is conversation
 `rw-principios: aceito` agrees to the principles file as it is now. `rw-config: [<repository>]
 <file> + <line>` adds a line to one of the owner's files and `- <line>` removes it (for
 `docs.json`: `<key> = <value>`); what cannot be applied writes nothing and is said back. A marker
-counts only at the start of a line. The agent running this hook by hand, on an event it wrote, is
-denied as a person's act.
+counts only at the start of a line. Only a command known to read is handed this hook: the agent
+running it on an event it wrote — named, by a pattern, sourced, imported, on standard input, or as
+a headless session started with one of these lines — is denied as a person's act. A name the
+command never spells is a declared limit.
 
 **`rite-gate`.** While the repository **the target is in** has no usable `.roadworthy/scope`, every
 edit, shell write and shell removal of tracked content there is denied, naming the rite that opens a
@@ -423,8 +425,9 @@ that builds their path at run time — the scope, the gates and the snapshot are
 their digests, the ledger is not; and a claim that the work is finished, worded outside the stop
 gate's vocabulary, is not judged. Two more belong to the owner's channel (0.8.0): the owner's lines
 are read from the prompt the person submitted, so a text the person pasted that carries one at the
-start of a line is the person's order; and a script on disk that runs the prompt hook on an event
-it wrote reaches what the hook reaches. Each one is written with its reason in
+start of a line is the person's order; and the prompt hook reached by a name the command never
+spells (assembled at run time, or inside a script on disk), or a headless session whose prompt
+comes from a file, is not read — what that forges is an answer in the ledger. Each one is written with its reason in
 [`docs/reference/roadmap.md`](docs/reference/roadmap.md) and exercised in `tests/attack.sh` as a
 DECLARED attack, so a limit that starts being refused is reported as the fence growing, and a hole
 nobody declared fails the gate.

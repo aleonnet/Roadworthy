@@ -96,8 +96,11 @@ exatamente um fechamento esperando e ele é o da frente aberta; no meio de uma f
 conversa. `rw-principios: aceito` concorda com o arquivo de princípios como ele está agora.
 `rw-config: [<repositório>] <arquivo> + <linha>` acrescenta uma linha a um dos arquivos do dono e
 `- <linha>` a retira (para `docs.json`: `<chave> = <valor>`); o que não pode ser aplicado não
-grava nada e é dito de volta. A marca só vale no começo de uma linha. O agente rodar este hook à
-mão, com um evento que ele escreveu, é negado como ato de pessoa.
+grava nada e é dito de volta. A marca só vale no começo de uma linha. Este hook só é entregue a
+um comando conhecido por ler: o agente rodá-lo com um evento que ele escreveu — pelo nome, por um
+padrão, carregado com `source`, importado, pela entrada padrão, ou como uma sessão sem tela
+iniciada com uma dessas linhas — é negado como ato de pessoa. Um nome que o comando nunca escreve
+é um limite declarado.
 
 **`rite-gate`.** Enquanto o repositório **em que o alvo está** não tem um `.roadworthy/scope`
 utilizável, toda edição, escrita pelo shell e remoção pelo shell de conteúdo rastreado ali é negada,
@@ -439,8 +442,9 @@ podem ser gravados por um programa que monta o caminho deles ao rodar — o esco
 fotografia são pegos depois pelos seus digests, o livro não; e uma afirmação de que o trabalho
 terminou, dita fora do vocabulário do portão de parada, não é julgada. Outros dois são do canal do
 dono (0.8.0): as linhas do dono são lidas do prompt que a pessoa submeteu, então um texto que ela
-colou e que traz uma delas no começo de uma linha é ordem dela; e um script em disco que roda o
-hook de prompt com um evento que ele escreveu alcança o que o hook alcança. Cada um está escrito com o
+colou e que traz uma delas no começo de uma linha é ordem dela; e o hook de prompt alcançado por um
+nome que o comando nunca escreve (montado ao rodar, ou dentro de um script em disco), ou uma sessão
+sem tela cujo prompt vem de um arquivo, não é lido — o que isso forja é uma resposta no livro. Cada um está escrito com o
 seu motivo em [`docs/reference/roadmap.md`](docs/reference/roadmap.md) e exercitado em
 `tests/attack.sh` como ataque DECLARADO, de modo que um limite que passa a ser recusado é reportado
 como a cerca crescendo, e um buraco que ninguém declarou reprova o portão.

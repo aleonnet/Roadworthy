@@ -108,7 +108,10 @@ except Exception:
       principles) accept_principles=1 ;;
       config)
         set +o errtrace
-        if answer="$(python3 "$(dirname "$0")/ownerline.py" --apply-config "$root" "$cwd" "$f1" 2>&1)"; then
+        # The repository the session's directory ANSWERS to, by the rule the fences use: a
+        # subproject that is a repository with no rite of its own has none to write to, and a
+        # `.roadworthy/` created in it would take it out of the front open over it.
+        if answer="$(python3 "$(dirname "$0")/ownerline.py" --apply-config "$(rw_target_root "$cwd/x")" "$cwd" "$f1" 2>&1)"; then
           set -o errtrace
           human_notice="${human_notice}THE OWNER CHANGED ONE OF THE OWNER'S FILES IN THIS PROMPT -- $answer. It is the owner's change: do not edit that file; commit it as it is when the tree has to be clean (the commit guard lets the owner's files through)."$'\n'
         else

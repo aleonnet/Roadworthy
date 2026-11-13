@@ -124,7 +124,13 @@ def apply_config(session_root, cwd, spec):
         named = named if os.path.isabs(named) else os.path.join(cwd, named)
         if not os.path.isdir(named):
             raise Refused("'%s' is not a directory" % words[0])
-        repo, taken = _top(named), 1
+        # The repository that directory ANSWERS to, by the rule the fences use (repo_of): a nested
+        # repository with no rite of its own is, to the rite, part of the one that holds it, and a
+        # `.roadworthy/` written in it would take it out of a front open over it.
+        sys.dont_write_bytecode = True
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from planblocks import repo_of
+        repo, taken = repo_of(os.path.join(named, "x")), 1
         if not repo:
             raise Refused("'%s' is not in a git repository" % words[0])
     elif not repo or _top(repo) != os.path.realpath(repo):

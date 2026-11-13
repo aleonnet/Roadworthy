@@ -163,7 +163,9 @@ Most of them are an absence, which is why they are hard to see from any one file
    own prompt (`rw-config:`) or by hand (`docs-init.sh` creates `docs.json` when it is missing).
 7. **A person's act is never typed by the agent.** Opening a front as the owner (`--owner`),
    answering a human verification, approving a closing and running the prompt hook by hand —
-   which is how the owner's lines are read — are denied to it.
+   which is how the owner's lines are read — are denied to it, in every form a reader of
+   commands can read: only a command known to read is handed that hook. A name the command
+   never spells is the declared limit.
 8. **The closing measures what was approved, and the owner closes it**: a front the rite
    opened closes only when its scope and gates still match the digests in the snapshot, every
    declared gate ran, in every repository of the front, and the owner approved the trees those

@@ -149,6 +149,18 @@
 # `a front opened in a second repository was not honoured`; the reader's rule for the prompt hook
 # run by hand (hooks/shellread.py, `H ... prompt`) removed -> red with `the agent approved its own
 # closing`. Each green again on the clean file, restored with its SHA-256 verified.
+# Refuted 2026-11-13, after the cold review of the whole diff (four blockers, each reproduced by
+# the reviewer and none covered by a case). Against tests/hooks/rite-gate.sh: in
+# hooks/shellread.py, the rule "only a reader is handed the prompt hook" off, the owner's line in
+# a session's prompt not read, and a script named by a pattern not recognised -> each red with
+# `the agent approved its own closing`; here, an approval of the declared repository taken for any
+# repository -> `an approval was replayed in a repository the plan does not cite`; in
+# hooks/frontcheck.py, the same at each write -> `the forced front was honoured`. Against
+# tests/scripts/scope-write.sh, in skills/close/scripts/close.sh: a standing gate run in the plan's
+# repository -> `a standing gate did not run at the closing in the repository it belongs to`.
+# Against tests/hooks/principles.sh: the owner's file written in the repository the session
+# stands in, and in the one named, instead of the one it answers to -> `the owner's line gave a
+# nested repository a rite of its own`.
 export RW_HOOK="rite-gate"
 export RW_ON_CRASH=deny
 source "$(dirname "$0")/lib.sh"
@@ -196,7 +208,7 @@ deny_foundation() {  # deny_foundation <relative path>
 
 # judge_open <where the front opens> <plan> — the agent running scope-write.sh.
 judge_open() {
-  local where="$1" plan="$2" oroot proot
+  local where="$1" plan="$2" oroot proot reached
   rw_bool "$(rw_option PLAN_REVIEW_REQUIRED true)" || return 0
   if [ "$where" = "?" ] || [ "$plan" = "?" ]; then
     deny PreToolUse "this command opens a front from a plan, or in a repository, that is only known when it runs, so the approval it needs cannot be looked up. Name both: skills/plan/scripts/scope-write.sh <plan.md> [--root <repository>]. (rite_gate)"
@@ -219,9 +231,18 @@ judge_open() {
     return 0
   fi
   proot="$(python3 "$(dirname "$0")/planblocks.py" project-root "$plan" 2>/dev/null || true)"
-  if [ -n "$proot" ] && [ "$proot" != "$oroot" ] \
-     && python3 "$(dirname "$0")/planblocks.py" approved "$plan" "$proot/.roadworthy/evidence.jsonl" >/dev/null 2>&1; then
-    return 0
+  # That approval reaches the repository the plan declares and the ones its Scope cites, and no
+  # other: a plan with the same two blocks, written somewhere else with a `project:` line that
+  # points at a repository whose ledger holds an approval, is not that repository's plan (cold
+  # review, 2026-11-13). A repository INSIDE the declared one is the session having entered a
+  # subproject: run there with no --root, the script opens the front from the plan's repository.
+  if [ -n "$proot" ] && [ "$proot" != "$oroot" ]; then
+    reached=""
+    case "$oroot" in "$proot"/*) reached=1 ;; esac
+    if [ -z "$reached" ] && python3 "$(dirname "$0")/planblocks.py" reaches "$plan" "$proot" "$oroot" >/dev/null 2>&1; then reached=1; fi
+    if [ -n "$reached" ] && python3 "$(dirname "$0")/planblocks.py" approved "$plan" "$proot/.roadworthy/evidence.jsonl" >/dev/null 2>&1; then
+      return 0
+    fi
   fi
   if python3 "$(dirname "$0")/planblocks.py" approved "$plan" "$(rw_data_dir "$oroot")/evidence.jsonl" "$(rw_field transcript_path)" >/dev/null 2>&1; then
     return 0

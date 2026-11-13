@@ -206,10 +206,15 @@ being refused is reported as the fence growing, and a hole nobody declared fails
   only at the start of a line and the bare word only as the whole message; every order applied is
   said back in the same prompt; and the files it changes are the project's, under git. Exercised
   in `tests/attack.sh` as DECLARED.
-- **The prompt hook is a program on disk (0.8.0).** The entry gate denies the agent the hook run
-  by hand, the reader of the owner's lines and the command the hook runs for the bare word. A
-  script the agent writes and runs, which calls the hook on an event it wrote, is the class of the
-  first item above: what a hook can reach, a program started by the agent can reach. The owner's
+- **The prompt hook is a program on disk (0.8.0).** Only a command known to read is handed the
+  hook, its launcher and the reader of the owner's lines: named, by a pattern, sourced, imported,
+  on standard input. A headless session the agent starts with one of the owner's lines in its
+  command is denied too. (The first rule matched the literal name after `bash`; the cold review
+  of 2026-11-13 closed a front with one command that named the hook by a glob.) What is not
+  read: the hook under a name assembled at run time or inside a script on disk, and a session
+  whose prompt comes from a file. It is the class of the first item above — what a hook can
+  reach, a program started by the agent can reach — and what it forges is an answer in the
+  ledger, which carries nothing that authenticates it. The owner's
   approval of a closing is the one answer that is read from a single place — the plan's
   repository's own ledger, which the gate denies by name — and never from `ROADWORTHY_DATA`.
 - **A front in several repositories is released one after another (0.8.0).** The closing measures

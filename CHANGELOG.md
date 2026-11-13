@@ -64,10 +64,23 @@ a refutation with the defect planted (25 of them, every file restored by its dig
   dirty tree nor a file the front touched. Changed again since, the closing refuses naming it. A
   path the owner freed does not dirty a closing either. The advice to `git stash` somebody else's
   file is gone from the closing, its test and the runbook.
-- **The agent running the prompt hook by hand is denied** (`hooks/principles`, `run-hook.cmd
-  principles`, `hooks/ownerline.py`, `close.sh --owner-word`): with an event it wrote, it would be
-  typing the owner's answer. The time limit of the prompt hook goes from 10 to 30 seconds: an
-  approval measures the gates of every repository of the front.
+- **Only a command known to read is handed the prompt hook** (`hooks/principles`, its launcher
+  with `principles`, `hooks/ownerline.py`): run by the agent, on an event it wrote, the hook would
+  record the agent's words as the owner's. The first rule matched the hook's literal name after
+  `bash`, and the cold review of this release closed a front `passed` with one command that named
+  it by a glob; the rule now covers the file named by a pattern, sourced, imported, run as a
+  module, fed on standard input, and a headless session started with one of the owner's lines as
+  its prompt. `close.sh` and `scope-write.sh` named by a pattern are those scripts, which also
+  closes `clos?.sh --human ...`, open since 0.7.0. What a reader of commands cannot see stays a
+  declared limit. The time limit of the prompt hook goes from 10 to 30 seconds: an approval
+  measures the gates of every repository of the front.
+- **An approval reaches the repository the plan declares and the ones its Scope cites, and no
+  other.** The fingerprint covers the scope, the gates and the base; looked up in the declared
+  repository's ledger alone, an approval of one repository would have opened a front in any other
+  for a plan with the same two blocks (found by the cold review, before release).
+- A repository's standing gates run in that repository; the gates a plan declares run from the
+  plan's. An owner's `rw-config:` line is written in the repository the directory answers to, by
+  the rule the fences use: a nested repository with no rite of its own is not given one.
 - A scope path written from home (`~/...`) is found by the pre-flight, and so is a whole reading of
   it written the same way.
 
@@ -82,8 +95,10 @@ a refutation with the defect planted (25 of them, every file restored by its dig
 ### Declared limits
 - The owner's lines are read from the prompt the person submitted: a text the person pasted that
   carries one at the start of a line is the person's order. Exercised in `tests/attack.sh`.
-- A script on disk that runs the prompt hook on an event it wrote reaches what the hook reaches:
-  the class of every program the agent starts, already declared.
+- The prompt hook reached by a name the command never spells — assembled at run time, or inside
+  a script on disk — and a headless session whose prompt comes from a file are not read: the class
+  of every name a reader of text cannot see. What that forges is an answer in the ledger, which
+  carries nothing that authenticates it; the ceiling is the one declared since 0.7.0.
 - A front in several repositories is released one repository after another; a failure between two
   of them leaves the rest open, and closing again finishes it.
 

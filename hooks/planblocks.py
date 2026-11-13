@@ -24,6 +24,8 @@ Usage:
   planblocks.py root <path>                    the repository a path belongs to, or nothing
   planblocks.py project-root <plan.md>         the repository the plan declares in `project:`,
                                                when that line names the top level of one
+  planblocks.py reaches <plan.md> <from> <to>  exit 0 when an approval of the plan recorded for
+                                               the repository <from> covers a front in <to>
 Import: sys.path.insert(0, "<plugin>/hooks"); from planblocks import blocks, fingerprint
 
 A PLAN MAY CITE SEVERAL REPOSITORIES (0.8.0). Its Scope is one list, and a line of it may name a
@@ -211,6 +213,21 @@ def by_repository(plan_root, globs, gates):
     return order, parts
 
 
+def reaches(source_root, target_root, globs, gates):
+    """Whether an approval of a plan recorded for `source_root` covers a front of it in
+    `target_root`: the same repository, or one the plan's Scope cites when it is read from the
+    source. The fingerprint covers the scope, the gates and the base and nothing else, so without
+    this an approval recorded in one repository opened a front in ANY other for a plan with the
+    same two blocks and a `project:` line pointing at the first (cold review, 2026-11-13)."""
+    if not source_root or not target_root:
+        return False
+    source, target = os.path.realpath(source_root), os.path.realpath(target_root)
+    if source == target:
+        return True
+    order, _ = by_repository(source, globs or [], gates or [])
+    return target in order
+
+
 def _records(path):
     if not path or not os.path.exists(path):
         return
@@ -287,6 +304,12 @@ def main(argv):
         if found:
             print(found)
         return 0
+    if len(argv) >= 5 and argv[1] == "reaches":
+        try:
+            globs, gates, _ = blocks(open(argv[2], encoding="utf-8").read())
+        except Exception:
+            return 1
+        return 0 if reaches(argv[3], argv[4], globs, gates) else 1
     if len(argv) >= 3 and argv[1] == "project-root":
         try:
             found = project_root(open(argv[2], encoding="utf-8").read())
