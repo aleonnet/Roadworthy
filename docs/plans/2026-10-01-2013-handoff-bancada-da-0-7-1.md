@@ -1,4 +1,4 @@
-status: accepted
+status: superado por 2026-11-13-1725-handoff-0-8-0.md
 
 # Handoff — a bancada da 0.7.1 em sessão interativa — 2026-10-01 20:13
 
