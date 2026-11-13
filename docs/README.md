@@ -14,6 +14,9 @@ Read this first. Each role below is a directory declared in `.roadworthy/docs.js
 
 Resuming work: `/roadworthy:resume`. Checking the tree: `docs-check.sh`.
 
+Defects found in the field and not yet taken by a front: `docs/roadmap/` (dated, with `status:`); the newest is
+`roadmap/2026-10-16-0803-aprovacao-de-plano-nao-encontrada-no-transcript-do-claude-code-atual.md`.
+
 Changing the plugin itself: [`README_DEV.md`](../README_DEV.md) — how it is built and what has to
 stay true (in Portuguese: [`README_DEV.pt-BR.md`](../README_DEV.pt-BR.md)).
 Doing a recurring task step by step: [`guides/runbook.md`](guides/runbook.md).
