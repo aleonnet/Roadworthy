@@ -107,7 +107,13 @@ def approved_in_transcript(fp, transcript):
     """The same fact, read from the transcript the harness writes: a plan-mode exit whose plan
     text has this fingerprint and whose result is not an error. Measured on this machine on
     2026-09-30: 126 approved exits carry a non-error result starting with "User has approved
-    your plan"; 112 rejected ones carry an error result."""
+    your plan"; 112 rejected ones carry an error result.
+
+    One call is recorded more than once under the same id: as the assistant's message, with the
+    plan in its input, and again as the request sent on (`api-request-blob`), with the input
+    empty. Measured on 2026-11-13: 20 of 43 approved exits. The plan of a call is the first one
+    that is not empty; keeping the last record made the empty one the plan, and the approval was
+    not found."""
     calls, results = {}, {}
     for rec in _records(transcript):
         content = (rec.get("message") or {}).get("content")
@@ -117,7 +123,9 @@ def approved_in_transcript(fp, transcript):
             if not isinstance(block, dict):
                 continue
             if block.get("type") == "tool_use" and block.get("name") == "ExitPlanMode":
-                calls[block.get("id")] = (block.get("input") or {}).get("plan") or ""
+                plan_text = (block.get("input") or {}).get("plan") or ""
+                if plan_text and not calls.get(block.get("id")):
+                    calls[block.get("id")] = plan_text
             elif block.get("type") == "tool_result":
                 body = block.get("content")
                 if isinstance(body, list):

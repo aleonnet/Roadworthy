@@ -369,4 +369,22 @@ rm -f "$RP/.roadworthy/evidence.jsonl"
 rpg PostToolUse "The user doesn't want to proceed with this plan."
 recorded && fail "a plan the person refused left an approval on record" || ok "a result in words that does not say the plan was approved records nothing"
 
+# ── 0.8.0: the approval found in a transcript that records the call twice ──────────────────────
+# The harness writes a plan-mode exit twice under ONE id: once as the assistant's message, with the
+# whole plan in its input, and once more as the request it sent on (`api-request-blob`), with the
+# input EMPTY. Measured on 2026-11-13 over 43 approved exits of 45 days: 20 are recorded that way,
+# and the lookup kept the last record of each id -- the empty one -- so it answered "not approved"
+# and the front could only be opened by the owner, by hand, with `--owner`. The two fixtures are
+# the four records of a real approved exit, anonymised, and the same four with the person refusing.
+section "plan-review-gate (the approval in a transcript that records the call twice)"
+FX="$ROOT/tests/fixtures"
+python3 "$ROOT/hooks/planblocks.py" approved "$RPP/p.md" "$TMP/twice-ledger-a.jsonl" "$FX/transcript-plan-exit-recorded-twice-approved.jsonl" \
+  && ok "the approval is found when the second record of the call is empty" || fail "an approval recorded twice in the transcript was not found"
+grep -q "\"fingerprint\": \"$FP\"" "$TMP/twice-ledger-a.jsonl" 2>/dev/null && grep -q '"source": "transcript"' "$TMP/twice-ledger-a.jsonl" \
+  && ok "and it is written down in the ledger, so the transcript is not read again" || fail "an approval recorded twice in the transcript was not found: nothing was written in the ledger"
+python3 "$ROOT/hooks/planblocks.py" approved "$RPP/p.md" "$TMP/twice-ledger-b.jsonl" "$FX/transcript-plan-exit-recorded-twice-refused.jsonl" \
+  && fail "a plan-mode exit the person refused was read as an approval" || ok "the same four records with the person refusing are not an approval"
+python3 "$ROOT/hooks/planblocks.py" approved "$RPP/p3.md" "$TMP/twice-ledger-c.jsonl" "$FX/transcript-plan-exit-recorded-twice-approved.jsonl" \
+  && fail "a plan with another scope was read as the one the transcript approved" || ok "and a plan with another scope is not the plan that transcript approved"
+
 rw_end
