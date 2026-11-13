@@ -43,21 +43,24 @@ aplica uma opção alterada sem perder a conversa.
    (`report:`), e `plan-preflight.sh` confere o plano mecanicamente antes que alguém o leia. Você o
    aprova no modo de plano, e a aprovação fica registrada.
 2. **Abrir.** `scope-write.sh <plano.md>` escreve `.roadworthy/scope`, `.roadworthy/gates` e a
-   fotografia da aprovação num só ato — a partir do plano que você aprovou, e de nenhum outro. Daqui
-   em diante as cercas estão ligadas.
+   fotografia da aprovação num só ato — a partir do plano que você aprovou, e de nenhum outro. Um
+   plano cujo Escopo cita vários repositórios abre uma frente em cada um, no mesmo ato. Daqui em
+   diante as cercas estão ligadas.
 3. **Trabalhar.** Edições e escritas nomeadas pelo shell fora do escopo são negadas; o próprio
    arquivo do plano continua editável. Os commits só levam o que o escopo cobre.
 4. **Fechar.** Escreva e commite o handoff; então `/roadworthy:close` roda os portões depois do
-   último commit, grava cada um com a impressão digital da árvore e libera o escopo. Só então o
-   turno pode dizer "pronto".
+   último commit, grava cada um com a impressão digital da árvore e deixa a frente **esperando
+   você**. Você responde no chat com uma palavra, `aprovado`, e o escopo é liberado; com
+   `reprovado <motivo>` a frente continua aberta. Uma frente fecha com a sua aprovação, nunca
+   sozinha.
 
 ## O que ele impõe (hooks)
 
 | Hook | Evento | Garantia |
 |---|---|---|
 | `session-state` | início de sessão | Diz o que o rito deixou em disco: ramo, árvore, frente aberta e o plano dela, estado gravado, o que espera uma pessoa, o que o dono exige, o marcador da madrugada, se os portões estão frescos. Fatos, nunca um veredito. |
-| `principles` | todo prompt | Injeta os seus princípios numerados e as regras numeradas do projeto, fixa o arquivo de princípios por digest, repete a forma de relatar combinada para a frente aberta e grava a resposta de uma pessoa a uma verificação humana. |
-| `rite-gate` | Edit/Write **e Bash** | Sem frente aprovada, nenhuma escrita dentro do repositório. Os arquivos do próprio rito são escritos pelos scripts dele e por mais nada; os cinco arquivos do dono são do dono. Com frente aberta, uma escrita nomeada pelo shell fora do escopo é negada. |
+| `principles` | todo prompt | Injeta os seus princípios numerados e as regras numeradas do projeto, fixa o arquivo de princípios por digest, repete a forma de relatar combinada para a frente aberta e lê do prompt as linhas do próprio dono: a resposta a uma verificação humana, a aprovação que fecha uma frente, o aceite de um arquivo de princípios que mudou, uma mudança nos arquivos do dono. |
+| `rite-gate` | Edit/Write **e Bash** | Sem frente aprovada, nenhuma escrita dentro do repositório. Os arquivos do próprio rito são escritos pelos scripts dele e por mais nada; os seis arquivos do dono são do dono. Com frente aberta, uma escrita nomeada pelo shell fora do escopo é negada. |
 | `scope-lock` | Edit/Write | Enquanto existe um escopo, uma edição fora dos globs dele é negada — o escopo do repositório em que o arquivo está. |
 | `protect-paths` | Edit/Write | Caminhos que casam com `protected_paths` (e com o `.roadworthy/protected` do projeto) nunca são editados. |
 | `guard-commit` | Bash | Um `git commit` é negado com flag proibida (padrão `--trailer`), sem nada em stage, ou quando levaria um caminho vedado ou um caminho fora do escopo da frente aberta. |
@@ -86,7 +89,15 @@ aberta, repete a **forma de relatar** que o plano combinou (`report:`). Quando a
 da frente — isso volta como uma linha no prompt, e a terceira negação já o diz no próprio motivo. E
 é onde **uma pessoa responde a uma verificação humana**: uma linha `rw-human: all approved` (ou
 `rw-human: <item> rejected <nota>`) no seu próprio prompt é gravada; o mesmo comando digitado pelo
-agente é negado.
+agente é negado. **Os outros atos do dono também passam pelo chat** (0.8.0), lidos por uma
+gramática só (`hooks/ownerline.py`). A mensagem inteira `aprovado` (ou `aprovada`, `approved`)
+fecha a frente cujo fechamento está esperando, e `reprovado <motivo>` a devolve — quando há
+exatamente um fechamento esperando e ele é o da frente aberta; no meio de uma frase a palavra é
+conversa. `rw-principios: aceito` concorda com o arquivo de princípios como ele está agora.
+`rw-config: [<repositório>] <arquivo> + <linha>` acrescenta uma linha a um dos arquivos do dono e
+`- <linha>` a retira (para `docs.json`: `<chave> = <valor>`); o que não pode ser aplicado não
+grava nada e é dito de volta. A marca só vale no começo de uma linha. O agente rodar este hook à
+mão, com um evento que ele escreveu, é negado como ato de pessoa.
 
 **`rite-gate`.** Enquanto o repositório **em que o alvo está** não tem um `.roadworthy/scope`
 utilizável, toda edição, escrita pelo shell e remoção pelo shell de conteúdo rastreado ali é negada,
@@ -95,12 +106,15 @@ são lidos por `hooks/shellread.py` do jeito que o shell os lê — aspas, hered
 separador, invólucros, `bash -c`, o diretório em vigor — e a gramática dele é uma tabela de casos
 (`tests/scripts/shellread.sh`). **A frente só abre do que você aprovou:** quando o agente roda
 `scope-write.sh`, o escopo, os portões e a base do plano precisam casar com uma aprovação
-registrada; o dono abre uma ele mesmo, num shell dele, com `scope-write.sh <plano.md> --owner`, que
+registrada — no livro do repositório onde a frente abre, no livro do repositório que o plano
+declara, ou na transcrição da sessão: a aprovação é do plano, onde quer que uma frente dele abra. O
+dono ainda pode abrir uma ele mesmo, num shell dele, com `scope-write.sh <plano.md> --owner`, que
 é negado ao agente. **O diretório do próprio rito é fechado a tudo que não sejam os scripts dele:** um
 caminho sob `.roadworthy/` só pode ser entregue a um comando conhecido por ler; escrever, remover,
 varrer (`find -delete`, `git clean`), um interpretador cujo código escreve ali, e o mesmo diretório
-escrito com outra caixa são negados. Os cinco arquivos do dono — `protected`, `free`, `rites`,
-`overnight-rules`, `docs.json` — são do dono. **Com uma frente aberta**, uma escrita nomeada pelo
+escrito com outra caixa são negados. Os seis arquivos do dono — `protected`, `free`, `rites`,
+`overnight-rules`, `standing-gates`, `docs.json` — são do dono: o agente nunca os escreve, e o
+dono os muda pelo chat (`rw-config:`). **Com uma frente aberta**, uma escrita nomeada pelo
 shell fora do escopo é negada como uma edição, um caminho vedado é vedado também pelo shell, uma
 frente cujo escopo ou cujos portões já não casam com a fotografia da aprovação para toda escrita até
 ser reaberta, e uma mudança fora do escopo que algum programa deixou na árvore é **dita** ao agente
@@ -153,7 +167,12 @@ precisa nomear a mesma. **O projeto pode pedir mais do que a sua opção pede:**
 cujo dono quer todo plano revisado não depende de uma nota que o agente pode não abrir. E **quando
 você aprova o plano, a aprovação é escrita** — a impressão digital do escopo, dos portões e da base
 dele —, que é o que o portão de entrada procura antes de uma frente abrir. Editar a prosa depois
-mantém a aprovação; mudar um glob, um portão ou a base pede outra.
+mantém a aprovação; mudar um glob, um portão ou a base pede outra. **O plano que a chamada nomeia
+é o plano** (0.8.0): quando a saída do modo de plano nomeia o arquivo e ele é um candidato vivo,
+ele é eleito antes do filtro por projeto. E um plano cujo projeto declarado é um repositório que
+**contém** aquele em que a sessão está — a sessão entrou num subprojeto que é um repositório
+próprio — é o plano daquele projeto, julgado no repositório dele; um plano de projeto sem relação
+continua recusado pelo nome.
 
 **`review-record`.** Quando o agente `cold-reviewer` termina com uma linha `VERDICT:`, o veredito é
 gravado com o commit e a árvore sobre os quais foi dado. O relatório é lido de onde ele chega: da
@@ -236,14 +255,24 @@ que afeta a corretude, falha fechado.
 - **plan** — `[NEEDS CLARIFICATION]` em vez de suposições; uma pergunta sobre como a frente vai
   relatar, escrita na linha `report:` do plano; `scope-write.sh` abre a frente a partir dos blocos
   cercados do plano, mantém a base quando a mesma frente é reaberta e recusa uma segunda frente
-  sobre uma viva; `plan-preflight.sh` confere citações por conteúdo, caminhos do escopo, numeração
+  sobre uma viva. Um Escopo que cita vários repositórios (um caminho a partir de casa, um caminho
+  absoluto, um repositório aninhado que mantém um rito próprio) abre uma frente em cada um, com as
+  linhas dele e os portões que começam com `cd <ele> && ...`; um repositório citado que ficaria sem
+  portão recusa a abertura inteira. Os portões permanentes do projeto
+  (`.roadworthy/standing-gates`) entram em toda frente. `plan-preflight.sh` confere citações por conteúdo, caminhos do escopo, numeração
   do aceite, correções declaradas e leitura de arquivo inteiro provada pela transcrição.
 - **refute** — `skills/refute/scripts/refute.sh` faz isso mecanicamente e escreve o registro. Uma
   refutação roda a sua verificação duas vezes, então doze delas custam doze rodadas da suíte: uma
   vez por garantia, não a suíte inteira a cada mudança.
 - **close** — `close.sh` roda todo portão de `.roadworthy/gates` com a entrada isolada e recusa
   quando rodaram menos do que os declarados; diz FRESH/STALE/MISSING depois com `--check`; recusa
-  uma frente cujo diff tocou um caminho vedado ou saiu do escopo. A verificação humana tem estado
+  uma frente cujo diff tocou um caminho vedado ou saiu do escopo. Com todos os portões verdes, uma
+  frente que o rito abriu termina **esperando a aprovação do dono** (estado `needs_human`, escopo
+  mantido): a palavra do dono no chat a fecha quando os portões ainda estão frescos para a árvore,
+  e uma aprovação dada depois de a árvore mudar fica registrada e manda o fechamento rodar de novo.
+  Uma frente em vários repositórios fecha a partir do repositório do plano: todos medidos, e então
+  todos liberados juntos. O que já estava mexido fora do escopo quando a frente abriu, e continua
+  como estava, não suja o fechamento. A verificação humana tem estado
   próprio: `--needs-human "<item>"` abre uma, `--human` lista as abertas, a resposta da pessoa a
   fecha, e nenhum fechamento posterior a apaga. `--abandon "<motivo>"` encerra, com registro, uma
   frente sem caminho adiante. `close-front.sh` move uma frente fechada para o histórico com os
@@ -299,14 +328,17 @@ ele, e a sessão aberta seguia negando com o valor antigo.
 
 As opções acima são do usuário e nascem permissivas. O que um PROJETO exige mora no projeto, em
 arquivos que o agente lê e não consegue editar nem remover (um glob ou um `chave: valor` por linha,
-`#` começa um comentário):
+`#` começa um comentário). Você os muda pelo chat, com uma linha do seu próprio prompt:
+`rw-config: <arquivo> + <linha>` acrescenta, `- <linha>` retira, e para `docs.json` a forma é
+`<chave> = <valor>`:
 
 | Arquivo | O que diz |
 |---|---|
 | `.roadworthy/gates` | Os comandos que um fechamento roda, um por linha. Escrito por `scope-write.sh` a partir do bloco de Verificação do plano e versionado como um teste. |
 | `.roadworthy/protected` | Globs que ninguém edita, por nenhuma porta: as ferramentas de edição, o shell, o commit, o fechamento. |
 | `.roadworthy/free` | Globs que não pedem frente nem escopo: notas privadas, rascunhos, uma área de rascunho dentro do repositório. |
-| `.roadworthy/rites` | O que este projeto exige além dos padrões do plugin: `plan_gate: preflight\|review\|both`, `diff_review: required`. Uma palavra que ele não conhece recusa, em vez de significar "sem exigência". |
+| `.roadworthy/rites` | O que este projeto exige além dos padrões do plugin: `plan_gate: preflight\|review\|both`, `diff_review: required` — e a única coisa que ele pode dispensar: `owner_approval: off`, com a qual uma frente fecha com os portões verdes, sem esperar você. Uma palavra que ele não conhece recusa, em vez de significar "sem exigência". |
+| `.roadworthy/standing-gates` | Os comandos que TODO fechamento deste projeto roda, um por linha, seja o que for que o plano declare. Entram nos portões de cada frente quando ela abre. |
 | `.roadworthy/overnight-rules` | `deny: <regex>` para comandos e `freeze: <glob>` para arquivos enquanto o marcador da madrugada existe. |
 | `.roadworthy/docs.json` | O mapa da documentação, as palavras de status e o diretório `plans`. |
 
@@ -319,7 +351,7 @@ abre, e nunca editado à mão.
 ## Testes
 
 ```bash
-bash tests/run.sh              # o portão inteiro: 34 casos, ~9 min
+bash tests/run.sh              # o portão inteiro: 35 casos, ~6 min
 bash tests/hooks/scope-lock.sh # uma cerca, sozinha, em segundos
 bash tests/attack.sh           # a suíte de trapaças: 148 ataques, 132 recusados, 16 declarados
 bash tests/bench/bench.sh      # as cercas diante de uma sessão REAL, sem interface (gasta alguns centavos)
@@ -405,7 +437,10 @@ de comandos reconhece (um script em disco, o encanamento do próprio git) põe n
 fora do escopo, e o fechamento então recusa a frente; o livro de evidências e o arquivo de estado
 podem ser gravados por um programa que monta o caminho deles ao rodar — o escopo, os portões e a
 fotografia são pegos depois pelos seus digests, o livro não; e uma afirmação de que o trabalho
-terminou, dita fora do vocabulário do portão de parada, não é julgada. Cada um está escrito com o
+terminou, dita fora do vocabulário do portão de parada, não é julgada. Outros dois são do canal do
+dono (0.8.0): as linhas do dono são lidas do prompt que a pessoa submeteu, então um texto que ela
+colou e que traz uma delas no começo de uma linha é ordem dela; e um script em disco que roda o
+hook de prompt com um evento que ele escreveu alcança o que o hook alcança. Cada um está escrito com o
 seu motivo em [`docs/reference/roadmap.md`](docs/reference/roadmap.md) e exercitado em
 `tests/attack.sh` como ataque DECLARADO, de modo que um limite que passa a ser recusado é reportado
 como a cerca crescendo, e um buraco que ninguém declarou reprova o portão.

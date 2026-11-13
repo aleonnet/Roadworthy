@@ -240,7 +240,8 @@ def approved_in_transcript(fp, transcript):
 
     One call is recorded more than once under the same id: as the assistant's message, with the
     plan in its input, and again as the request sent on (`api-request-blob`), with the input
-    empty. Measured on 2026-11-13: 20 of 43 approved exits. The plan of a call is the first one
+    empty. Measured on 2026-11-13, in the transcripts of two projects changed in the last 45 days:
+    20 of 26 approved exits. The plan of a call is the first one
     that is not empty; keeping the last record made the empty one the plan, and the approval was
     not found."""
     calls, results = {}, {}

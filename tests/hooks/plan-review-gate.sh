@@ -416,7 +416,7 @@ unset CLAUDE_PLUGIN_OPTION_PLANS_DIR
 # ── 0.8.0: the approval found in a transcript that records the call twice ──────────────────────
 # The harness writes a plan-mode exit twice under ONE id: once as the assistant's message, with the
 # whole plan in its input, and once more as the request it sent on (`api-request-blob`), with the
-# input EMPTY. Measured on 2026-11-13 over 43 approved exits of 45 days: 20 are recorded that way,
+# input EMPTY. Measured on 2026-11-13 over the 26 approved exits of 45 days: 20 are recorded that way,
 # and the lookup kept the last record of each id -- the empty one -- so it answered "not approved"
 # and the front could only be opened by the owner, by hand, with `--owner`. The two fixtures are
 # the four records of a real approved exit, anonymised, and the same four with the person refusing.

@@ -30,10 +30,15 @@ does. Roadworthy wraps a unit of work in a **rite** and makes every step of it a
 ```
 no front --( plan approved in plan mode )--> approval on record
    ^                                               |  scope-write.sh
-   |  close.sh: every gate green                   v
-   +------------- or close.sh --abandon <----- front open
-                                        (.roadworthy/scope, gates, plan.snapshot)
+   |  the owner's "aprovado", in the chat          v
+   +-- waiting for the owner <-- close.sh: <-- front open, in every repository the plan cites
+   |   (needs_human, scope kept)  every gate green   (.roadworthy/scope, gates, plan.snapshot)
+   +-- or close.sh --abandon
 ```
+
+A front does not close by itself: green gates leave it waiting, and the owner's word releases
+it (a project may dispense that in `.roadworthy/rites`). One plan may cite several
+repositories; it opens a front in each, and they close together, from the plan's.
 
 - A **front** is one approved plan being executed: its scope (globs), its gates (commands)
   and a snapshot of what was approved, with digests.
@@ -61,7 +66,8 @@ the last two recorded with the tree they were measured on.
 
 - `session-state` — SessionStart; fails open. Says what is on disk. It cannot block.
 - `principles` — UserPromptSubmit; fails open. Injects the numbered rules, the reporting form
-  agreed for the front and the three-strikes notice; records a person's `rw-human:` answer.
+  agreed for the front and the three-strikes notice; reads the owner's lines from the prompt
+  (`rw-human:`, the bare `aprovado`, `rw-principios:`, `rw-config:`) and carries each out.
 - `rite-gate` — PreToolUse on the edit tools and on Bash; fails closed. The entry gate: no
   front, no write; nothing under `.roadworthy/` by hand; the front on disk is the one that
   was approved; the scope holds through the shell.
@@ -86,8 +92,11 @@ the last two recorded with the tree they were measured on.
 - `hooks/shellread.py` — reads a shell command the way the shell does and says what it
   writes and removes. The largest file here; its contract is a table of cases.
 - `hooks/globmatch.py` — the glob grammar.
-- `hooks/planblocks.py` — what a plan declares (scope, gates, base), its fingerprint, and
-  whether an approval of that fingerprint is on record.
+- `hooks/planblocks.py` — what a plan declares (scope, gates, base), its fingerprint, whether
+  an approval of that fingerprint is on record, the repository a path belongs to (`repo_of`,
+  the rule of `rw_target_root` in Python) and a plan's Scope and gates divided by repository.
+- `hooks/ownerline.py` — the orders an owner gives in the chat, read from the prompt by one
+  grammar, and the one function that changes an owner's file (`rw-config:`).
 - `hooks/frontcheck.py` — is the open front intact, what changed outside its scope, whose
   commit is it, what would this commit take.
 
@@ -144,16 +153,23 @@ Most of them are an absence, which is why they are hard to see from any one file
    beside them and are not a pattern: `overnight-guard` and parts of `guard-commit` match the
    raw command text; `plan-preflight.sh` and `plan-review-gate` read parts of a plan themselves.
 5. **The repository that judges a file is the one the file is in** (`rw_target_root`). Only
-   a file in no repository at all falls back to the one the session stands in.
+   a file in no repository at all falls back to the one the session stands in. The script that
+   opens a front asks the same question in Python (`repo_of`), and one table of paths is handed
+   to both (`tests/scripts/front-roots.sh`): two answers would open a front the fences then
+   judge by another repository.
 6. **The agent writes nothing under `.roadworthy/` by hand.** Scope, gates and snapshot come
    from `scope-write.sh`; the state and the gate records from `close.sh`; what a hook
-   witnessed, from that hook; the owner's files from the owner (`docs-init.sh` creates
-   `docs.json` when it is missing).
-7. **A person's act is never typed by the agent.** Opening a front as the owner (`--owner`)
-   and answering a human verification are denied to it.
-8. **The closing measures what was approved**: a front the rite opened closes only when its
-   scope and gates still match the digests in the snapshot, and every declared gate runs or
-   the closing refuses.
+   witnessed, from that hook; the owner's six files from the owner, by a line of the owner's
+   own prompt (`rw-config:`) or by hand (`docs-init.sh` creates `docs.json` when it is missing).
+7. **A person's act is never typed by the agent.** Opening a front as the owner (`--owner`),
+   answering a human verification, approving a closing and running the prompt hook by hand —
+   which is how the owner's lines are read — are denied to it.
+8. **The closing measures what was approved, and the owner closes it**: a front the rite
+   opened closes only when its scope and gates still match the digests in the snapshot, every
+   declared gate ran, in every repository of the front, and the owner approved the trees those
+   gates measured. That requirement is true of every front with a snapshot — read from no
+   option and no ledger — and only `owner_approval: off` in the owner's rites dispenses it;
+   the owner's answer is read from the plan's repository's own ledger.
 9. **No case outside the manifest, no case that ends early.** `tests/run.sh` refuses when
    `tests/cases.txt` and the directories disagree, and a case that never reaches `rw_end`
    is red whatever its exit status.

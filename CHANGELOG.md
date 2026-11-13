@@ -5,6 +5,94 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-13
+
+**The rite in seven steps, with no lock that depends on a command the owner types.** The owner
+asked for the plugin to be measured against the house rite and named what it got wrong: it "has
+deadlocks, does not let multi-repository plans be made", should "create discipline, not locks
+that depend on my manual commands", and "a front is only closed with my approval". Measured on
+2026-11-13 in the ledgers of one monorepo, since 2026-10-02: 113 refusals — 31 for a path outside
+the scope, 27 for an approval that was not found or a front "not approved", 18 for want of a
+front, 13 for "N live plans", 9 for a red pre-flight, 6 for one of the owner's files, 3 for a plan
+of another project, 6 of other kinds. Seven changes, each with an assertion that failed first and
+a refutation with the defect planted (25 of them, every file restored by its digest).
+
+### Added
+- **One plan opens a front in every repository it cites.** A Scope line may name a file of another
+  repository — a path from home, an absolute path, or a path into a repository nested in the
+  plan's that keeps a `.roadworthy/` of its own. `scope-write.sh` opens a front in each, in one
+  act: its own lines (relative to it), the gates that start with `cd <it> && ...`, and a snapshot
+  that carries the plan's whole lists, the plan's repository and the repositories of the front.
+  All or nothing: a cited repository left with no gate, or holding a live front of another plan,
+  refuses the whole opening. The closing runs every gate from the plan's repository; run there, it
+  measures every repository of the front and releases them together; run in one of the others, it
+  measures that one and says where the front closes from. Abandoned from the plan's repository, a
+  front is abandoned in all of them. Run inside a subproject that is a repository of its own, with
+  a plan that declares the repository holding it, the front opens from the plan's.
+- **A front closes with the owner's approval.** With every gate green, the closing of a front the
+  rite opened ends WAITING: an item for the owner, the state `needs_human`, the scope kept, exit
+  0. The owner answers in the chat with the whole message `aprovado` (`aprovada`, `approved`) or
+  `reprovado <motivo>` (`rejected <reason>`), or with `rw-human: aprovado`. Approved with the
+  gates still fresh on the trees they measured: `passed`, the scope released in every repository
+  of the front. Approved after a tree changed: recorded, the front stays open, and the closing has
+  to run again. Rejected: `gaps_found`, the scope kept, the reason on record. The requirement is
+  true of every front with a snapshot — read from no option and no ledger — and only a line
+  `owner_approval: off` in the owner's `.roadworthy/rites` dispenses it; the owner's answer is
+  written and read in the plan's repository's own ledger, whatever `ROADWORTHY_DATA` says. A scope
+  written by hand closes as before. The night ends with the front waiting, and its hand-off says so.
+- **The owner's acts pass through the chat.** `rw-principios: aceito` agrees to a principles file
+  that changed, where the pin had to be rewritten by hand. `rw-config: [<repository>] <file> +
+  <line>` (`- <line>`; for `docs.json`, `<key> = <value>`) changes the owner's files, which the
+  agent is denied. One grammar, in `hooks/ownerline.py`; a marker counts only at the start of a
+  line, and what cannot be applied writes nothing and is said back.
+- **Standing gates.** `.roadworthy/standing-gates` — the owner's file, denied to the agent through
+  both doors — holds the commands every closing of a project runs. They are joined to the gates of
+  each front when it opens and kept apart in the snapshot, so the fingerprint of the plan, which is
+  what an approval approves, does not change.
+- `tests/scripts/front-roots.sh`: one table of paths handed to the shell's resolver of a file's
+  repository and to the Python one, which have to agree on every row. The suite has 35 cases.
+
+### Changed
+- **The approval of a plan is the plan's, wherever a front of it opens.** The entry gate and the
+  fence that measures an open front look for it in the ledger of the repository the front is in,
+  of the one it was opened from and of the one the plan declares.
+- **The plan the call names is the plan.** `plan-review-gate` elects the file a plan-mode exit
+  names before it filters by project, and a plan whose declared project is a repository that holds
+  the one the session stands in is that project's plan, judged in its repository.
+- **What was already changed when the front opened does not block its closing.** The closing reads
+  what the opening recorded: a path outside the scope with the content it had then is neither a
+  dirty tree nor a file the front touched. Changed again since, the closing refuses naming it. A
+  path the owner freed does not dirty a closing either. The advice to `git stash` somebody else's
+  file is gone from the closing, its test and the runbook.
+- **The agent running the prompt hook by hand is denied** (`hooks/principles`, `run-hook.cmd
+  principles`, `hooks/ownerline.py`, `close.sh --owner-word`): with an event it wrote, it would be
+  typing the owner's answer. The time limit of the prompt hook goes from 10 to 30 seconds: an
+  approval measures the gates of every repository of the front.
+- A scope path written from home (`~/...`) is found by the pre-flight, and so is a whole reading of
+  it written the same way.
+
+### Fixed
+- **An approval was not found in the transcript.** The harness records a plan-mode exit twice
+  under one id, the second time with its input empty, and the lookup kept the last record.
+  Measured on 2026-11-13 in the transcripts of two projects: 20 of 26 approved exits. The plan of a
+  call is the first one that is not empty. The field record of 2026-10-16 also asked for the
+  result's file to be read when it is persisted; measured, the 8 results that went to a file still
+  carry the phrase in the transcript, so that half was not needed.
+
+### Declared limits
+- The owner's lines are read from the prompt the person submitted: a text the person pasted that
+  carries one at the start of a line is the person's order. Exercised in `tests/attack.sh`.
+- A script on disk that runs the prompt hook on an event it wrote reaches what the hook reaches:
+  the class of every program the agent starts, already declared.
+- A front in several repositories is released one repository after another; a failure between two
+  of them leaves the rest open, and closing again finishes it.
+
+### Upgrading
+- A front the rite opened no longer closes by itself. A project that wants the old behaviour says
+  so in the owner's file: `rw-config: rites + owner_approval: off`, in the chat.
+- A front open when the plugin is updated keeps working: a snapshot from before 0.8.0 names no
+  other repository, and the front is that repository alone.
+
 ## [0.7.1] - 2026-10-01
 
 **Four defects found while the developer guide was being written, and the guide itself.** Writing

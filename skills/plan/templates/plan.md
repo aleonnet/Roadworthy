@@ -48,7 +48,10 @@ from the mood of the day.
 
 ## Scope
 The globs `scope-lock` will enforce, read from this fenced block by
-`skills/plan/scripts/scope-write.sh` when the front opens.
+`skills/plan/scripts/scope-write.sh` when the front opens. A line about ANOTHER repository is
+written from home (`~/other-repo/src/**`) or as a path into a nested repository that keeps a
+`.roadworthy/` of its own; the front then opens in that repository too, and it needs a gate of its
+own below (`cd ~/other-repo && <command>`).
 ```
 path/to/file
 dir/**
@@ -62,7 +65,8 @@ dir/**
 ## Verification (after the last commit)
 Every line of the block below becomes one line of `.roadworthy/gates`, and `close.sh` runs each
 with `bash -c`. So each line is a COMMAND -- never a bullet, never prose, never a placeholder.
-Write what you expect underneath, outside the block.
+Write what you expect underneath, outside the block. The project's standing gates
+(`.roadworthy/standing-gates`, the owner's file) are added by themselves: do not copy them here.
 ```
 <gate command>
 <gate command>

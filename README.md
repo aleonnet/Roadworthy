@@ -42,21 +42,23 @@ idempotent; `claude plugin update roadworthy@roadworthy` picks up new versions, 
    `plan-preflight.sh` checks it mechanically before anyone reads it. You approve it in plan mode,
    and the approval is recorded.
 2. **Open.** `scope-write.sh <plan.md>` writes `.roadworthy/scope`, `.roadworthy/gates` and the
-   approval snapshot in one act — from the plan you approved, and from no other. From here the
+   approval snapshot in one act — from the plan you approved, and from no other. A plan whose
+   Scope cites several repositories opens a front in each of them, in the same act. From here the
    fences are on.
 3. **Work.** Edits and named shell writes outside the scope are denied; the plan file itself stays
    editable. Commits take only what the scope covers.
 4. **Close.** Write and commit the hand-off, then `/roadworthy:close` runs the gates after the last
-   commit, records each with the tree's fingerprint, and releases the scope. Only then may the turn
-   say "done".
+   commit, records each with the tree's fingerprint, and leaves the front **waiting for you**. You
+   answer in the chat with one word, `aprovado` (or `approved`), and the scope is released; with
+   `reprovado <motivo>` the front stays open. A front closes with your approval, never by itself.
 
 ## What it enforces (hooks)
 
 | Hook | Event | Guarantee |
 |---|---|---|
 | `session-state` | session start | Says what the rite left on disk: branch, tree, open front and its plan, recorded state, what waits for a person, what the owner requires, the night marker, whether the gates are fresh. Facts, never a verdict. |
-| `principles` | every prompt | Injects your numbered principles and the project's numbered rules, pins the principles file by digest, repeats the reporting form agreed for the open front, and records a person's answer to a human verification. |
-| `rite-gate` | Edit/Write **and Bash** | No approved front, no write inside the repository. The rite's own files are written by its scripts and by nothing else; the owner's five files are the owner's. With a front open, a named shell write outside the scope is denied. |
+| `principles` | every prompt | Injects your numbered principles and the project's numbered rules, pins the principles file by digest, repeats the reporting form agreed for the open front, and reads the owner's own lines from the prompt: the answer to a human verification, the approval that closes a front, the agreement to a changed principles file, a change to the owner's files. |
+| `rite-gate` | Edit/Write **and Bash** | No approved front, no write inside the repository. The rite's own files are written by its scripts and by nothing else; the owner's six files are the owner's. With a front open, a named shell write outside the scope is denied. |
 | `scope-lock` | Edit/Write | While a scope exists, an edit outside its globs is denied — the scope of the repository the file is in. |
 | `protect-paths` | Edit/Write | Paths matching `protected_paths` (and the project's `.roadworthy/protected`) are never edited. |
 | `guard-commit` | Bash | A `git commit` is denied with a forbidden flag (default `--trailer`), with nothing staged, or when it would take a protected path or a path outside the open front's scope. |
@@ -85,6 +87,15 @@ this session's main agent, with a scope open, since the front opened — that co
 the prompt, and the third denial already says so in its own reason. And it is where **a person
 answers a human verification**: a line `rw-human: all approved` (or `rw-human: <item> rejected
 <note>`) in your own prompt is recorded; the same command typed by the agent is denied.
+**The owner's other acts pass through the chat too** (0.8.0), read by one grammar
+(`hooks/ownerline.py`). The whole message `aprovado` (or `aprovada`, `approved`) closes the front
+whose closing is waiting, and `reprovado <motivo>` sends it back — when exactly one closing waits
+and it is the open front's; in the middle of a sentence the word is conversation.
+`rw-principios: aceito` agrees to the principles file as it is now. `rw-config: [<repository>]
+<file> + <line>` adds a line to one of the owner's files and `- <line>` removes it (for
+`docs.json`: `<key> = <value>`); what cannot be applied writes nothing and is said back. A marker
+counts only at the start of a line. The agent running this hook by hand, on an event it wrote, is
+denied as a person's act.
 
 **`rite-gate`.** While the repository **the target is in** has no usable `.roadworthy/scope`, every
 edit, shell write and shell removal of tracked content there is denied, naming the rite that opens a
@@ -92,12 +103,15 @@ front. An **empty** scope file does not count. Shell commands are read by `hooks
 way the shell reads them — quoting, heredocs, substitutions, every separator, wrappers, `bash -c`,
 the directory in force — and its grammar is a table of cases (`tests/scripts/shellread.sh`).
 **The front opens only from what you approved:** when the agent runs `scope-write.sh`, the plan's
-scope, gates and base must match an approval on record; the owner opens one himself, in a shell of
-his own, with `scope-write.sh <plan.md> --owner`, which the agent is denied. **The rite's own directory is closed to
+scope, gates and base must match an approval on record — in the ledger of the repository the front
+opens in, in the ledger of the repository the plan declares, or in the session's transcript: the
+approval is the plan's, wherever a front of it opens. The owner may still open one himself, in a
+shell of his own, with `scope-write.sh <plan.md> --owner`, which the agent is denied. **The rite's own directory is closed to
 everything but its scripts:** a path under `.roadworthy/` may only be handed to a command known to
 read; writing, removing, sweeping (`find -delete`, `git clean`), an interpreter whose code writes
-there, and the same directory spelled in another case are denied. The owner's five files —
-`protected`, `free`, `rites`, `overnight-rules`, `docs.json` — are the owner's. **With a front
+there, and the same directory spelled in another case are denied. The owner's six files —
+`protected`, `free`, `rites`, `overnight-rules`, `standing-gates`, `docs.json` — are the owner's:
+the agent never writes them, and the owner changes them from the chat (`rw-config:`). **With a front
 open**, a named shell write outside the scope is denied like an edit, a protected path is protected
 through the shell too, a front whose scope or gates no longer match the approval snapshot stops
 every write until it is reopened, and a change outside the scope that some program left in the tree
@@ -147,7 +161,11 @@ is joined with the option and the stricter wins, so a project whose owner wants 
 does not depend on a note the agent may not open. And **when you approve the plan, the approval is
 written down** — the fingerprint of its scope, gates and base — which is what the entry gate looks
 up before a front opens. Editing the prose afterwards keeps the approval; changing a glob, a gate or
-the base needs a new one.
+the base needs a new one. **The plan the call names is the plan** (0.8.0): when the plan-mode exit
+names its file and that file is a live candidate, it is elected before the filter by project. And a
+plan whose declared project is a repository that **holds** the one the session stands in — the
+session entered a subproject that is a repository of its own — is that project's plan, judged in
+its repository; a plan of an unrelated project is still refused by name.
 
 **`review-record`.** When the `cold-reviewer` agent finishes with a `VERDICT:` line, the verdict is
 recorded with the commit and tree it was given about. The report is read from where it arrives:
@@ -227,14 +245,24 @@ what affects correctness, fails closed.
 - **plan** — `[NEEDS CLARIFICATION]` instead of assumptions; one question about how the front will
   report, written in the plan's `report:` line; `scope-write.sh` opens the front from the plan's
   fenced blocks, keeps the base when the same front is reopened, and refuses a second front over a
-  live one; `plan-preflight.sh` checks citations by content, scope paths, acceptance numbering,
+  live one. A Scope that cites several repositories (a path from home, an absolute path, a nested
+  repository that keeps a rite of its own) opens a front in each, with its own lines and the gates
+  that start with `cd <it> && ...`; a cited repository left with no gate refuses the whole opening.
+  The project's standing gates (`.roadworthy/standing-gates`) are joined to every front.
+  `plan-preflight.sh` checks citations by content, scope paths, acceptance numbering,
   declared corrections, and whole-file reading proved from the transcript.
 - **refute** — `skills/refute/scripts/refute.sh` does it mechanically and writes the record. A
   refutation runs your check twice, so twelve of them cost twelve suite runs: once per guarantee,
   not the whole suite on every change.
 - **close** — `close.sh` runs every gate in `.roadworthy/gates` with its input isolated and refuses
   when fewer ran than were declared; says FRESH/STALE/MISSING later with `--check`; refuses a front
-  whose diff touched a protected path or left the scope. A human verification has a state of its
+  whose diff touched a protected path or left the scope. With every gate green, a front the rite
+  opened ends **waiting for the owner's approval** (state `needs_human`, scope kept): the owner's
+  word in the chat closes it when the gates are still fresh for the tree, and an approval given
+  after the tree changed is recorded and sends the closing to run again. A front in several
+  repositories closes from the plan's: every one measured, then all released together. What was
+  already changed outside the scope when the front opened, and is still as it was, does not dirty
+  the closing. A human verification has a state of its
   own: `--needs-human "<item>"` opens one, `--human` lists what is open, the person's answer closes
   it, and no later closing erases it. `--abandon "<reason>"` ends a front that has no way forward,
   on record. `close-front.sh` moves a closed front into history with links rewritten.
@@ -289,14 +317,16 @@ it, and the open session kept denying with the old value.
 
 The options above are the user's and are born permissive. What a PROJECT requires lives in the
 project, in files the agent can read and cannot edit or remove (one glob or one `key: value` per
-line, `#` starts a comment):
+line, `#` starts a comment). You change them from the chat, with a line of your own prompt:
+`rw-config: <file> + <line>` adds, `- <line>` removes, and for `docs.json` it is `<key> = <value>`:
 
 | File | What it says |
 |---|---|
 | `.roadworthy/gates` | The commands a closing runs, one per line. Written by `scope-write.sh` from the plan's Verification block and versioned like a test. |
 | `.roadworthy/protected` | Globs nobody edits, through any door: the edit tools, the shell, the commit, the closing. |
 | `.roadworthy/free` | Globs that need no front and no scope: private notes, drafts, a scratch area inside the repository. |
-| `.roadworthy/rites` | What this project demands beyond the plugin's defaults: `plan_gate: preflight\|review\|both`, `diff_review: required`. A word it does not know refuses instead of meaning "no requirement". |
+| `.roadworthy/rites` | What this project demands beyond the plugin's defaults: `plan_gate: preflight\|review\|both`, `diff_review: required` — and the one thing it may dispense: `owner_approval: off`, with which a front closes on green gates, without waiting for you. A word it does not know refuses instead of meaning "no requirement". |
+| `.roadworthy/standing-gates` | The commands EVERY closing of this project runs, one per line, whatever the plan declares. Joined to the gates of each front when it opens. |
 | `.roadworthy/overnight-rules` | `deny: <regex>` for commands and `freeze: <glob>` for files while the night marker exists. |
 | `.roadworthy/docs.json` | The documentation map, the status words, and the `plans` directory. |
 
@@ -309,7 +339,7 @@ edited by hand.
 ## Testing
 
 ```bash
-bash tests/run.sh              # the whole gate: 34 cases, ~9 min
+bash tests/run.sh              # the whole gate: 35 cases, ~6 min
 bash tests/hooks/scope-lock.sh # one fence, alone, in seconds
 bash tests/attack.sh           # the cheating suite: 148 attacks, 132 refused, 16 declared
 bash tests/bench/bench.sh      # the fences met by a REAL session, headless (spends a few cents)
@@ -391,7 +421,10 @@ remain possible for a deliberate agent: a commit made by a route no reader of co
 closing then refuses the front; the evidence ledger and the state file can be written by a program
 that builds their path at run time — the scope, the gates and the snapshot are caught afterwards by
 their digests, the ledger is not; and a claim that the work is finished, worded outside the stop
-gate's vocabulary, is not judged. Each one is written with its reason in
+gate's vocabulary, is not judged. Two more belong to the owner's channel (0.8.0): the owner's lines
+are read from the prompt the person submitted, so a text the person pasted that carries one at the
+start of a line is the person's order; and a script on disk that runs the prompt hook on an event
+it wrote reaches what the hook reaches. Each one is written with its reason in
 [`docs/reference/roadmap.md`](docs/reference/roadmap.md) and exercised in `tests/attack.sh` as a
 DECLARED attack, so a limit that starts being refused is reported as the fence growing, and a hole
 nobody declared fails the gate.

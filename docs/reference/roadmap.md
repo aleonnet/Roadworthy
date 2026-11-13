@@ -56,6 +56,18 @@ Living document (undated name by design). One line per item, with the measured r
   in the hooks and scripts, where it had been seeing 22 of 49. With it, `README_DEV.md` in two
   languages, `docs/guides/runbook.md` and `CONTRIBUTING.md`.
 
+- 0.8.0 the rite in seven steps, with no lock that depends on a command the owner types (plan
+  `docs/plans/2026-11-13-1524-roadworthy-0-8-0-o-rito-em-sete-passos.md`). Measured in the
+  ledgers of one monorepo since 2026-10-02: 113 refusals, 27 of them an approved plan whose front
+  could not open in a second repository and 13 a plan the call had named and the gate did not
+  elect. One plan opens a front in every repository it cites and they close together; a front
+  closes with the owner's approval, given in the chat; the owner accepts a changed principles
+  file and changes the owner's files by a line of the prompt; a project keeps its standing gates
+  in a file of the owner's; what was already changed when a front opened does not block its
+  closing; the approval is found in a transcript that records the call twice; and the plan the
+  call names is the plan. It closes the field record of 2026-10-16 (in `docs/roadmap/`, a
+  directory git ignores here).
+
 ## Pending
 - **Beyond carelessness: the three classes the adversarial simulation of 2026-10-01 proved.** Each
   needs a change of architecture, not another rule, and none is approved yet. (1) A commit by a
@@ -185,6 +197,24 @@ being refused is reported as the fence growing, and a hole nobody declared fails
   colleague from the agent committing in ANOTHER clone and pulling the result in: several
   deliberate steps, each visible in the transcript, and the class of the item above. A commit this
   clone recorded making stays the front's however it comes back, a rebase included.
+- **The owner's lines are read from the prompt the person submitted (0.8.0).** A line of the
+  prompt that starts with `rw-human:`, `rw-principios:` or `rw-config:`, and the bare word
+  `aprovado` as the whole message, are the owner's orders, because the prompt is the one text of
+  a session the agent did not write. The hook cannot tell what the person typed from what the
+  person pasted: a document, a log or an issue that carries one of those lines at the start of a
+  line, pasted whole into the prompt, is the person's order. What bounds it: the marker counts
+  only at the start of a line and the bare word only as the whole message; every order applied is
+  said back in the same prompt; and the files it changes are the project's, under git. Exercised
+  in `tests/attack.sh` as DECLARED.
+- **The prompt hook is a program on disk (0.8.0).** The entry gate denies the agent the hook run
+  by hand, the reader of the owner's lines and the command the hook runs for the bare word. A
+  script the agent writes and runs, which calls the hook on an event it wrote, is the class of the
+  first item above: what a hook can reach, a program started by the agent can reach. The owner's
+  approval of a closing is the one answer that is read from a single place — the plan's
+  repository's own ledger, which the gate denies by name — and never from `ROADWORTHY_DATA`.
+- **A front in several repositories is released one after another (0.8.0).** The closing measures
+  every repository first and releases them in turn; nothing makes that atomic. A failure between
+  two of them leaves the rest open, and running the closing again finishes it.
 - **A linked worktree is a repository of its own to the rite.** `git worktree add` gives a directory
   with its own `.roadworthy/`: its own front, its own ledger. The simulated session opens a front
   there from the plan approved in the same session, works and closes it, and the first tree's front

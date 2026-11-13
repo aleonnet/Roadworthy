@@ -58,7 +58,9 @@ open; the plan itself is the exception. The steps:
 1. Write the plan as a `.md` directly in `docs/plans/` — that needs no front — from
    `skills/plan/templates/plan.md`. `Scope` and `Verification` are fenced blocks. Copy the
    Verification block of the newest plan in `docs/plans/done/`: it is this repository's
-   quality bar. Add your own gates under it.
+   quality bar. Add your own gates under it. (From 0.8.0 a project keeps that bar in
+   `.roadworthy/standing-gates`, the owner's file, and every front gets it by itself; this
+   repository has not moved its ten gates there yet.)
 2. Check it: `bash skills/plan/scripts/plan-preflight.sh docs/plans/<plan>.md --transcript
    <the session's transcript>` must end with `plan-preflight: green`.
 3. Submit it in plan mode and approve it there.
@@ -66,11 +68,20 @@ open; the plan itself is the exception. The steps:
 5. Work and commit. The opening rewrote `.roadworthy/gates`, which is tracked: commit it
    with the front, or the closing calls the tree dirty.
 6. Write the hand-off (a `.md` in `docs/plans/`) and commit it BEFORE closing.
-7. Close: `bash skills/close/scripts/close.sh`.
+7. Close: `bash skills/close/scripts/close.sh`. With every gate green it ends WAITING.
+8. The owner answers in the chat, with the whole message `aprovado` (or `reprovado <motivo>`).
 
 Expect, at step 4, `scope-write: front open from <plan>` followed by the base, the number of
-globs and of gates; at step 7, one `OK` line per gate and
-`close: passed — evidence in <ledger>; scope released`.
+globs and of gates; at step 7, one `OK` line per gate and `close: every gate passed ... Waiting
+for it: owner approval to close <plan> ...`, with the state `needs_human` and the scope kept; at
+step 8, in the context the prompt hook hands the agent, `close: approved by the owner, in the
+prompt — the front is closed: passed; ... scope released`.
+
+A plan whose Scope cites another repository — a path from home, an absolute path, a nested
+repository that keeps a `.roadworthy/` of its own — opens a front in each one in the same act,
+and step 4 says `in N repositories`. Each needs a gate of its own (`cd <it> && ...`). The
+front closes from the plan's repository; run in one of the others, `close.sh` measures that
+one and says where the front closes from.
 
 Working by hand, outside an agent, the owner opens the front with no approval on record:
 `scope-write.sh docs/plans/<plan>.md --owner`. An agent that types `--owner` is denied.
@@ -95,6 +106,12 @@ another tree), `MISSING` (never ran). `close.sh --state` prints `passed`, `gaps_
   the front's, it goes to the plan's Scope.
 - `close: gaps_found — N gate(s) red; scope kept`: the `FAIL` line names the gate and shows
   the end of its output. Fix, commit, close again.
+- `close: approved by ..., and recorded — but it closes nothing yet`: the tree changed after
+  the gates ran. Close again; it asks for the approval of the tree as it is now.
+- `close: the front is not released — it closes with the owner's approval`: `--release-front`
+  was run by hand. Nothing to do but close, report and wait for the owner.
+- `.roadworthy/rites ... says owner_approval is '<word>'`: the only word it knows is `off`.
+  The file is the owner's.
 - `close: the front touched N file(s) outside its declared scope`: put those files back as
   they were at the base, or take the change to the plan as in the entry above.
 - `close: no front is open here — the last one (...) already ended as 'passed'`: something
@@ -148,6 +165,33 @@ rw-human: <item or id> rejected <note>
 or, in a shell outside the agent, `close.sh --human "<item>|<id>|all" approved|rejected --by
 <who>`. The agent typing that command is denied: `a human verification is answered by the
 person, not by the agent`.
+
+## The owner's lines in the chat
+
+What only the owner may do, the owner does by writing in the chat. The prompt hook reads the
+prompt (`hooks/ownerline.py` is the grammar) and says back, in the context the agent
+receives, what each line did. A marker counts at the START of a line; the bare word, as the
+whole message.
+
+```
+aprovado                                   closes the front whose closing is waiting
+reprovado <motivo>                         keeps it open, with the reason on record
+rw-human: <item or id>|all approved        answers a human verification (rejected <note>)
+rw-principios: aceito                      agrees to the principles file as it is now
+rw-config: protected + lib/auth/**         adds a line to an owner's file; "- <line>" removes it
+rw-config: rites + owner_approval: off     in the rites a key is SET: said again, it replaces
+rw-config: docs.json plans = docs/plans    for docs.json: <key> = <value>
+rw-config: <repository> free + notes/**    another repository than the one the session is in
+```
+
+The files: `protected`, `free`, `rites`, `overnight-rules`, `standing-gates`, `docs.json`.
+Expect `THE OWNER CHANGED ONE OF THE OWNER'S FILES IN THIS PROMPT -- <file>: added '<line>'`,
+or `The owner's 'rw-config:' line could not be applied: <reason>` with nothing written. The
+file is then uncommitted: the agent may commit it as it is, and may not edit it.
+
+If a word did nothing: `aprovado` is an answer only when exactly one closing is waiting and it
+is the open front's (`close.sh --human` lists what waits); otherwise it was conversation.
+The agent running the hook itself is denied: `the prompt hook is run by the harness`.
 
 ## A hook denies everything, or errors
 
@@ -250,7 +294,11 @@ is not exercised there until you add it to the job, next to its line in the laun
 The owner's decision, never the agent's. `/plugin`, Roadworthy, Configure, then
 `/reload-plugins`: `rite_gate`, `scope_lock`, `stop_gate`, `commit_scope`,
 `plan_review_required` and `session_state` each switch one guarantee off; the README has the
-whole table. To ask MORE of one project instead, the owner writes `.roadworthy/rites` in it.
+whole table. To ask MORE of one project instead, the owner writes `.roadworthy/rites` in it —
+from the chat, `rw-config: rites + plan_gate: both`. The commands every closing of a project
+must run go in `.roadworthy/standing-gates` (`rw-config: standing-gates + <command>`), and
+the one thing a project may dispense is the owner's approval of a closing:
+`rw-config: rites + owner_approval: off`.
 
 ## The night marker was left on
 

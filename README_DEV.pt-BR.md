@@ -31,10 +31,16 @@ O Roadworthy embrulha uma unidade de trabalho num **rito**, e cada passo vira fa
 ```
 sem frente --( plano aprovado no modo de plano )--> aprovação gravada
    ^                                                    |  scope-write.sh
-   |  close.sh: todo portão verde                       v
-   +------------- ou close.sh --abandon <--------- frente aberta
-                                        (.roadworthy/scope, gates, plan.snapshot)
+   |  o "aprovado" do dono, no chat                     v
+   +-- esperando o dono <-- close.sh: <-- frente aberta, em todo repositório que o plano cita
+   |   (needs_human, escopo mantido) todo portão verde  (.roadworthy/scope, gates, plan.snapshot)
+   +-- ou close.sh --abandon
 ```
+
+Uma frente não fecha sozinha: os portões verdes a deixam esperando, e a palavra do dono a
+libera (um projeto pode dispensar isso em `.roadworthy/rites`). Um plano pode citar vários
+repositórios; ele abre uma frente em cada um, e elas fecham juntas, a partir do repositório
+do plano.
 
 - Uma **frente** é um plano aprovado em execução: o escopo dele (globs), os portões dele
   (comandos) e uma fotografia do que foi aprovado, com digests.
@@ -63,8 +69,8 @@ rodou — as duas últimas gravadas com a árvore sobre a qual foram medidas.
 
 - `session-state` — SessionStart; falha aberto. Diz o que está em disco. Não bloqueia.
 - `principles` — UserPromptSubmit; falha aberto. Injeta as regras numeradas, a forma de
-  relatar combinada para a frente e o aviso das três negações; grava a resposta `rw-human:`
-  de uma pessoa.
+  relatar combinada para a frente e o aviso das três negações; lê do prompt as linhas do dono
+  (`rw-human:`, o `aprovado` sozinho, `rw-principios:`, `rw-config:`) e cumpre cada uma.
 - `rite-gate` — PreToolUse nas ferramentas de edição e no Bash; falha fechado. O portão de
   entrada: sem frente, nada é escrito; nada sob `.roadworthy/` à mão; a frente em disco é a
   que foi aprovada; o escopo vale também pelo shell.
@@ -90,7 +96,11 @@ rodou — as duas últimas gravadas com a árvore sobre a qual foram medidas.
   escreve e remove. O maior arquivo daqui; o contrato dele é uma tabela de casos.
 - `hooks/globmatch.py` — a gramática de glob.
 - `hooks/planblocks.py` — o que um plano declara (escopo, portões, base), a impressão digital
-  dele, e se há uma aprovação dessa impressão digital gravada.
+  dele, se há uma aprovação dessa impressão digital gravada, o repositório a que um caminho
+  pertence (`repo_of`, a regra de `rw_target_root` em Python) e o Escopo e os portões de um
+  plano divididos por repositório.
+- `hooks/ownerline.py` — as ordens que um dono dá no chat, lidas do prompt por uma gramática
+  só, e a única função que muda um arquivo do dono (`rw-config:`).
 - `hooks/frontcheck.py` — a frente aberta está íntegra, o que mudou fora do escopo, de quem é
   o commit, o que este commit levaria.
 
@@ -148,16 +158,23 @@ A maioria é uma ausência, e por isso é difícil de ver a partir de um arquivo
    partes do `guard-commit` casam o texto cru do comando; `plan-preflight.sh` e
    `plan-review-gate` leem sozinhos partes de um plano.
 5. **O repositório que julga um arquivo é o repositório em que o arquivo está**
-   (`rw_target_root`). Só um arquivo fora de qualquer repositório cai no da sessão.
+   (`rw_target_root`). Só um arquivo fora de qualquer repositório cai no da sessão. O script
+   que abre uma frente faz a mesma pergunta em Python (`repo_of`), e uma tabela de caminhos é
+   entregue aos dois (`tests/scripts/front-roots.sh`): duas respostas abririam uma frente que
+   as cercas depois julgam por outro repositório.
 6. **O agente não escreve nada à mão sob `.roadworthy/`.** Escopo, portões e fotografia vêm
    do `scope-write.sh`; o estado e os registros de portão, do `close.sh`; o que um hook
-   presenciou, desse hook; os arquivos do dono, do dono (`docs-init.sh` cria o `docs.json`
-   quando ele falta).
-7. **Um ato de pessoa nunca é digitado pelo agente.** Abrir uma frente como dono (`--owner`)
-   e responder a uma verificação humana são negados a ele.
-8. **O fechamento mede o que foi aprovado**: uma frente que o rito abriu só fecha quando o
-   escopo e os portões ainda casam com os digests da fotografia, e todo portão declarado
-   roda ou o fechamento recusa.
+   presenciou, desse hook; os seis arquivos do dono, do dono, por uma linha do próprio prompt
+   dele (`rw-config:`) ou à mão (`docs-init.sh` cria o `docs.json` quando ele falta).
+7. **Um ato de pessoa nunca é digitado pelo agente.** Abrir uma frente como dono (`--owner`),
+   responder a uma verificação humana, aprovar um fechamento e rodar à mão o hook de prompt —
+   que é por onde as linhas do dono são lidas — são negados a ele.
+8. **O fechamento mede o que foi aprovado, e quem fecha é o dono**: uma frente que o rito
+   abriu só fecha quando o escopo e os portões ainda casam com os digests da fotografia, todo
+   portão declarado rodou, em todo repositório da frente, e o dono aprovou as árvores que
+   esses portões mediram. Essa exigência vale para toda frente com fotografia — não é lida de
+   opção nem de livro — e só `owner_approval: off` nos ritos do dono a dispensa; a resposta do
+   dono é lida do livro do próprio repositório do plano.
 9. **Nenhum caso fora do manifesto, nenhum caso que termina antes.** `tests/run.sh` recusa
    quando `tests/cases.txt` e os diretórios discordam, e um caso que não chega a `rw_end` é
    vermelho seja qual for o status de saída.
