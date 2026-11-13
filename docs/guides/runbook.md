@@ -86,8 +86,13 @@ of you: `FRESH` (ran green on this tree), `FRESH-RED` (ran red on this tree), `S
 another tree), `MISSING` (never ran). `close.sh --state` prints `passed`, `gaps_found`,
 `needs_human` or `none`.
 
-- `close: the tree is dirty; commit first`: commit. What is not this front's is set aside
-  with `git stash push -u -- <path>` and brought back after the closing.
+- `close: the tree is dirty; commit first`: the line names what is not committed. What is the
+  front's, commit. What is not is the owner's: the owner commits it, or frees the path from
+  the rite. A file outside the scope that was already changed when the front opened, and is
+  still as it was then, does not count.
+- `close: already changed when the front opened, outside its scope, and changed again since`:
+  nothing says whose change it is. The owner commits it or frees the path; when the change is
+  the front's, it goes to the plan's Scope.
 - `close: gaps_found — N gate(s) red; scope kept`: the `FAIL` line names the gate and shows
   the end of its output. Fix, commit, close again.
 - `close: the front touched N file(s) outside its declared scope`: put those files back as

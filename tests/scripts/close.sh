@@ -259,7 +259,53 @@ printf '%s' "$RS_OUT" | grep -q 'no front is open here' && [ "$(rs --state)" = "
   && ok "closing again with nothing open says so, and leaves the state alone" || fail "a closing with no front open spoke of a changed scope, or moved the state: $(rs --state) / $RS_OUT"
 (cd "$RS" && bash "$ROOT/skills/plan/scripts/scope-write.sh" plan.md) >/dev/null 2>&1
 printf 'dirt\n' >> "$RS/src/a.py"
-printf '%s' "$(rs)" | grep -q "git stash push -u" && ok "a dirty tree is told how to set aside what is not the front's" || fail "the dirty-tree refusal does not say the way forward"
+RS_OUT="$(rs)"
+printf '%s' "$RS_OUT" | grep -q 'the tree is dirty' && printf '%s' "$RS_OUT" | grep -q 'src/a.py' \
+  && ok "a dirty tree is refused, and the refusal names what is not committed" || fail "the dirty-tree refusal does not name the path: $RS_OUT"
+printf '%s' "$RS_OUT" | grep -q 'git stash' && fail "the dirty-tree refusal still tells the agent to stash somebody else's file: $RS_OUT" || ok "and nobody is told to stash a file that is not theirs"
+
+# ── 0.8.0: what was already changed when the front opened does not block the closing ─────────
+# The opening has recorded, since 0.7.0, every path outside the scope that was already changed,
+# with its content (`preexisting` in the snapshot), and the fence that measures the tree leaves
+# those alone. The closing did not read it: it refused the tree as dirty over the owner's own
+# uncommitted file and told the agent to `git stash` it, and it counted every untracked file as
+# touched by the front.
+PX="$TMP/preexisting"; fx_repo_committed "$PX"; mkdir -p "$PX/src" "$PX/notes"
+printf 'a\n' > "$PX/src/a.py"; printf 'n\n' > "$PX/notes.txt"
+printf '# P\n## Scope\n```\nsrc/**\n```\n## Verification\n```\ntrue\n```\n' > "$TMP/px-plan.md"
+git -C "$PX" add -A; git -C "$PX" commit -q -m base
+px() { (cd "$PX" && env -u ROADWORTHY_DATA bash "$CLOSE") 2>&1 || true; }
+# The owner's: a tracked file edited and a new file, both outside the scope, before the front.
+printf 'the owner was writing here\n' >> "$PX/notes.txt"; printf 'a draft\n' > "$PX/owner-draft.md"
+(cd "$PX" && bash "$ROOT/skills/plan/scripts/scope-write.sh" "$TMP/px-plan.md") >/dev/null
+git -C "$PX" add .roadworthy/gates; git -C "$PX" commit -q -m 'the gates of the front'
+printf 'a2\n' > "$PX/src/a.py"; git -C "$PX" commit -q -m 'the work of the front' -- src/a.py
+PX_OUT="$(px)"
+printf '%s' "$PX_OUT" | grep -q '^close: passed' \
+  && ok "a tracked file and a new file that were already changed when the front opened do not block the closing" \
+  || fail "a file that was already changed when the front opened blocked the closing: $PX_OUT"
+[ "$(tail -1 "$PX/notes.txt")" = "the owner was writing here" ] && [ -f "$PX/owner-draft.md" ] \
+  && ok "and both are still in the tree, as the owner left them" || fail "the closing moved the owner's uncommitted files"
+# Changed AGAIN after the opening: nothing says whose change it is, so the closing refuses, by name.
+(cd "$PX" && bash "$ROOT/skills/plan/scripts/scope-write.sh" "$TMP/px-plan.md") >/dev/null
+printf 'and somebody wrote more\n' >> "$PX/notes.txt"
+PX_OUT="$(px)"
+printf '%s' "$PX_OUT" | grep -q 'changed again since' && printf '%s' "$PX_OUT" | grep -q 'notes.txt' && [ -f "$PX/.roadworthy/scope" ] \
+  && ok "the same file changed again after the opening refuses the closing, naming it" \
+  || fail "a file that was already changed when the front opened blocked the closing, or changed again unseen: $PX_OUT"
+printf '%s' "$PX_OUT" | grep -q 'rw-config: free' && ! printf '%s' "$PX_OUT" | grep -q 'git stash' \
+  && ok "and the refusal says the ways out that exist (the owner commits it, or frees the path), with no stash" || fail "the refusal does not say the ways out: $PX_OUT"
+printf '%s' "$PX_OUT" | grep -q 'owner-draft.md' && fail "the untouched draft was named with the file that changed: $PX_OUT" || ok "the draft that did not change is not named"
+# The way out it names works: a path the owner freed is not this front's and does not dirty its closing.
+printf 'notes.txt\n' > "$PX/.roadworthy/free"; git -C "$PX" add .roadworthy/free; git -C "$PX" commit -q -m 'the owner frees the notes'
+PX_OUT="$(px)"
+printf '%s' "$PX_OUT" | grep -q '^close: passed' && ok "freed by the owner, the changed file no longer blocks the closing" || fail "a path the owner freed still blocked the closing: $PX_OUT"
+# A file that appears AFTER the opening, outside the scope, is still refused.
+(cd "$PX" && bash "$ROOT/skills/plan/scripts/scope-write.sh" "$TMP/px-plan.md") >/dev/null
+printf 'new\n' > "$PX/appeared-later.txt"
+PX_OUT="$(px)"
+printf '%s' "$PX_OUT" | grep -q 'the tree is dirty' && printf '%s' "$PX_OUT" | grep -q 'appeared-later.txt' && [ -f "$PX/.roadworthy/scope" ] \
+  && ok "a file that appeared after the opening still refuses the closing" || fail "a file created after the front opened passed as if it had been there: $PX_OUT"
 
 # ── 0.7.0: whose commit it is, after a rebase rewrote the history ────────────────────────────
 # `git pull --rebase` records the front's OWN commits again, as `pull --rebase (pick)`. Every

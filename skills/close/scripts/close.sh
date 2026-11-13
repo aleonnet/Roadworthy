@@ -47,6 +47,10 @@
 # an arrival -> red with `a colleague's commit that arrived by fetch and rebase was charged to the
 # front`; the night's own files not recognised here -> tests/meta/rite-liveness.sh red with `the
 # rite has a dead end`.
+# Refuted 2026-11-13 (0.8.0), against tests/scripts/close.sh: a path recorded at the opening counted
+# as dirty again -> red with `a file that was already changed when the front opened blocked the
+# closing`; an untracked file recorded at the opening counted as touched by the front -> red with
+# the same text. Each green again on the clean file, restored with its SHA-256 verified.
 #
 # Usage:
 #   close.sh               run all gates (requires a clean tree); exit 0 = passed
@@ -362,11 +366,80 @@ esac
 # leaves out of the fingerprint. Without this, writing the recorded state dirties the tree of
 # any project that has not gitignored it yet, and the next closing refuses -- the plugin would
 # block itself with a file it wrote.
+#
+# WHAT WAS ALREADY CHANGED WHEN THE FRONT OPENED IS NOT THE FRONT'S (0.8.0). The opening records
+# every path outside the scope that was already changed, with its content (`preexisting` in the
+# snapshot), and the fence that measures the tree has left those alone since 0.7.0. The closing did
+# not read it: the owner's own uncommitted note made the tree "dirty", and the refusal told the
+# agent to `git stash` a file that was not its own. Such a path, with the content it had at the
+# opening, is not counted here. Changed again since, nothing says whose change it is, and the
+# closing refuses naming it. A path the owner freed (.roadworthy/free) is outside the rite and does
+# not dirty a closing either: that is one of the two ways out the refusal names, so it has to work.
+#
+# One line per path: `DIRTY <TAB> path`, or `CHANGED <TAB> path` for one that was already changed
+# when the front opened and changed again since.
 rw_dirty() {
-  git status --porcelain | grep -v -E ' \.roadworthy/(scope|state|plan\.snapshot|overnight|evidence\.jsonl|denials\.jsonl|refutations\.jsonl|preflight\.jsonl|readings\.jsonl|stop-latch/)'
+  python3 - "$snapshot" "$here/../../../hooks" <<'PY'
+import hashlib, json, subprocess, sys
+snap_path, hooks_dir = sys.argv[1], sys.argv[2]
+sys.dont_write_bytecode = True
+sys.path.insert(0, hooks_dir)
+from globmatch import matches
+LOCAL = ("scope", "state", "plan.snapshot", "overnight", "evidence.jsonl", "denials.jsonl",
+         "refutations.jsonl", "preflight.jsonl", "readings.jsonl")
+try:
+    before = json.load(open(snap_path, encoding="utf-8")).get("preexisting") or {}
+except Exception:
+    before = {}
+try:
+    free = [l.strip() for l in open(".roadworthy/free", encoding="utf-8", errors="replace")
+            if l.strip() and not l.strip().startswith("#")]
+except Exception:
+    free = []
+def sha(path):
+    try:
+        return hashlib.sha256(open(path, "rb").read()).hexdigest()
+    except Exception:
+        return ""
+st = subprocess.run(["git", "status", "--porcelain", "-z", "-uall"], capture_output=True)
+if st.returncode != 0:
+    print("DIRTY\t(git status failed: the tree could not be measured)")
+    sys.exit(0)
+entries = st.stdout.decode("utf-8", errors="replace").split("\0")
+seen, i = set(), 0
+while i < len(entries):
+    e = entries[i]; i += 1
+    if len(e) < 4:
+        continue
+    paths = [e[3:]]
+    if e[0] in "RC" and i < len(entries):       # a rename carries the old path next
+        paths.append(entries[i]); i += 1
+    for p in paths:
+        if p in seen:
+            continue
+        seen.add(p)
+        if p.startswith(".roadworthy/") and (p[len(".roadworthy/"):] in LOCAL or p.startswith(".roadworthy/stop-latch/")):
+            continue
+        if free and matches(p, free):
+            continue
+        if p in before:
+            if before[p] == sha(p):
+                continue
+            print("CHANGED\t" + p)
+        else:
+            print("DIRTY\t" + p)
+PY
 }
-if [ -n "$(rw_dirty)" ]; then
-  echo "close: the tree is dirty; commit first — a gate measured before the last commit is not a gate of this closing. What is not this front's (a file of the owner, of another session) is set aside for the closing with 'git stash push -u -- <path>' and brought back after it with 'git stash pop'."
+dirty_now="$(rw_dirty)"
+if [ -n "$dirty_now" ]; then
+  changed_again="$(printf '%s\n' "$dirty_now" | sed -n 's/^CHANGED	//p' | head -10 | tr '\n' ' ' | sed 's/ $//')"
+  dirty_paths="$(printf '%s\n' "$dirty_now" | sed -n 's/^DIRTY	//p' | head -10 | tr '\n' ' ' | sed 's/ $//')"
+  if [ -n "$dirty_paths" ]; then
+    echo "close: the tree is dirty; commit first — a gate measured before the last commit is not a gate of this closing. Not committed: $dirty_paths. What is the front's is committed by the front. What is not (a file of the owner, of another session) is the owner's: the owner commits it, or frees the path from the rite, in the owner's own prompt (rw-config: free + <glob>)."
+  fi
+  if [ -n "$changed_again" ]; then
+    echo "close: already changed when the front opened, outside its scope, and changed again since: $changed_again. Nothing in the tree says whose change that is, so the closing does not pass over it. The ways out: the owner commits it; or the owner frees the path from the rite, in the owner's own prompt (rw-config: free + <glob>); or, when the change is this front's, it goes to the plan's Scope and is committed."
+  fi
   end_closing gaps_found "dirty tree"; exit 1
 fi
 # Measured against the SNAPSHOT taken when the front opened, never against whatever the files
@@ -432,8 +505,12 @@ base = snap.get("base_head") or ""
 # names are read NUL-separated, so one with a non-ASCII character is the name the globs see.
 from frontcheck import front_paths, night_file
 touched = set(front_paths(os.getcwd(), base))
+# A file nobody tracks counts as touched by the front -- unless the opening recorded it, with this
+# content, as already there (0.8.0): it was the owner's before the front existed.
+before = snap.get("preexisting") or {}
 u = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "-z"], capture_output=True)
-touched |= {l for l in u.stdout.decode("utf-8", errors="replace").split("\0") if l}
+touched |= {l for l in u.stdout.decode("utf-8", errors="replace").split("\0")
+            if l and not (l in before and before[l] == sha(l))}
 # The plan of THIS front is the rite's own artefact: when it lives inside the repository (the
 # `plans` directory of docs.json, the house norm's home for it) it is written before the front
 # exists and cannot be in its own scope. The snapshot names it.
