@@ -87,7 +87,10 @@
 # exempt from this gate and from the scope lock, so pointing it at `.` exempted the repository
 # (field note, 2026-09-18). `rites` (what the owner requires of the project) is the fifth, and from
 # 0.8.0 `standing-gates` is the sixth: the commands every closing of the project runs, whatever the
-# plan declares. A list of gates the agent could edit is a gate the agent could drop.
+# plan declares. A list of gates the agent could edit is a gate the agent could drop. From 0.8.0
+# the owner changes the six from the chat, with a line of the owner's own prompt (`rw-config:`,
+# read by hooks/principles through hooks/ownerline.py); the agent is denied them through both doors
+# as before.
 #
 # THE PLAN HAS TWO HOMES: plans_dir, where plan mode writes it, and the `plans` directory the
 # project declares in .roadworthy/docs.json, where the house documentation norm keeps it. Both
@@ -227,7 +230,7 @@ judge_open() {
 }
 
 deny_owner() {  # deny_owner <relative path>
-  deny PreToolUse "'$1' is the owner's configuration: it is what the fences read to guard against the agent, so the agent does not edit it. Report the change you need (the glob to protect, the rule to freeze, the path to free) and let the owner make it outside the agent. (rite_gate)"
+  deny PreToolUse "'$1' is the owner's configuration: it is what the fences read to guard against the agent, so the agent does not edit it. Report the change you need (the glob to protect, the rule to freeze, the path to free, the gate to add) and stop there: the owner makes it with a line of their own in the chat -- 'rw-config: <file> + <line>' ('- <line>' removes it; for docs.json, '<key> = <value>') -- which the plugin reads from the prompt. (rite_gate)"
 }
 
 deny_removal() {  # deny_removal <relative path>
